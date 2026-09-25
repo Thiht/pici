@@ -1,0 +1,9 @@
+.git
+docs/node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache
+examples
+pici
+pici-cli
+*.db
+*.log

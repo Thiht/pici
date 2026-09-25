@@ -1,0 +1,22 @@
+name: pici
+
+services:
+  pici:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    privileged: true
+    stop_grace_period: 2m
+    environment:
+      PICI_DB_DSN: /data/pici.db
+      PICI_WORKSPACE_DIR: /data/workspaces
+      PICI_SECRET_KEY: ${PICI_SECRET_KEY:?PICI_SECRET_KEY is required}
+      PICI_API_TOKEN: ${PICI_API_TOKEN:?PICI_API_TOKEN is required}
+      PICI_PUBLIC_URL: ${PICI_PUBLIC_URL:-}
+    ports:
+      - "${PICI_PORT:-8080}:8080"
+    volumes:
+      - pici-data:/data
+
+volumes:
+  pici-data:

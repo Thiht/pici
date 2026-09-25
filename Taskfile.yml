@@ -1,0 +1,81 @@
+version: '3'
+
+vars:
+  PKG: ./...
+
+tasks:
+  default:
+    desc: Build and test
+    deps: [build, test]
+
+  build:
+    desc: Build all packages
+    cmds:
+      - go build {{.PKG}}
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test {{.PKG}}
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format code (gofmt, goimports, gofumpt)
+    cmds:
+      - golangci-lint fmt
+
+  fmt:check:
+    desc: Check formatting without modifying files
+    cmds:
+      - golangci-lint fmt --diff
+
+  check:
+    desc: Format check, lint and test
+    deps: [fmt:check, lint, test]
+
+  run:
+    desc: Run the server
+    cmds:
+      - go run ./cmd/pici {{.CLI_ARGS}}
+
+  cli:
+    desc: Run the CLI client
+    cmds:
+      - go run ./cmd/pici-cli {{.CLI_ARGS}}
+
+  docker:build:
+    desc: Build the Docker image
+    cmds:
+      - docker build -f docker/Dockerfile -t pici:dev .
+
+  docker:up:
+    desc: Start pici with docker-compose
+    cmds:
+      - docker compose -f docker/docker-compose.yml up --build
+
+  docker:down:
+    desc: Stop docker-compose
+    cmds:
+      - docker compose -f docker/docker-compose.yml down
+
+  docs:install:
+    desc: Install docs dependencies
+    dir: docs
+    cmds:
+      - npm install
+
+  docs:dev:
+    desc: Serve docs locally
+    dir: docs
+    cmds:
+      - npm run dev
+
+  docs:build:
+    desc: Build docs
+    dir: docs
+    cmds:
+      - npm run build

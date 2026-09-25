@@ -1,0 +1,9 @@
+/pici.db
+/pici
+*.db
+*.log
+
+# Local agent tooling
+/.agents/
+/.claude/
+/skills-lock.json
