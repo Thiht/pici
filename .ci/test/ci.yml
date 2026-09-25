@@ -1,0 +1,27 @@
+name: test
+
+env:
+  GOMODCACHE: /workspace/.cache/gomod
+
+cache:
+  - .cache/gomod
+
+steps:
+  - name: build
+    run: go build ./...
+    timeout: 10m
+
+  - name: vet
+    run: go vet ./...
+    depends_on: [build]
+    timeout: 10m
+
+  - name: lint
+    run: golangci-lint run
+    depends_on: [build]
+    timeout: 10m
+
+  - name: test
+    run: go test ./...
+    depends_on: [build]
+    timeout: 10m
