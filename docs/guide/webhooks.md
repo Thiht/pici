@@ -44,3 +44,18 @@ schedule: "0 4 * * *"
 ```
 
 The schedule is registered whenever the workflow is discovered or run (e.g. via `GET /api/projects/{id}/configs` or any execution). The scheduler polls every `PICI_SCHEDULER_INTERVAL` (default 1m) and enqueues due builds on the default branch.
+
+### Dependency updates
+
+A cron workflow can propose dependency updates (à la Renovate/Dependabot). See `.ci/deps/` in the pici repository: a weekly workflow that runs `go list -m -u`, applies `go get -u ./...`, then pushes a branch and opens a PR.
+
+It needs a project secret named `GH_TOKEN` — a GitHub PAT with `contents: write` and `pull_requests: write`:
+
+```sh
+curl -X POST localhost:8080/api/projects/pici/variables \
+  -H "Authorization: Bearer $PICI_API_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"key":"GH_TOKEN","value":"<pat>","secret":true}'
+```
+
+The `PICI_REPO_URL` and `PICI_REF` built-in environment variables give the script the repository and base branch.

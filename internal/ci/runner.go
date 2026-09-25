@@ -502,6 +502,7 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha stri
 		"PICI=true",
 		"PICI_PROJECT=" + project.Name,
 		"PICI_PROJECT_ID=" + project.ID,
+		"PICI_REPO_URL=" + project.RepoURL,
 		"PICI_WORKFLOW=" + exec.Workflow,
 		"PICI_EXECUTION_ID=" + exec.ID,
 		"PICI_REF=" + exec.Ref,

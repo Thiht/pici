@@ -1,0 +1,7 @@
+name: deps
+schedule: "0 0 * * 0"
+
+steps:
+  - name: update
+    script: update.sh
+    timeout: 15m
