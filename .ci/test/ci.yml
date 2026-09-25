@@ -8,20 +8,20 @@ cache:
 
 steps:
   - name: build
-    run: go build ./...
+    run: task build
     timeout: 10m
 
-  - name: vet
-    run: go vet ./...
+  - name: fmt-check
+    run: task fmt-check
     depends_on: [build]
     timeout: 10m
 
   - name: lint
-    run: golangci-lint run
+    run: task lint
     depends_on: [build]
     timeout: 10m
 
   - name: test
-    run: go test ./...
+    run: task test
     depends_on: [build]
     timeout: 10m
