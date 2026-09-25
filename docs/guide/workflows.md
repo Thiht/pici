@@ -73,6 +73,17 @@ steps:
 
 `cache` mounts a persistent Docker volume at each path (under `PICI_REPO_DIR`), so dependencies survive between runs. The volume is shared across executions of the same project.
 
+Dependency caches are also **detected automatically** from files at the repo root — no `env`/`cache` needed:
+
+| Marker | Env vars | Cached path |
+|---|---|---|
+| `go.mod` | `GOMODCACHE`, `GOCACHE` | `.cache/gomod`, `.cache/gobuild` |
+| `package.json` | `npm_config_cache` | `.npm` |
+| `Cargo.toml` | `CARGO_HOME` | `.cargo` |
+| `requirements.txt` / `pyproject.toml` | `PIP_CACHE_DIR` | `.cache/pip` |
+
+Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra paths).
+
 ### Concurrency groups
 
 `concurrency` cancels any currently-running execution in the same group (same project) when a new one starts, so only the latest build of a branch/deployment keeps running.

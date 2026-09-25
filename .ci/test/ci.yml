@@ -1,11 +1,5 @@
 name: test
 
-env:
-  GOMODCACHE: /workspace/.cache/gomod
-
-cache:
-  - .cache/gomod
-
 steps:
   - name: build
     run: task build

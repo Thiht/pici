@@ -240,6 +240,17 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		}
 	}
 
+	autoEnv, autoCache := detectCaches(repoDir, r.MountPath)
+	if cfg.Env == nil {
+		cfg.Env = map[string]string{}
+	}
+	for k, v := range autoEnv {
+		if _, ok := cfg.Env[k]; !ok {
+			cfg.Env[k] = v
+		}
+	}
+	cfg.Cache = append(cfg.Cache, autoCache...)
+
 	cacheBinds := cacheBinds(project.ID, r.MountPath, cfg.Cache)
 
 	checkRunID := r.createCheckRun(ctx, project, exec, setupLog)
