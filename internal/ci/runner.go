@@ -7,8 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -360,25 +358,8 @@ func collectSecrets(vars []stores.Variable, project stores.Project) []string {
 	return out
 }
 
-var prRefRe = regexp.MustCompile(`^refs/pull/(\d+)/(head|merge)$`)
-
-func prNumber(ref string) (int, bool) {
-	m := prRefRe.FindStringSubmatch(ref)
-	if len(m) != 3 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil {
-		return 0, false
-	}
-	return n, true
-}
-
 func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, log io.Writer) int64 {
 	if project.Provider != stores.ProviderGithub || project.AuthSecret == "" || exec.CommitSHA == "" {
-		return 0
-	}
-	if _, ok := prNumber(exec.Ref); !ok {
 		return 0
 	}
 	owner, repo, ok := github.ParseRepo(project.RepoURL)
