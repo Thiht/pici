@@ -25,7 +25,7 @@ func ExtractTarGz(src io.Reader, dest string, maxBytes int64) error {
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	lr := &io.LimitedReader{R: gz, N: maxBytes + 1}
 	tr := tar.NewReader(lr)
@@ -72,7 +72,7 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, dest string) error {
 			return nil
 		}
 		return os.Mkdir(path, dirMode(hdr.Mode))
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg:
 		path, err := securePath(dest, name)
 		if err != nil {
 			return err

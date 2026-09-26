@@ -16,16 +16,18 @@ func TestAnsiToHTML(t *testing.T) {
 		want string
 	}{
 		{"plain", "hello world", "hello world"},
-		{"red", "\x1b[31mred\x1b[0m", `<span style="color:#cd3131">red</span>`},
-		{"bold-green", "\x1b[1;32mok\x1b[0m", `<span style="color:#0dbc79;font-weight:700">ok</span>`},
-		{"bright-blue", "\x1b[94mhi\x1b[0m", `<span style="color:#3b8eea">hi</span>`},
-		{"background", "\x1b[41mwarn\x1b[0m", `<span style="background-color:#cd3131">warn</span>`},
-		{"reset-in-middle", "\x1b[31ma\x1b[0mb", `<span style="color:#cd3131">a</span>b`},
-		{"256-color", "\x1b[38;5;196mX\x1b[0m", `<span style="color:rgb(255,0,0)">X</span>`},
-		{"truecolor", "\x1b[38;2;1;2;3mX\x1b[0m", `<span style="color:rgb(1,2,3)">X</span>`},
+		{"red", "\x1b[31mred\x1b[0m", `<span class="term-fg31">red</span>`},
+		{"bold-green", "\x1b[1;32mok\x1b[0m", `<span class="term-fg32 term-fg1">ok</span>`},
+		{"bright-blue", "\x1b[94mhi\x1b[0m", `<span class="term-fgi94">hi</span>`},
+		{"background", "\x1b[41mwarn\x1b[0m", `<span class="term-bg41">warn</span>`},
+		{"reset-in-middle", "\x1b[31ma\x1b[0mb", `<span class="term-fg31">a</span>b`},
+		{"256-color", "\x1b[38;5;196mX\x1b[0m", `<span class="term-fgx196">X</span>`},
+		// terminal-to-html has no class for 24-bit colours, so truecolor styling
+		// degrades to a span with no colour (the text is still preserved).
+		{"truecolor-unstyled", "\x1b[38;2;1;2;3mX\x1b[0m", `<span class="">X</span>`},
 		{"non-sgr-dropped", "\x1b[2Kclean", "clean"},
-		{"escaped-html", "<script>alert(1)</script>", "&lt;script&gt;alert(1)&lt;/script&gt;"},
-		{"escaped-html-in-color", "\x1b[31m<b>\x1b[0m", `<span style="color:#cd3131">&lt;b&gt;</span>`},
+		{"escaped-html", "<script>alert(1)</script>", "&lt;script&gt;alert(1)&lt;&#47;script&gt;"},
+		{"escaped-html-in-color", "\x1b[31m<b>\x1b[0m", `<span class="term-fg31">&lt;b&gt;</span>`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -33,15 +35,6 @@ func TestAnsiToHTML(t *testing.T) {
 				t.Errorf("ansiToHTML(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestAnsi256Grayscale(t *testing.T) {
-	if got := ansi256(232); got != "rgb(8,8,8)" {
-		t.Errorf("ansi256(232) = %q", got)
-	}
-	if got := ansi256(255); got != "rgb(238,238,238)" {
-		t.Errorf("ansi256(255) = %q", got)
 	}
 }
 
@@ -76,7 +69,7 @@ func TestExecutionTemplateRendersAnsiLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, `<span style="color:#cd3131">fail</span>`) {
+	if !strings.Contains(out, `<span class="term-fg31">fail</span>`) {
 		t.Fatalf("expected colored log span, got:\n%s", out)
 	}
 	if !strings.Contains(out, "exit 1") {

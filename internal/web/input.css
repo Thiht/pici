@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./terminal.css";
 @plugin "daisyui" {
   themes:
     autumn --default,

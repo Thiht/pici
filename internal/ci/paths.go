@@ -1,9 +1,9 @@
 package ci
 
 import (
-	"regexp"
 	"slices"
-	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 func MatchesPaths(paths, ignore []string, files []string) bool {
@@ -26,39 +26,13 @@ func MatchesRef(tags, branches []string, ref string, isTag bool) bool {
 	return matchesAny(branches, ref)
 }
 
+// matchesAny tests a slash-separated path or ref against glob patterns.
+// Malformed patterns are ignored (treated as non-matching).
 func matchesAny(patterns []string, s string) bool {
 	for _, p := range patterns {
-		if matchGlob(p, s) {
+		if ok, err := doublestar.Match(p, s); err == nil && ok {
 			return true
 		}
 	}
 	return false
-}
-
-func matchGlob(pattern, s string) bool {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		switch c {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-			} else {
-				b.WriteString("[^/]*")
-			}
-		case '?':
-			b.WriteString("[^/]")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(c)))
-		}
-	}
-	b.WriteString("$")
-
-	re, err := regexp.Compile(b.String())
-	if err != nil {
-		return false
-	}
-	return re.MatchString(s)
 }
