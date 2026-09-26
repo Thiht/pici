@@ -73,7 +73,7 @@ func main() {
 	sch := &scheduler.Scheduler{
 		Store:    store,
 		Interval: cfg.SchedulerInterval,
-		Trigger: func(ctx context.Context, p stores.Project, workflow, ref, trigger string) error {
+		Trigger: func(ctx context.Context, p stores.Project, workflow, ref string, trigger stores.Trigger) error {
 			_, err := runner.Enqueue(ctx, p, workflow, ref, "", trigger)
 			return err
 		},

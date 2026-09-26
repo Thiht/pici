@@ -37,7 +37,7 @@ type Runner struct {
 
 	workerID string
 	mu       sync.Mutex
-	cancels  map[string]context.CancelFunc
+	cancels  map[uuid.UUID]context.CancelFunc
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
@@ -49,7 +49,7 @@ func (r *Runner) Start(workers int) {
 	}
 	r.mu.Lock()
 	if r.cancels == nil {
-		r.cancels = make(map[string]context.CancelFunc)
+		r.cancels = make(map[uuid.UUID]context.CancelFunc)
 	}
 	if r.stopCh == nil {
 		r.stopCh = make(chan struct{})
@@ -118,19 +118,19 @@ func (r *Runner) cancelAll() {
 	r.mu.Unlock()
 }
 
-func (r *Runner) registerCancel(id string, cancel context.CancelFunc) {
+func (r *Runner) registerCancel(id uuid.UUID, cancel context.CancelFunc) {
 	r.mu.Lock()
 	r.cancels[id] = cancel
 	r.mu.Unlock()
 }
 
-func (r *Runner) unregisterCancel(id string) {
+func (r *Runner) unregisterCancel(id uuid.UUID) {
 	r.mu.Lock()
 	delete(r.cancels, id)
 	r.mu.Unlock()
 }
 
-func (r *Runner) Cancel(execID string) {
+func (r *Runner) Cancel(execID uuid.UUID) {
 	r.mu.Lock()
 	cancel := r.cancels[execID]
 	r.mu.Unlock()
@@ -139,9 +139,9 @@ func (r *Runner) Cancel(execID string) {
 	}
 }
 
-func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA, trigger string) (stores.Execution, error) {
+func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger) (stores.Execution, error) {
 	exec := stores.Execution{
-		ID:        uuid.New().String(),
+		ID:        uuid.New(),
 		ProjectID: project.ID,
 		Project:   project.Name,
 		Workflow:  workflow,
@@ -149,7 +149,7 @@ func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, 
 		CommitSHA: commitSHA,
 		Status:    stores.StatusPending,
 		Trigger:   trigger,
-		CreatedAt: time.Now().UnixMilli(),
+		CreatedAt: time.Now(),
 	}
 	if err := r.Store.CreateExecution(ctx, exec); err != nil {
 		return stores.Execution{}, err
@@ -175,12 +175,12 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	vars := r.loadVariables(ctx, project.ID)
 	secrets := collectSecrets(vars, project)
 
-	logDir := r.LogDir(exec.ID)
+	logDir := r.LogDir(exec.ID.String())
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		r.fail(ctx, exec, err)
 		return
 	}
-	setupFile, err := os.OpenFile(r.SetupLogPath(exec.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	setupFile, err := os.OpenFile(r.SetupLogPath(exec.ID.String()), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		r.fail(ctx, exec, err)
 		return
@@ -193,7 +193,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 
 	fmt.Fprintf(setupLog, "pici: starting workflow %q on %s\n", exec.Workflow, exec.Ref)
 
-	repoDir := filepath.Join(r.WorkspaceDir, project.ID, exec.ID)
+	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), exec.ID.String())
 	cloneRef := exec.Ref
 	if exec.CommitSHA != "" {
 		cloneRef = exec.CommitSHA
@@ -202,7 +202,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		URL:  project.RepoURL,
 		Dir:  repoDir,
 		Ref:  cloneRef,
-		Auth: git.Auth{Type: project.AuthType, User: project.AuthUser, Secret: project.AuthSecret},
+		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
 	}
 	if err := git.Clone(ctx, cloneCfg); err != nil {
 		fmt.Fprintf(setupLog, "clone failed: %v\n", err)
@@ -251,13 +251,13 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}
 	cfg.Cache = append(cfg.Cache, autoCache...)
 
-	cacheBinds := cacheBinds(project.ID, r.MountPath, cfg.Cache)
+	cacheBinds := cacheBinds(project.ID.String(), r.MountPath, cfg.Cache)
 
 	checkRunID := r.createCheckRun(ctx, project, exec, setupLog)
 
 	image := cfg.Image
 	if image == "" {
-		image = imageTag(project.ID, exec.Workflow)
+		image = imageTag(project.ID.String(), exec.Workflow)
 		fmt.Fprintf(setupLog, "building image %s...\n", image)
 		if err := r.Engine.Build(ctx, docker.BuildOptions{
 			ContextDir: wfDir,
@@ -280,10 +280,10 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		env = append(env, k+"="+v)
 	}
 
-	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, exec.ID, secrets, cacheBinds)
+	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, exec.ID.String(), secrets, cacheBinds)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
-	exec.FinishedAt = time.Now().UnixMilli()
+	exec.FinishedAt = new(time.Now())
 
 	status := stores.StatusSuccess
 	if canceled || ctx.Err() != nil {
@@ -296,7 +296,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	r.finish(ctx, exec, status, steps, exec.Error, project, setupLog, checkRunID)
 }
 
-func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, execID string) {
+func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, execID uuid.UUID) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -317,19 +317,19 @@ func (r *Runner) fail(ctx context.Context, exec stores.Execution, err error) {
 	r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), stores.Project{}, nil, 0)
 }
 
-func (r *Runner) finish(_ context.Context, exec stores.Execution, status string, steps []stores.StepResult, errMsg string, project stores.Project, setupLog *mask.Writer, checkRunID int64) {
+func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.Status, steps stores.Steps, errMsg string, project stores.Project, setupLog *mask.Writer, checkRunID int64) {
 	exec.Status = status
 	exec.Steps = steps
 	exec.Error = errMsg
-	if exec.FinishedAt == 0 {
-		exec.FinishedAt = time.Now().UnixMilli()
+	if exec.FinishedAt == nil {
+		exec.FinishedAt = new(time.Now())
 	}
 
 	persistCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = r.Store.UpdateExecution(persistCtx, exec)
 
-	if project.ID != "" {
+	if project.ID != uuid.Nil() {
 		r.updateCheckRun(persistCtx, project, exec, checkRunID, status, errMsg, setupLog)
 	}
 
@@ -338,9 +338,9 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status string,
 	}
 }
 
-func (r *Runner) loadVariables(ctx context.Context, projectID string) []stores.Variable {
-	global, _ := r.Store.ListVariables(ctx, "")
-	project, _ := r.Store.ListVariables(ctx, projectID)
+func (r *Runner) loadVariables(ctx context.Context, projectID uuid.UUID) []stores.Variable {
+	global, _ := r.Store.ListVariables(ctx, nil)
+	project, _ := r.Store.ListVariables(ctx, &projectID)
 	return append(global, project...)
 }
 
@@ -375,7 +375,7 @@ func prNumber(ref string) (int, bool) {
 }
 
 func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, log io.Writer) int64 {
-	if project.Provider != stores.ProviderGitHub || project.AuthSecret == "" || exec.CommitSHA == "" {
+	if project.Provider != stores.ProviderGithub || project.AuthSecret == "" || exec.CommitSHA == "" {
 		return 0
 	}
 	if _, ok := prNumber(exec.Ref); !ok {
@@ -399,7 +399,7 @@ func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exe
 		HeadSHA:    exec.CommitSHA,
 		Status:     &status,
 		StartedAt:  &gh.Timestamp{Time: time.Now()},
-		DetailsURL: r.detailsURL(exec.ID),
+		DetailsURL: r.detailsURL(exec.ID.String()),
 	})
 	if err != nil {
 		if log != nil {
@@ -410,8 +410,8 @@ func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exe
 	return checkRun.GetID()
 }
 
-func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, status, errMsg string, log io.Writer) {
-	if checkRunID == 0 || project.Provider != stores.ProviderGitHub || project.AuthSecret == "" {
+func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, status stores.Status, errMsg string, log io.Writer) {
+	if checkRunID == 0 || project.Provider != stores.ProviderGithub || project.AuthSecret == "" {
 		return
 	}
 	owner, repo, ok := github.ParseRepo(project.RepoURL)
@@ -440,14 +440,14 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 		}
 		return
 	}
-	logs := r.readLogs(exec.ID)
+	logs := r.readLogs(exec.ID.String())
 	completed := "completed"
 	_, _, err = client.Checks.UpdateCheckRun(ctx, owner, repo, checkRunID, gh.UpdateCheckRunOptions{
 		Name:        "pici/" + exec.Workflow,
 		Status:      &completed,
 		Conclusion:  &conclusion,
 		CompletedAt: &gh.Timestamp{Time: time.Now()},
-		DetailsURL:  r.detailsURL(exec.ID),
+		DetailsURL:  r.detailsURL(exec.ID.String()),
 		Output: &gh.CheckRunOutput{
 			Title:   &title,
 			Summary: &summary,
@@ -487,7 +487,7 @@ func (r *Runner) readLogs(execID string) string {
 	return s
 }
 
-func stepError(steps []stores.StepResult) string {
+func stepError(steps stores.Steps) string {
 	for _, s := range steps {
 		if s.Status == stores.StepStatusFailed {
 			return fmt.Sprintf("step %q failed: %s", s.Name, s.Error)
@@ -501,10 +501,10 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha stri
 		"CI=true",
 		"PICI=true",
 		"PICI_PROJECT=" + project.Name,
-		"PICI_PROJECT_ID=" + project.ID,
+		"PICI_PROJECT_ID=" + project.ID.String(),
 		"PICI_REPO_URL=" + project.RepoURL,
 		"PICI_WORKFLOW=" + exec.Workflow,
-		"PICI_EXECUTION_ID=" + exec.ID,
+		"PICI_EXECUTION_ID=" + exec.ID.String(),
 		"PICI_REF=" + exec.Ref,
 		"PICI_COMMIT_SHA=" + sha,
 		"PICI_REPO_DIR=" + mountPath,

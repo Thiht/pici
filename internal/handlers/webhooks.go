@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"uuid"
 
 	gh "github.com/google/go-github/v92/github"
 
@@ -56,10 +57,28 @@ type pullRequestPayload struct {
 }
 
 func (h *WebhooksHandler) GitHub(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -134,7 +153,7 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 }
 
 func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, ref, sha string, changed []string) {
-	dir := filepath.Join(h.workspaceDir, project.ID, "_discovery")
+	dir := filepath.Join(h.workspaceDir, project.ID.String(), "_discovery")
 	cloneRef := ref
 	if sha != "" {
 		cloneRef = sha
@@ -143,7 +162,7 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 		URL:  project.RepoURL,
 		Dir:  dir,
 		Ref:  cloneRef,
-		Auth: git.Auth{Type: project.AuthType, User: project.AuthUser, Secret: project.AuthSecret},
+		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
 	}
 	workflows, err := ci.DiscoverWorkflows(ctx, cloneCfg)
 	if err != nil {
@@ -203,10 +222,28 @@ type gitlabMergeRequest struct {
 }
 
 func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 
 	body, err := io.ReadAll(r.Body)

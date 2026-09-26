@@ -25,14 +25,14 @@ func NewProjectsHandler(store stores.Store, runner *ci.Runner, workspaceDir stri
 }
 
 type projectRequest struct {
-	Name          string `json:"name"`
-	RepoURL       string `json:"repo_url"`
-	Provider      string `json:"provider"`
-	AuthType      string `json:"auth_type"`
-	AuthUser      string `json:"auth_user"`
-	AuthSecret    string `json:"auth_secret"`
-	WebhookSecret string `json:"webhook_secret"`
-	DefaultBranch string `json:"default_branch"`
+	Name          string          `json:"name"`
+	RepoURL       string          `json:"repo_url"`
+	Provider      stores.Provider `json:"provider"`
+	AuthType      stores.AuthType `json:"auth_type"`
+	AuthUser      string          `json:"auth_user"`
+	AuthSecret    string          `json:"auth_secret"`
+	WebhookSecret string          `json:"webhook_secret"`
+	DefaultBranch string          `json:"default_branch"`
 }
 
 func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -52,9 +52,9 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Provider == "" {
 		switch {
 		case strings.Contains(req.RepoURL, "github.com"):
-			req.Provider = stores.ProviderGitHub
+			req.Provider = stores.ProviderGithub
 		case strings.Contains(req.RepoURL, "gitlab"):
-			req.Provider = stores.ProviderGitLab
+			req.Provider = stores.ProviderGitlab
 		default:
 			req.Provider = stores.ProviderGeneric
 		}
@@ -67,9 +67,9 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	now := time.Now().UnixMilli()
+	now := time.Now()
 	project, err := h.store.CreateProject(r.Context(), stores.Project{
-		ID:            uuid.New().String(),
+		ID:            uuid.New(),
 		Name:          req.Name,
 		RepoURL:       req.RepoURL,
 		Provider:      req.Provider,
@@ -98,19 +98,55 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 	render.JSON(w, http.StatusOK, project)
 }
 
 func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 
 	var req projectRequest
@@ -142,7 +178,7 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultBranch != "" {
 		project.DefaultBranch = req.DefaultBranch
 	}
-	project.UpdatedAt = time.Now().UnixMilli()
+	project.UpdatedAt = time.Now()
 
 	updated, err := h.store.UpdateProject(r.Context(), project)
 	if err != nil {
@@ -153,31 +189,71 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 	if err := h.store.DeleteProject(r.Context(), project.ID); err != nil {
-		writeStoreError(w, err)
+		if errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusNotFound, err)
+		} else {
+			render.Error(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *ProjectsHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
 	}
 
-	dir := h.workspaceDir + "/" + project.ID + "/_discovery"
+	dir := h.workspaceDir + "/" + project.ID.String() + "/_discovery"
 	cloneCfg := git.CloneConfig{
 		URL:  project.RepoURL,
 		Dir:  dir,
 		Ref:  project.DefaultBranch,
-		Auth: git.Auth{Type: project.AuthType, User: project.AuthUser, Secret: project.AuthSecret},
+		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
 	}
 	workflows, err := ci.DiscoverWorkflows(r.Context(), cloneCfg)
 	if err != nil {

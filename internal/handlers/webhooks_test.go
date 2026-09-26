@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"uuid"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -19,6 +20,8 @@ import (
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
+
+var testProjectID = uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
 func newWebhookServer(t *testing.T, repoURL, webhookSecret string) (*Handler, stores.Store) {
 	t.Helper()
@@ -29,15 +32,15 @@ func newWebhookServer(t *testing.T, repoURL, webhookSecret string) (*Handler, st
 	t.Cleanup(func() { _ = store.Close() })
 
 	project := stores.Project{
-		ID:            "proj-1",
+		ID:            testProjectID,
 		Name:          "demo",
 		RepoURL:       repoURL,
-		Provider:      stores.ProviderGitHub,
+		Provider:      stores.ProviderGithub,
 		AuthType:      stores.AuthTypeNone,
 		WebhookSecret: webhookSecret,
 		DefaultBranch: "master",
-		CreatedAt:     time.Now().UnixMilli(),
-		UpdatedAt:     time.Now().UnixMilli(),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 	if _, err := store.CreateProject(t.Context(), project); err != nil {
 		t.Fatalf("create project: %v", err)
@@ -103,7 +106,7 @@ func sendWebhook(t *testing.T, s *Handler, project, event, secret string, payloa
 	return rr
 }
 
-func enqueuedWorkflows(t *testing.T, store stores.Store, projectID string) []string {
+func enqueuedWorkflows(t *testing.T, store stores.Store, projectID uuid.UUID) []string {
 	t.Helper()
 	execs, err := store.ListExecutions(t.Context(), projectID, 100)
 	if err != nil {
@@ -159,7 +162,7 @@ func TestWebhookPushAllWorkflows(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	got := enqueuedWorkflows(t, store, "proj-1")
+	got := enqueuedWorkflows(t, store, testProjectID)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 workflows enqueued, got %v", got)
 	}
@@ -186,7 +189,7 @@ func TestWebhookPushPathFilter(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	got := enqueuedWorkflows(t, store, "proj-1")
+	got := enqueuedWorkflows(t, store, testProjectID)
 	if len(got) != 1 || got[0] != "build" {
 		t.Fatalf("expected only build workflow, got %v", got)
 	}
@@ -210,7 +213,7 @@ func TestWebhookPullRequest(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	execs, err := store.ListExecutions(t.Context(), "proj-1", 100)
+	execs, err := store.ListExecutions(t.Context(), testProjectID, 100)
 	if err != nil || len(execs) != 1 {
 		t.Fatalf("expected 1 execution, got %d (err=%v)", len(execs), err)
 	}
@@ -268,7 +271,7 @@ func TestWebhookGitLabPush(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	execs, err := store.ListExecutions(t.Context(), "proj-1", 100)
+	execs, err := store.ListExecutions(t.Context(), testProjectID, 100)
 	if err != nil || len(execs) != 1 {
 		t.Fatalf("expected 1 execution, got %d (err=%v)", len(execs), err)
 	}
@@ -308,7 +311,7 @@ func TestWebhookGitLabMergeRequest(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	execs, err := store.ListExecutions(t.Context(), "proj-1", 100)
+	execs, err := store.ListExecutions(t.Context(), testProjectID, 100)
 	if err != nil || len(execs) != 1 {
 		t.Fatalf("expected 1 execution, got %d (err=%v)", len(execs), err)
 	}

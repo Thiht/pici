@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/stores"
@@ -50,7 +51,7 @@ func (c *Collector) tick(ctx context.Context) {
 }
 
 func (c *Collector) cleanupWorkspaces(ctx context.Context) {
-	cutoff := time.Now().Add(-c.Keep).UnixMilli()
+	cutoff := time.Now().Add(-c.Keep)
 	projects, err := os.ReadDir(c.WorkspaceDir)
 	if err != nil {
 		return
@@ -82,7 +83,7 @@ func (c *Collector) cleanupWorkspaces(ctx context.Context) {
 }
 
 func (c *Collector) cleanupLogs(ctx context.Context) {
-	cutoff := time.Now().Add(-c.Keep).UnixMilli()
+	cutoff := time.Now().Add(-c.Keep)
 	entries, err := os.ReadDir(c.LogsDir)
 	if err != nil {
 		return
@@ -97,14 +98,18 @@ func (c *Collector) cleanupLogs(ctx context.Context) {
 	}
 }
 
-func (c *Collector) expired(ctx context.Context, execID string, cutoff int64) bool {
-	exec, err := c.Store.GetExecution(ctx, execID)
+func (c *Collector) expired(ctx context.Context, execID string, cutoff time.Time) bool {
+	id, err := uuid.Parse(execID)
+	if err != nil {
+		return true
+	}
+	exec, err := c.Store.GetExecution(ctx, id)
 	if err != nil {
 		return true
 	}
 	switch exec.Status {
 	case stores.StatusSuccess, stores.StatusFailed, stores.StatusCanceled:
-		return exec.FinishedAt > 0 && exec.FinishedAt < cutoff
+		return exec.FinishedAt != nil && exec.FinishedAt.Before(cutoff)
 	default:
 		return false
 	}

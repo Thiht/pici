@@ -88,12 +88,14 @@ An execution looks like:
   "status": "success",
   "trigger": "manual",
   "steps": [
-    { "name": "test", "status": "success", "exit_code": 0, "started_at": 0, "finished_at": 0 }
+    { "name": "test", "status": "success", "exit_code": 0, "started_at": "2026-09-26T14:00:00Z", "finished_at": "2026-09-26T14:00:05Z" }
   ],
-  "started_at": 0,
-  "finished_at": 0,
-  "created_at": 0
+  "started_at": "2026-09-26T14:00:00Z",
+  "finished_at": "2026-09-26T14:00:05Z",
+  "created_at": "2026-09-26T14:00:00Z"
 }
 ```
+
+Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
 `status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`.

@@ -5,12 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/cron"
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func SyncSchedule(ctx context.Context, store stores.Store, projectID, workflow, cronExpr string) error {
+func SyncSchedule(ctx context.Context, store stores.Store, projectID uuid.UUID, workflow, cronExpr string) error {
 	if cronExpr == "" {
 		return store.DeleteSchedule(ctx, projectID, workflow)
 	}
@@ -22,11 +23,11 @@ func SyncSchedule(ctx context.Context, store stores.Store, projectID, workflow, 
 		ProjectID: projectID,
 		Workflow:  workflow,
 		CronExpr:  cronExpr,
-		NextRunAt: next.UnixMilli(),
+		NextRunAt: next,
 	})
 }
 
-func SyncProjectSchedules(ctx context.Context, store stores.Store, projectID, cloneDir string) error {
+func SyncProjectSchedules(ctx context.Context, store stores.Store, projectID uuid.UUID, cloneDir string) error {
 	ciDir := filepath.Join(cloneDir, ".ci")
 	entries, err := os.ReadDir(ciDir)
 	if err != nil {

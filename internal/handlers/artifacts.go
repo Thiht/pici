@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -31,13 +32,22 @@ type artifact struct {
 }
 
 func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
-	execution, err := h.store.GetExecution(r.Context(), r.PathValue("id"))
+	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeStoreError(w, err)
+		render.Error(w, http.StatusNotFound, err)
+		return
+	}
+	execution, err := h.store.GetExecution(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusNotFound, err)
+		} else {
+			render.Error(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 
-	dir := h.runner.ArtifactDir(execution.ID)
+	dir := h.runner.ArtifactDir(execution.ID.String())
 	out := []artifact{}
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -67,9 +77,18 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 	step := r.PathValue("step")
 	rel := r.PathValue("path")
 
-	execution, err := h.store.GetExecution(r.Context(), id)
+	execID, err := uuid.Parse(id)
 	if err != nil {
-		writeStoreError(w, err)
+		render.Error(w, http.StatusNotFound, err)
+		return
+	}
+	execution, err := h.store.GetExecution(r.Context(), execID)
+	if err != nil {
+		if errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusNotFound, err)
+		} else {
+			render.Error(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 

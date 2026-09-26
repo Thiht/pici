@@ -11,7 +11,7 @@ import (
 
 type Scheduler struct {
 	Store    stores.Store
-	Trigger  func(ctx context.Context, project stores.Project, workflow, ref, trigger string) error
+	Trigger  func(ctx context.Context, project stores.Project, workflow, ref string, trigger stores.Trigger) error
 	Interval time.Duration
 }
 
@@ -32,7 +32,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) tick(ctx context.Context) {
-	due, err := s.Store.ListDueSchedules(ctx, time.Now().UnixMilli())
+	due, err := s.Store.ListDueSchedules(ctx, time.Now())
 	if err != nil {
 		log.Printf("scheduler: list due schedules: %v", err)
 		return
@@ -48,7 +48,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 			continue
 		}
 		if next, err := cron.Next(sch.CronExpr, time.Now()); err == nil {
-			sch.NextRunAt = next.UnixMilli()
+			sch.NextRunAt = next
 			_ = s.Store.UpsertSchedule(ctx, sch)
 		}
 	}

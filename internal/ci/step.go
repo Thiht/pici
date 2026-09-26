@@ -15,12 +15,12 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir, execID string, secrets, cacheBinds []string) ([]stores.StepResult, bool, bool) {
+func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir, execID string, secrets, cacheBinds []string) (stores.Steps, bool, bool) {
 	steps := cfg.Steps
 	order, err := orderSteps(steps)
 	if err != nil {
 		res := stores.StepResult{Name: "workflow", Status: stores.StepStatusFailed, Error: err.Error()}
-		return []stores.StepResult{res}, true, false
+		return stores.Steps{res}, true, false
 	}
 
 	pos := make(map[string]int, len(order))
@@ -38,7 +38,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	}
 
 	results := make([]stores.StepResult, len(steps))
-	statuses := make([]string, len(steps))
+	statuses := make([]stores.StepStatus, len(steps))
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -111,7 +111,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	}
 	wg.Wait()
 
-	out := make([]stores.StepResult, len(steps))
+	out := make(stores.Steps, len(steps))
 	for i, n := range order {
 		out[i] = results[pos[n]]
 	}
@@ -121,11 +121,11 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir, execID string, index int, secrets, cacheBinds []string) stores.StepResult {
 	logPath := r.StepLogPath(execID, index, step.Name)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
-		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: time.Now().UnixMilli()}
+		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
-		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: time.Now().UnixMilli()}
+		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}
 	mw := mask.NewWriter(file, secrets)
 	defer func() {
@@ -146,11 +146,11 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 			return res
 		}
 	}
-	return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: "unreachable", FinishedAt: time.Now().UnixMilli()}
+	return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: "unreachable", FinishedAt: new(time.Now())}
 }
 
 func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, logW *mask.Writer, cacheBinds []string) stores.StepResult {
-	res := stores.StepResult{Name: step.Name, Status: stores.StepStatusRunning, StartedAt: time.Now().UnixMilli()}
+	res := stores.StepResult{Name: step.Name, Status: stores.StepStatusRunning, StartedAt: new(time.Now())}
 	fmt.Fprintf(logW, "==> %s\n", step.Name)
 
 	cmd, err := r.stepCommand(wfDir, step)
@@ -158,7 +158,7 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 		fmt.Fprintf(logW, "command error: %v\n", err)
 		res.Status = stores.StepStatusFailed
 		res.Error = err.Error()
-		res.FinishedAt = time.Now().UnixMilli()
+		res.FinishedAt = new(time.Now())
 		return res
 	}
 
@@ -183,7 +183,7 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 		Logs:       logW,
 		Timeout:    timeout,
 	})
-	res.FinishedAt = time.Now().UnixMilli()
+	res.FinishedAt = new(time.Now())
 	res.ExitCode = code
 
 	switch {

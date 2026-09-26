@@ -1,14 +1,11 @@
 package handlers
 
 import (
-	"context"
-	"errors"
 	"net/http"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
-	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -71,23 +68,4 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/webhooks/gitlab/{id}", h.webhooks.GitLab)
 
 	return middlewares.Log(middlewares.Auth(h.apiToken, mux))
-}
-
-func resolveProject(ctx context.Context, store stores.Store, idOrName string) (stores.Project, error) {
-	project, err := store.GetProject(ctx, idOrName)
-	if err == nil {
-		return project, nil
-	}
-	if !errors.Is(err, stores.ErrNotFound) {
-		return stores.Project{}, err
-	}
-	return store.GetProjectByName(ctx, idOrName)
-}
-
-func writeStoreError(w http.ResponseWriter, err error) {
-	if errors.Is(err, stores.ErrNotFound) {
-		render.Error(w, http.StatusNotFound, err)
-		return
-	}
-	render.Error(w, http.StatusInternalServerError, err)
 }

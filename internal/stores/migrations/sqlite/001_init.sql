@@ -3,53 +3,54 @@ CREATE TABLE IF NOT EXISTS projects (
     id             TEXT PRIMARY KEY,
     name           TEXT NOT NULL UNIQUE,
     repo_url       TEXT NOT NULL,
-    provider       TEXT NOT NULL DEFAULT 'generic',
-    auth_type      TEXT NOT NULL DEFAULT 'none',
+    provider       TEXT NOT NULL DEFAULT 'generic' CHECK (provider IN ('github', 'gitlab', 'generic')),
+    auth_type      TEXT NOT NULL DEFAULT 'none' CHECK (auth_type IN ('none', 'token', 'ssh')),
     auth_user      TEXT NOT NULL DEFAULT '',
     auth_secret    TEXT NOT NULL DEFAULT '',
     webhook_secret TEXT NOT NULL DEFAULT '',
     default_branch TEXT NOT NULL DEFAULT '',
-    created_at     BIGINT NOT NULL,
-    updated_at     BIGINT NOT NULL
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS variables (
-    project_id TEXT NOT NULL DEFAULT '',
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
     key        TEXT NOT NULL,
     value      TEXT NOT NULL,
-    secret     BIGINT NOT NULL DEFAULT 0,
-    PRIMARY KEY (project_id, key)
+    secret     INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variables_global_key ON variables(key) WHERE project_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variables_project_key ON variables(project_id, key) WHERE project_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS executions (
     id                TEXT PRIMARY KEY,
-    project_id        TEXT NOT NULL,
+    project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     workflow          TEXT NOT NULL,
     ref               TEXT NOT NULL DEFAULT '',
     commit_sha        TEXT NOT NULL DEFAULT '',
-    status            TEXT NOT NULL DEFAULT 'pending',
-    trigger           TEXT NOT NULL DEFAULT 'manual',
-    steps_json        TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'success', 'failed', 'canceled')),
+    trigger           TEXT NOT NULL DEFAULT 'manual' CHECK (trigger IN ('manual', 'webhook', 'cron', 'rebuild')),
+    steps_json        TEXT NOT NULL DEFAULT '[]',
     error             TEXT NOT NULL DEFAULT '',
-    started_at        BIGINT NOT NULL DEFAULT 0,
-    finished_at       BIGINT NOT NULL DEFAULT 0,
-    created_at        BIGINT NOT NULL,
+    started_at        INTEGER,
+    finished_at       INTEGER,
+    created_at        INTEGER NOT NULL,
     claimed_by        TEXT NOT NULL DEFAULT '',
-    cancel_requested  BIGINT NOT NULL DEFAULT 0,
+    cancel_requested  INTEGER NOT NULL DEFAULT 0,
     concurrency_group TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
-    project_id  TEXT NOT NULL,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     workflow    TEXT NOT NULL,
     cron_expr   TEXT NOT NULL,
-    next_run_at BIGINT NOT NULL,
+    next_run_at INTEGER NOT NULL,
     PRIMARY KEY (project_id, workflow)
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_project ON executions(project_id);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
-CREATE INDEX IF NOT EXISTS idx_variables_project ON variables(project_id);
 
 -- +goose Down
 DROP TABLE IF EXISTS schedules;

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"uuid"
 )
 
 type Client struct {
@@ -67,58 +68,58 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 }
 
 type Project struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	RepoURL       string `json:"repo_url"`
-	Provider      string `json:"provider"`
-	AuthType      string `json:"auth_type"`
-	AuthUser      string `json:"auth_user"`
-	DefaultBranch string `json:"default_branch"`
-	CreatedAt     int64  `json:"created_at"`
-	UpdatedAt     int64  `json:"updated_at"`
+	ID            uuid.UUID `json:"id"`
+	Name          string    `json:"name"`
+	RepoURL       string    `json:"repo_url"`
+	Provider      Provider  `json:"provider"`
+	AuthType      AuthType  `json:"auth_type"`
+	AuthUser      string    `json:"auth_user"`
+	DefaultBranch string    `json:"default_branch"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type CreateProjectRequest struct {
-	Name          string `json:"name"`
-	RepoURL       string `json:"repo_url"`
-	Provider      string `json:"provider,omitempty"`
-	AuthType      string `json:"auth_type,omitempty"`
-	AuthUser      string `json:"auth_user,omitempty"`
-	AuthSecret    string `json:"auth_secret,omitempty"`
-	WebhookSecret string `json:"webhook_secret,omitempty"`
-	DefaultBranch string `json:"default_branch,omitempty"`
+	Name          string   `json:"name"`
+	RepoURL       string   `json:"repo_url"`
+	Provider      Provider `json:"provider,omitempty"`
+	AuthType      AuthType `json:"auth_type,omitempty"`
+	AuthUser      string   `json:"auth_user,omitempty"`
+	AuthSecret    string   `json:"auth_secret,omitempty"`
+	WebhookSecret string   `json:"webhook_secret,omitempty"`
+	DefaultBranch string   `json:"default_branch,omitempty"`
 }
 
 type Variable struct {
-	ProjectID string `json:"project_id"`
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	Secret    bool   `json:"secret"`
+	ProjectID *uuid.UUID `json:"project_id"`
+	Key       string     `json:"key"`
+	Value     string     `json:"value"`
+	Secret    bool       `json:"secret"`
 }
 
 type StepResult struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	StartedAt  int64  `json:"started_at"`
-	FinishedAt int64  `json:"finished_at"`
-	ExitCode   int    `json:"exit_code"`
-	Error      string `json:"error,omitempty"`
+	Name       string     `json:"name"`
+	Status     StepStatus `json:"status"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ExitCode   int        `json:"exit_code"`
+	Error      string     `json:"error,omitempty"`
 }
 
 type Execution struct {
-	ID         string       `json:"id"`
-	ProjectID  string       `json:"project_id"`
+	ID         uuid.UUID    `json:"id"`
+	ProjectID  uuid.UUID    `json:"project_id"`
 	Project    string       `json:"project,omitempty"`
 	Workflow   string       `json:"workflow"`
 	Ref        string       `json:"ref"`
 	CommitSHA  string       `json:"commit_sha"`
-	Status     string       `json:"status"`
-	Trigger    string       `json:"trigger"`
+	Status     Status       `json:"status"`
+	Trigger    Trigger      `json:"trigger"`
 	Steps      []StepResult `json:"steps,omitempty"`
 	Error      string       `json:"error,omitempty"`
-	StartedAt  int64        `json:"started_at"`
-	FinishedAt int64        `json:"finished_at"`
-	CreatedAt  int64        `json:"created_at"`
+	StartedAt  *time.Time   `json:"started_at,omitempty"`
+	FinishedAt *time.Time   `json:"finished_at,omitempty"`
+	CreatedAt  time.Time    `json:"created_at"`
 }
 
 type Artifact struct {

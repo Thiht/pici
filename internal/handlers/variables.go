@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -24,19 +25,37 @@ type variableRequest struct {
 }
 
 func (h *VariablesHandler) SetProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
-	h.set(w, r, project.ID)
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
+	}
+	h.set(w, r, &project.ID)
 }
 
 func (h *VariablesHandler) SetGlobal(w http.ResponseWriter, r *http.Request) {
-	h.set(w, r, "")
+	h.set(w, r, nil)
 }
 
-func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID string) {
+func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID) {
 	var req variableRequest
 	if err := bind.JSON(r.Body, &req); err != nil {
 		render.Error(w, http.StatusBadRequest, err)
@@ -56,19 +75,37 @@ func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID
 }
 
 func (h *VariablesHandler) ListProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
-	h.list(w, r, project.ID)
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
+	}
+	h.list(w, r, &project.ID)
 }
 
 func (h *VariablesHandler) ListGlobal(w http.ResponseWriter, r *http.Request) {
-	h.list(w, r, "")
+	h.list(w, r, nil)
 }
 
-func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectID string) {
+func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID) {
 	variables, err := h.store.ListVariables(r.Context(), projectID)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
@@ -82,19 +119,37 @@ func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectI
 }
 
 func (h *VariablesHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	idOrName := r.PathValue("id")
+	var project stores.Project
+	if id, err := uuid.Parse(idOrName); err == nil {
+		p, err := h.store.GetProject(r.Context(), id)
+		if err == nil {
+			project = p
+		} else if !errors.Is(err, stores.ErrNotFound) {
+			render.Error(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
-	h.delete(w, r, project.ID, r.PathValue("key"))
+	if project.ID == uuid.Nil() {
+		p, err := h.store.GetProjectByName(r.Context(), idOrName)
+		if err != nil {
+			if errors.Is(err, stores.ErrNotFound) {
+				render.Error(w, http.StatusNotFound, err)
+			} else {
+				render.Error(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		project = p
+	}
+	h.delete(w, r, &project.ID, r.PathValue("key"))
 }
 
 func (h *VariablesHandler) DeleteGlobal(w http.ResponseWriter, r *http.Request) {
-	h.delete(w, r, "", r.PathValue("key"))
+	h.delete(w, r, nil, r.PathValue("key"))
 }
 
-func (h *VariablesHandler) delete(w http.ResponseWriter, r *http.Request, projectID, key string) {
+func (h *VariablesHandler) delete(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID, key string) {
 	if err := h.store.DeleteVariable(r.Context(), projectID, key); err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
