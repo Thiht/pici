@@ -18,7 +18,8 @@ info:
     ## Path parameters
 
     `{id}` on project routes accepts either the project **UUID** or its **name**.
-    `{id}` on execution routes always expects a UUID.
+    Execution routes are nested under a project and use `{executionID}`, a
+    per-project auto-incrementing number.
 servers:
   - url: "{scheme}://{host}:{port}"
     description: pici server (editable from Swagger UI)
@@ -451,8 +452,9 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/executions/{id}:
+  /api/projects/{id}/executions/{executionID}:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     get:
       tags: [Executions]
@@ -470,8 +472,9 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/executions/{id}/logs:
+  /api/projects/{id}/executions/{executionID}/logs:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     get:
       tags: [Executions]
@@ -488,8 +491,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/executions/{id}/logs/stream:
+  /api/projects/{id}/executions/{executionID}/logs/stream:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     get:
       tags: [Executions]
@@ -509,8 +513,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/executions/{id}/steps/{step}/logs:
+  /api/projects/{id}/executions/{executionID}/steps/{step}/logs:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
       - $ref: "#/components/parameters/Step"
     get:
@@ -527,8 +532,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/executions/{id}/cancel:
+  /api/projects/{id}/executions/{executionID}/cancel:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     post:
       tags: [Executions]
@@ -550,8 +556,9 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/executions/{id}/rebuild:
+  /api/projects/{id}/executions/{executionID}/rebuild:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     post:
       tags: [Executions]
@@ -569,8 +576,9 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/executions/{id}/artifacts:
+  /api/projects/{id}/executions/{executionID}/artifacts:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     get:
       tags: [Artifacts]
@@ -590,8 +598,9 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/executions/{id}/artifacts/{step}/{path}:
+  /api/projects/{id}/executions/{executionID}/artifacts/{step}/{path}:
     parameters:
+      - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
       - $ref: "#/components/parameters/Step"
       - name: path
@@ -740,7 +749,7 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: 'Send the API token as `Authorization: Bearer <token>`.'
+      description: "Send the API token as `Authorization: Bearer <token>`."
     ApiToken:
       type: apiKey
       in: header
@@ -756,13 +765,13 @@ components:
       schema:
         type: string
     ExecutionId:
-      name: id
+      name: executionID
       in: path
       required: true
-      description: Execution ID
+      description: Per-project execution number
       schema:
-        type: string
-        format: uuid
+        type: integer
+        format: int64
     Key:
       name: key
       in: path
@@ -856,7 +865,8 @@ components:
 
     Project:
       type: object
-      required: [id, name, repo_url, provider, auth_type, created_at, updated_at]
+      required:
+        [id, name, repo_url, provider, auth_type, created_at, updated_at]
       properties:
         id:
           type: string
@@ -978,11 +988,12 @@ components:
 
     Execution:
       type: object
-      required: [id, project_id, workflow, ref, commit_sha, status, trigger, created_at]
+      required:
+        [id, project_id, workflow, ref, commit_sha, status, trigger, created_at]
       properties:
         id:
-          type: string
-          format: uuid
+          type: integer
+          format: int64
         project_id:
           type: string
           format: uuid

@@ -9,13 +9,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/mask"
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir, execID string, secrets, cacheBinds []string) (stores.Steps, bool, bool) {
+func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string) (stores.Steps, bool, bool) {
 	steps := cfg.Steps
 	order, err := orderSteps(steps)
 	if err != nil {
@@ -71,7 +72,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 			case ctx.Err() != nil:
 				res = stores.StepResult{Name: name, Status: stores.StepStatusCanceled, Error: "canceled"}
 			default:
-				res = r.runStep(ctx, step, baseEnv, image, repoDir, wfDir, execID, i, secrets, cacheBinds)
+				res = r.runStep(ctx, step, baseEnv, image, repoDir, wfDir, projectID, execID, i, secrets, cacheBinds)
 			}
 
 			mu.Lock()
@@ -118,8 +119,8 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	return out, failed, canceled
 }
 
-func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir, execID string, index int, secrets, cacheBinds []string) stores.StepResult {
-	logPath := r.StepLogPath(execID, index, step.Name)
+func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, index int, secrets, cacheBinds []string) stores.StepResult {
+	logPath := r.StepLogPath(projectID, execID, index, step.Name)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}
@@ -141,7 +142,7 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 		res := r.runStepOnce(ctx, step, baseEnv, image, repoDir, wfDir, mw, cacheBinds)
 		if res.Status == stores.StepStatusSuccess || attempt == attempts || ctx.Err() != nil {
 			if res.Status == stores.StepStatusSuccess {
-				r.collectArtifacts(execID, index, step.Artifacts, repoDir)
+				r.collectArtifacts(projectID, execID, index, step.Artifacts, repoDir)
 			}
 			return res
 		}

@@ -37,17 +37,17 @@ type Store interface {
 	GetVariable(ctx context.Context, projectID *uuid.UUID, key string) (Variable, error)
 	DeleteVariable(ctx context.Context, projectID *uuid.UUID, key string) error
 
-	CreateExecution(ctx context.Context, e Execution) error
+	CreateExecution(ctx context.Context, e *Execution) error
 	UpdateExecution(ctx context.Context, e Execution) error
-	GetExecution(ctx context.Context, id uuid.UUID) (Execution, error)
+	GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error)
 	ListExecutions(ctx context.Context, projectID uuid.UUID, limit int) ([]Execution, error)
 
 	ClaimPendingExecution(ctx context.Context, workerID string) (Execution, error)
 	RequeueOrphanedExecutions(ctx context.Context) error
-	SetCancelRequested(ctx context.Context, id uuid.UUID) error
-	IsCancelRequested(ctx context.Context, id uuid.UUID) (bool, error)
+	SetCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) error
+	IsCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) (bool, error)
 	CountPendingExecutions(ctx context.Context) (int, error)
-	CancelRunningInGroup(ctx context.Context, projectID uuid.UUID, group string, excludeID uuid.UUID) error
+	CancelRunningInGroup(ctx context.Context, projectID uuid.UUID, group string, excludeID int64) error
 
 	UpsertSchedule(ctx context.Context, s Schedule) error
 	DeleteSchedule(ctx context.Context, projectID uuid.UUID, workflow string) error

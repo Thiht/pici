@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"uuid"
 )
 
 func TestCacheBinds(t *testing.T) {
@@ -47,13 +48,14 @@ func TestCollectArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.collectArtifacts("exec1", 0, []string{"dist/**"}, repoDir)
+	projectID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	r.collectArtifacts(projectID, 1, 0, []string{"dist/**"}, repoDir)
 
-	got := filepath.Join(r.ArtifactDir("exec1"), "000", "dist", "app")
+	got := filepath.Join(r.ArtifactDir(projectID, 1), "000", "dist", "app")
 	if _, err := os.Stat(got); err != nil {
 		t.Fatalf("expected artifact at %s: %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(r.ArtifactDir("exec1"), "000", "other.txt")); err == nil {
+	if _, err := os.Stat(filepath.Join(r.ArtifactDir(projectID, 1), "000", "other.txt")); err == nil {
 		t.Fatal("other.txt should not have been collected")
 	}
 }

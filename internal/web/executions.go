@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"uuid"
 
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -63,7 +62,7 @@ func (h *Handler) ExecutionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlash(w, "success", "Execution queued.")
-	redirect(w, r, "/executions/"+execution.ID.String())
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ID, 10))
 }
 
 func (h *Handler) ExecutionShow(w http.ResponseWriter, r *http.Request) {
@@ -75,32 +74,32 @@ func (h *Handler) ExecutionShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executionPage, error) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		h.notFound(w, r)
-		return executionPage{}, err
-	}
-	execution, err := h.store.GetExecution(r.Context(), id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return executionPage{}, err
 	}
-	project, err := h.store.GetProject(r.Context(), execution.ProjectID)
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		h.notFound(w, r)
+		return executionPage{}, err
+	}
+	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		h.storeError(w, r, err)
 		return executionPage{}, err
 	}
 	steps := make([]stepView, len(execution.Steps))
 	for i, sr := range execution.Steps {
-		steps[i] = stepView{Index: i, StepResult: sr, Logs: readFile(h.runner.StepLogPath(id.String(), i, sr.Name))}
+		steps[i] = stepView{Index: i, StepResult: sr, Logs: readFile(h.runner.StepLogPath(project.ID, id, i, sr.Name))}
 	}
 	return executionPage{
-		base:      h.base(w, r, "Execution", "projects"),
+		base:      h.base(w, r, "Execution #"+strconv.FormatInt(id, 10), "projects"),
 		Execution: execution,
 		Project:   project,
 		Artifacts: h.listArtifacts(execution),
 		Steps:     steps,
-		SetupLog:  readFile(h.runner.SetupLogPath(id.String())),
+		SetupLog:  readFile(h.runner.SetupLogPath(project.ID, id)),
 		Running:   execution.Status == stores.StatusRunning || execution.Status == stores.StatusPending,
 	}, nil
 }
@@ -114,17 +113,22 @@ func readFile(path string) string {
 }
 
 func (h *Handler) ExecutionLogs(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
 		h.notFound(w, r)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), uuid.MustParse(id)); err != nil {
+	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
 		h.storeError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	for _, path := range h.runner.LogPaths(id) {
+	for _, path := range h.runner.LogPaths(project.ID, id) {
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -135,13 +139,18 @@ func (h *Handler) ExecutionLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		h.notFound(w, r)
 		return
 	}
 	step := r.PathValue("step")
-	execution, err := h.store.GetExecution(r.Context(), id)
+	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -151,7 +160,7 @@ func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	f, err := os.Open(h.runner.StepLogPath(id.String(), index, step))
+	f, err := os.Open(h.runner.StepLogPath(project.ID, id, index, step))
 	if err != nil {
 		h.notFound(w, r)
 		return
@@ -166,22 +175,27 @@ func (h *Handler) ExecutionCancel(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		h.notFound(w, r)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), id); err != nil {
+	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), id); err != nil {
+	if err := h.store.SetCancelRequested(r.Context(), project.ID, id); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.runner.Cancel(id)
+	h.runner.Cancel(project.ID, id)
 	setFlash(w, "success", "Cancellation requested.")
-	redirect(w, r, "/executions/"+id.String())
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 }
 
 func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
@@ -189,17 +203,17 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		h.notFound(w, r)
-		return
-	}
-	previous, err := h.store.GetExecution(r.Context(), id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	project, err := h.store.GetProject(r.Context(), previous.ProjectID)
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		h.notFound(w, r)
+		return
+	}
+	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -210,17 +224,21 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlash(w, "success", "Rebuild queued.")
-	redirect(w, r, "/executions/"+execution.ID.String())
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ID, 10))
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	execID, err := uuid.Parse(id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	execID, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		h.notFound(w, r)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), execID)
+	execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -230,7 +248,7 @@ func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	dir := filepath.Join(h.runner.ArtifactDir(id), fmt.Sprintf("%03d", index))
+	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execID), fmt.Sprintf("%03d", index))
 	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(r.PathValue("path"))))
 	if full != dir && !strings.HasPrefix(full, dir+string(filepath.Separator)) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
@@ -245,7 +263,7 @@ func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listArtifacts(execution stores.Execution) []artifact {
-	dir := h.runner.ArtifactDir(execution.ID.String())
+	dir := h.runner.ArtifactDir(execution.ProjectID, execution.ID)
 	out := []artifact{}
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

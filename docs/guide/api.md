@@ -40,27 +40,29 @@ The full API is also available as an [interactive OpenAPI reference](/guide/api-
 
 ## Executions
 
-| Method | Path                                     | Description                 |
-| ------ | ---------------------------------------- | --------------------------- |
-| `POST` | `/api/projects/{id}/executions`          | trigger a run               |
-| `GET`  | `/api/projects/{id}/executions`          | list executions             |
-| `GET`  | `/api/executions/{id}`                   | get an execution            |
-| `GET`  | `/api/executions/{id}/logs`              | combined logs               |
-| `GET`  | `/api/executions/{id}/logs/stream`       | stream logs over SSE        |
-| `GET`  | `/api/executions/{id}/steps/{step}/logs` | a single step's logs        |
-| `POST` | `/api/executions/{id}/cancel`            | cancel a running execution  |
-| `POST` | `/api/executions/{id}/rebuild`           | re-run with the same commit |
+Execution `{executionID}` is a per-project auto-incrementing number.
+
+| Method | Path                                                            | Description                 |
+| ------ | --------------------------------------------------------------- | --------------------------- |
+| `POST` | `/api/projects/{id}/executions`                                 | trigger a run               |
+| `GET`  | `/api/projects/{id}/executions`                                 | list executions             |
+| `GET`  | `/api/projects/{id}/executions/{executionID}`                   | get an execution            |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/logs`              | combined logs               |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/logs/stream`       | stream logs over SSE        |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/steps/{step}/logs` | a single step's logs        |
+| `POST` | `/api/projects/{id}/executions/{executionID}/cancel`            | cancel a running execution  |
+| `POST` | `/api/projects/{id}/executions/{executionID}/rebuild`           | re-run with the same commit |
 
 ## Artifacts
 
-| Method | Path                                           | Description              |
-| ------ | ---------------------------------------------- | ------------------------ |
-| `GET`  | `/api/executions/{id}/artifacts`               | list collected artifacts |
-| `GET`  | `/api/executions/{id}/artifacts/{step}/{path}` | download an artifact     |
+| Method | Path                                                                  | Description              |
+| ------ | --------------------------------------------------------------------- | ------------------------ |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/artifacts`               | list collected artifacts |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/artifacts/{step}/{path}` | download an artifact     |
 
 ```sh
-pici-cli artifacts <id>
-pici-cli artifacts get <id> build/dist/app.tar.gz
+pici-cli artifacts demo 42
+pici-cli artifacts get demo 42 build/dist/app.tar.gz
 ```
 
 ## Cache
@@ -69,11 +71,11 @@ Docker resources tied to a project: workflow images built by pici and the cross-
 cache volumes declared in `ci.yml`. Sizes are read from the Docker daemon; listing
 returns `503` when Docker is unavailable.
 
-| Method   | Path                                     | Description                    |
-| -------- | ---------------------------------------- | ------------------------------ |
-| `GET`    | `/api/projects/{id}/cache`               | list images and cache volumes  |
-| `DELETE` | `/api/projects/{id}/cache/images`        | remove a built image (`?reference=`) |
-| `DELETE` | `/api/projects/{id}/cache/volumes`       | remove a cache volume (`?name=`) |
+| Method   | Path                               | Description                          |
+| -------- | ---------------------------------- | ------------------------------------ |
+| `GET`    | `/api/projects/{id}/cache`         | list images and cache volumes        |
+| `DELETE` | `/api/projects/{id}/cache/images`  | remove a built image (`?reference=`) |
+| `DELETE` | `/api/projects/{id}/cache/volumes` | remove a cache volume (`?name=`)     |
 
 ```sh
 pici-cli cache demo
@@ -84,7 +86,7 @@ pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 ## Streaming logs (SSE)
 
 ```sh
-pici-cli logs <id> --follow
+pici-cli logs demo 42 --follow
 ```
 
 Events are labeled by source (`setup` or the step name); a final `done` event carries the execution status.
@@ -103,7 +105,7 @@ An execution looks like:
 
 ```json
 {
-  "id": "…",
+  "id": 42,
   "project_id": "…",
   "workflow": "build",
   "ref": "main",

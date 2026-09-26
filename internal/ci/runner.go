@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,11 @@ import (
 
 const maxParallelSteps = 8
 
+type execKey struct {
+	projectID uuid.UUID
+	id        int64
+}
+
 type Runner struct {
 	Store              stores.Store
 	Engine             *docker.Engine
@@ -36,7 +42,7 @@ type Runner struct {
 
 	workerID string
 	mu       sync.Mutex
-	cancels  map[uuid.UUID]context.CancelFunc
+	cancels  map[execKey]context.CancelFunc
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
@@ -48,7 +54,7 @@ func (r *Runner) Start(workers int) {
 	}
 	r.mu.Lock()
 	if r.cancels == nil {
-		r.cancels = make(map[uuid.UUID]context.CancelFunc)
+		r.cancels = make(map[execKey]context.CancelFunc)
 	}
 	if r.stopCh == nil {
 		r.stopCh = make(chan struct{})
@@ -82,12 +88,13 @@ func (r *Runner) workerLoop() {
 			continue
 		}
 
+		key := execKey{exec.ProjectID, exec.ID}
 		r.wg.Add(1)
 		runCtx, cancel := context.WithCancel(context.Background())
-		r.registerCancel(exec.ID, cancel)
+		r.registerCancel(key, cancel)
 		r.run(runCtx, exec)
 		cancel()
-		r.unregisterCancel(exec.ID)
+		r.unregisterCancel(key)
 		r.wg.Done()
 	}
 }
@@ -117,21 +124,21 @@ func (r *Runner) cancelAll() {
 	r.mu.Unlock()
 }
 
-func (r *Runner) registerCancel(id uuid.UUID, cancel context.CancelFunc) {
+func (r *Runner) registerCancel(key execKey, cancel context.CancelFunc) {
 	r.mu.Lock()
-	r.cancels[id] = cancel
+	r.cancels[key] = cancel
 	r.mu.Unlock()
 }
 
-func (r *Runner) unregisterCancel(id uuid.UUID) {
+func (r *Runner) unregisterCancel(key execKey) {
 	r.mu.Lock()
-	delete(r.cancels, id)
+	delete(r.cancels, key)
 	r.mu.Unlock()
 }
 
-func (r *Runner) Cancel(execID uuid.UUID) {
+func (r *Runner) Cancel(projectID uuid.UUID, execID int64) {
 	r.mu.Lock()
-	cancel := r.cancels[execID]
+	cancel := r.cancels[execKey{projectID, execID}]
 	r.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -140,7 +147,6 @@ func (r *Runner) Cancel(execID uuid.UUID) {
 
 func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger) (stores.Execution, error) {
 	exec := stores.Execution{
-		ID:        uuid.New(),
 		ProjectID: project.ID,
 		Project:   project.Name,
 		Workflow:  workflow,
@@ -150,7 +156,7 @@ func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, 
 		Trigger:   trigger,
 		CreatedAt: time.Now(),
 	}
-	if err := r.Store.CreateExecution(ctx, exec); err != nil {
+	if err := r.Store.CreateExecution(ctx, &exec); err != nil {
 		return stores.Execution{}, err
 	}
 	return exec, nil
@@ -166,7 +172,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		return
 	}
 
-	go r.watchCancel(ctx, cancel, exec.ID)
+	go r.watchCancel(ctx, cancel, project.ID, exec.ID)
 
 	exec.Status = stores.StatusRunning
 	_ = r.Store.UpdateExecution(ctx, exec)
@@ -174,12 +180,12 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	vars := r.loadVariables(ctx, project.ID)
 	secrets := collectSecrets(vars, project)
 
-	logDir := r.LogDir(exec.ID.String())
+	logDir := r.LogDir(project.ID, exec.ID)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		r.fail(ctx, exec, err)
 		return
 	}
-	setupFile, err := os.OpenFile(r.SetupLogPath(exec.ID.String()), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	setupFile, err := os.OpenFile(r.SetupLogPath(project.ID, exec.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		r.fail(ctx, exec, err)
 		return
@@ -192,7 +198,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 
 	fmt.Fprintf(setupLog, "pici: starting workflow %q on %s\n", exec.Workflow, exec.Ref)
 
-	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), exec.ID.String())
+	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(exec.ID, 10))
 	cloneRef := exec.Ref
 	if exec.CommitSHA != "" {
 		cloneRef = exec.CommitSHA
@@ -274,7 +280,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}
 
 	exec.SetupFinishedAt = new(time.Now())
-	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, exec.ID.String(), secrets, cacheBinds)
+	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
 	exec.FinishedAt = new(time.Now())
@@ -290,7 +296,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	r.finish(ctx, exec, status, steps, exec.Error, project, setupLog, checkRunID)
 }
 
-func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, execID uuid.UUID) {
+func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, projectID uuid.UUID, execID int64) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -298,7 +304,7 @@ func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, exe
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ok, err := r.Store.IsCancelRequested(context.Background(), execID)
+			ok, err := r.Store.IsCancelRequested(context.Background(), projectID, execID)
 			if err == nil && ok {
 				cancel()
 				return
@@ -380,7 +386,7 @@ func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exe
 		HeadSHA:    exec.CommitSHA,
 		Status:     &status,
 		StartedAt:  &gh.Timestamp{Time: time.Now()},
-		DetailsURL: r.detailsURL(exec.ID.String()),
+		DetailsURL: r.detailsURL(project.ID, exec.ID),
 	})
 	if err != nil {
 		if log != nil {
@@ -421,14 +427,14 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 		}
 		return
 	}
-	logs := r.readLogs(exec.ID.String())
+	logs := r.readLogs(project.ID, exec.ID)
 	completed := "completed"
 	_, _, err = client.Checks.UpdateCheckRun(ctx, owner, repo, checkRunID, gh.UpdateCheckRunOptions{
 		Name:        "pici/" + exec.Workflow,
 		Status:      &completed,
 		Conclusion:  &conclusion,
 		CompletedAt: &gh.Timestamp{Time: time.Now()},
-		DetailsURL:  r.detailsURL(exec.ID.String()),
+		DetailsURL:  r.detailsURL(project.ID, exec.ID),
 		Output: &gh.CheckRunOutput{
 			Title:   &title,
 			Summary: &summary,
@@ -440,18 +446,18 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 	}
 }
 
-func (r *Runner) detailsURL(execID string) *string {
+func (r *Runner) detailsURL(projectID uuid.UUID, execID int64) *string {
 	if r.PublicBaseURL == "" {
 		return nil
 	}
-	url := strings.TrimRight(r.PublicBaseURL, "/") + "/api/executions/" + execID
+	url := strings.TrimRight(r.PublicBaseURL, "/") + "/api/projects/" + projectID.String() + "/executions/" + strconv.FormatInt(execID, 10)
 	return &url
 }
 
-func (r *Runner) readLogs(execID string) string {
+func (r *Runner) readLogs(projectID uuid.UUID, execID int64) string {
 	const max = 60000
 	var b strings.Builder
-	for _, path := range r.LogPaths(execID) {
+	for _, path := range r.LogPaths(projectID, execID) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -486,7 +492,7 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, ver
 		"PICI_REPO_URL=" + project.RepoURL,
 		"PICI_REPO_SLUG=" + github.RepoSlug(project.RepoURL),
 		"PICI_WORKFLOW=" + exec.Workflow,
-		"PICI_EXECUTION_ID=" + exec.ID.String(),
+		"PICI_EXECUTION_ID=" + strconv.FormatInt(exec.ID, 10),
 		"PICI_REF=" + exec.Ref,
 		"PICI_VERSION=" + version,
 		"PICI_COMMIT_SHA=" + sha,

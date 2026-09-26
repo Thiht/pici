@@ -5,28 +5,30 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"uuid"
 )
 
-func (r *Runner) LogDir(execID string) string {
-	return filepath.Join(r.LogsDir, execID)
+func (r *Runner) LogDir(projectID uuid.UUID, execID int64) string {
+	return filepath.Join(r.LogsDir, projectID.String(), strconv.FormatInt(execID, 10))
 }
 
-func (r *Runner) SetupLogPath(execID string) string {
-	return filepath.Join(r.LogDir(execID), "setup.log")
+func (r *Runner) SetupLogPath(projectID uuid.UUID, execID int64) string {
+	return filepath.Join(r.LogDir(projectID, execID), "setup.log")
 }
 
-func (r *Runner) StepLogPath(execID string, index int, name string) string {
-	return filepath.Join(r.LogDir(execID), "steps", fmt.Sprintf("%03d_%s.log", index, sanitizeLogName(name)))
+func (r *Runner) StepLogPath(projectID uuid.UUID, execID int64, index int, name string) string {
+	return filepath.Join(r.LogDir(projectID, execID), "steps", fmt.Sprintf("%03d_%s.log", index, sanitizeLogName(name)))
 }
 
-func (r *Runner) LogPaths(execID string) []string {
+func (r *Runner) LogPaths(projectID uuid.UUID, execID int64) []string {
 	var out []string
-	setup := r.SetupLogPath(execID)
+	setup := r.SetupLogPath(projectID, execID)
 	if _, err := os.Stat(setup); err == nil {
 		out = append(out, setup)
 	}
-	stepsDir := filepath.Join(r.LogDir(execID), "steps")
+	stepsDir := filepath.Join(r.LogDir(projectID, execID), "steps")
 	entries, err := os.ReadDir(stepsDir)
 	if err != nil {
 		return out

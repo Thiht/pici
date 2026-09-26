@@ -119,12 +119,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /variables/{key}/delete", h.GlobalVariableDelete)
 
 	mux.HandleFunc("POST /projects/{id}/executions", h.ExecutionCreate)
-	mux.HandleFunc("GET /executions/{id}", h.ExecutionShow)
-	mux.HandleFunc("GET /executions/{id}/logs", h.ExecutionLogs)
-	mux.HandleFunc("GET /executions/{id}/steps/{step}/logs", h.StepLogs)
-	mux.HandleFunc("POST /executions/{id}/cancel", h.ExecutionCancel)
-	mux.HandleFunc("POST /executions/{id}/rebuild", h.ExecutionRebuild)
-	mux.HandleFunc("GET /executions/{id}/artifacts/{step}/{path...}", h.ArtifactDownload)
+	mux.HandleFunc("GET /projects/{id}/executions/{executionID}", h.ExecutionShow)
+	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/logs", h.ExecutionLogs)
+	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/steps/{step}/logs", h.StepLogs)
+	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/cancel", h.ExecutionCancel)
+	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/rebuild", h.ExecutionRebuild)
+	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.ArtifactDownload)
 
 	return middlewares.Log(middlewares.Auth(h.apiToken, mux))
 }

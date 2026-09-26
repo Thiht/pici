@@ -259,44 +259,50 @@ func (s *postgresStore) DeleteVariable(ctx context.Context, projectID *uuid.UUID
 	return err
 }
 
-func (s *postgresStore) CreateExecution(ctx context.Context, e Execution) error {
+func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.Status == "" {
 		e.Status = StatusPending
 	}
 	if e.Trigger == "" {
 		e.Trigger = TriggerManual
 	}
-	_, err := s.db.ExecContext(ctx, `
-        INSERT INTO executions (id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := tx.QueryRowContext(ctx, `UPDATE projects SET execution_seq = execution_seq + 1 WHERE id = $1 RETURNING execution_seq`, e.ProjectID.String()).Scan(&e.ID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-    `, e.ID.String(), e.ProjectID.String(), e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup)
-	return err
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *postgresStore) UpdateExecution(ctx context.Context, e Execution) error {
 	_, err := s.db.ExecContext(ctx, `
         UPDATE executions
         SET status = $1, steps_json = $2, error = $3, started_at = $4, setup_finished_at = $5, finished_at = $6, commit_sha = $7, concurrency_group = $8
-        WHERE id = $9
-    `, e.Status, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CommitSHA, e.ConcurrencyGroup, e.ID.String())
+        WHERE project_id = $9 AND id = $10
+    `, e.Status, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CommitSHA, e.ConcurrencyGroup, e.ProjectID.String(), e.ID)
 	return err
 }
 
-func (s *postgresStore) GetExecution(ctx context.Context, id uuid.UUID) (Execution, error) {
+func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
 	var e Execution
-	var idStr, projectIDStr string
+	var projectIDStr string
 	err := s.db.QueryRowContext(ctx, `
-        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
         FROM executions
-        WHERE id = $1
-    `, id.String()).Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup)
+        WHERE project_id = $1 AND id = $2
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
-	if err != nil {
-		return Execution{}, err
-	}
-	e.ID, err = uuid.Parse(idStr)
 	if err != nil {
 		return Execution{}, err
 	}
@@ -312,10 +318,10 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
         FROM executions
         WHERE project_id = $1
-        ORDER BY created_at DESC
+        ORDER BY id DESC
         LIMIT $2
     `, projectID.String(), limit)
 	if err != nil {
@@ -326,12 +332,8 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 	executions := make([]Execution, 0)
 	for rows.Next() {
 		var e Execution
-		var idStr, projectIDStr string
-		if err := rows.Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup); err != nil {
-			return nil, err
-		}
-		e.ID, err = uuid.Parse(idStr)
-		if err != nil {
+		var projectIDStr string
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
@@ -350,15 +352,16 @@ func (s *postgresStore) ClaimPendingExecution(ctx context.Context, workerID stri
 	}
 	defer tx.Rollback()
 
-	var id string
+	var projectIDStr string
+	var id int64
 	if err := tx.QueryRowContext(ctx, `
-        SELECT id
+        SELECT project_id, id
         FROM executions
         WHERE status = $1
-        ORDER BY created_at ASC
+        ORDER BY id ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
-    `, StatusPending).Scan(&id); errors.Is(err, sql.ErrNoRows) {
+    `, StatusPending).Scan(&projectIDStr, &id); errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	} else if err != nil {
 		return Execution{}, err
@@ -367,8 +370,8 @@ func (s *postgresStore) ClaimPendingExecution(ctx context.Context, workerID stri
 	result, err := tx.ExecContext(ctx, `
         UPDATE executions
         SET status = $1, claimed_by = $2, started_at = $3
-        WHERE id = $4 AND status = $5
-    `, StatusRunning, workerID, time.Now(), id, StatusPending)
+        WHERE project_id = $4 AND id = $5 AND status = $6
+    `, StatusRunning, workerID, time.Now(), projectIDStr, id, StatusPending)
 	if err != nil {
 		return Execution{}, err
 	}
@@ -379,11 +382,11 @@ func (s *postgresStore) ClaimPendingExecution(ctx context.Context, workerID stri
 		return Execution{}, err
 	}
 
-	parsed, err := uuid.Parse(id)
+	projectID, err := uuid.Parse(projectIDStr)
 	if err != nil {
 		return Execution{}, err
 	}
-	return s.GetExecution(ctx, parsed)
+	return s.GetExecution(ctx, projectID, id)
 }
 
 func (s *postgresStore) RequeueOrphanedExecutions(ctx context.Context) error {
@@ -395,14 +398,14 @@ func (s *postgresStore) RequeueOrphanedExecutions(ctx context.Context) error {
 	return err
 }
 
-func (s *postgresStore) SetCancelRequested(ctx context.Context, id uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE executions SET cancel_requested = true WHERE id = $1`, id.String())
+func (s *postgresStore) SetCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE executions SET cancel_requested = true WHERE project_id = $1 AND id = $2`, projectID.String(), id)
 	return err
 }
 
-func (s *postgresStore) IsCancelRequested(ctx context.Context, id uuid.UUID) (bool, error) {
+func (s *postgresStore) IsCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) (bool, error) {
 	var b bool
-	if err := s.db.QueryRowContext(ctx, `SELECT cancel_requested FROM executions WHERE id = $1`, id.String()).Scan(&b); errors.Is(err, sql.ErrNoRows) {
+	if err := s.db.QueryRowContext(ctx, `SELECT cancel_requested FROM executions WHERE project_id = $1 AND id = $2`, projectID.String(), id).Scan(&b); errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	} else if err != nil {
 		return false, err
@@ -418,12 +421,12 @@ func (s *postgresStore) CountPendingExecutions(ctx context.Context) (int, error)
 	return n, nil
 }
 
-func (s *postgresStore) CancelRunningInGroup(ctx context.Context, projectID uuid.UUID, group string, excludeID uuid.UUID) error {
+func (s *postgresStore) CancelRunningInGroup(ctx context.Context, projectID uuid.UUID, group string, excludeID int64) error {
 	_, err := s.db.ExecContext(ctx, `
         UPDATE executions
         SET cancel_requested = true
         WHERE project_id = $1 AND concurrency_group = $2 AND status = $3 AND id != $4
-    `, projectID.String(), group, StatusRunning, excludeID.String())
+    `, projectID.String(), group, StatusRunning, excludeID)
 	return err
 }
 

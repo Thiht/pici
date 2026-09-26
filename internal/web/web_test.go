@@ -315,7 +315,7 @@ func TestCSRFRequiredForMutations(t *testing.T) {
 
 func TestExecutionNotFound(t *testing.T) {
 	srv, client := newTestServer(t, "")
-	resp, err := client.Get(srv.URL + "/executions/00000000-0000-0000-0000-000000000000")
+	resp, err := client.Get(srv.URL + "/projects/demo/executions/999")
 	if err != nil {
 		t.Fatal(err)
 	}

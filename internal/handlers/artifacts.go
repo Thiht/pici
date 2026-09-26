@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -32,18 +31,23 @@ type artifact struct {
 }
 
 func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), id)
+	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
 
-	dir := h.runner.ArtifactDir(execution.ID.String())
+	dir := h.runner.ArtifactDir(project.ID, id)
 	out := []artifact{}
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -69,16 +73,20 @@ func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	step := r.PathValue("step")
-	rel := r.PathValue("path")
-
-	execID, err := uuid.Parse(id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	execID, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), execID)
+	step := r.PathValue("step")
+	rel := r.PathValue("path")
+
+	execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -96,7 +104,7 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := filepath.Join(h.runner.ArtifactDir(id), fmt.Sprintf("%03d", index))
+	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execID), fmt.Sprintf("%03d", index))
 	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(rel)))
 	if full != dir && !strings.HasPrefix(full, dir+string(filepath.Separator)) {
 		render.Error(w, http.StatusBadRequest, errors.New("invalid path"))

@@ -11,17 +11,17 @@
 </nav>
 <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
 <div class="flex flex-wrap items-center gap-3">
-<h1 class="text-xl font-semibold">{{.Execution.Workflow}}</h1>
+<h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span></h1>
 <span class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
 </div>
 <div class="flex items-center gap-2">
 {{if .Running}}
-<form method="post" action="/executions/{{.Execution.ID}}/cancel">
+<form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/cancel">
 <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
 <button class="btn btn-error btn-sm" type="submit">Cancel</button>
 </form>
 {{end}}
-<form method="post" action="/executions/{{.Execution.ID}}/rebuild">
+<form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild">
 <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
 <button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
 </form>
@@ -104,7 +104,7 @@
 <td>{{.Step}}</td>
 <td class="font-mono text-xs">{{.Path}}</td>
 <td class="text-xs opacity-60">{{size .Size}}</td>
-<td class="text-right"><a class="btn btn-outline btn-sm" href="/executions/{{$.Execution.ID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}">Download</a></td>
+<td class="text-right"><a class="btn btn-outline btn-sm" href="/projects/{{$.Project.ID}}/executions/{{$.Execution.ID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}">Download</a></td>
 </tr>
 {{end}}
 </tbody>

@@ -58,7 +58,7 @@ func TestExecutionTemplateRendersAnsiLogs(t *testing.T) {
 	var buf strings.Builder
 	data := executionPage{
 		base:      base{Title: "Execution"},
-		Execution: stores.Execution{ID: uuid.New(), Status: stores.StatusFailed, Workflow: "build", Ref: "main", CreatedAt: time.Now()},
+		Execution: stores.Execution{ID: 1, Status: stores.StatusFailed, Workflow: "build", Ref: "main", CreatedAt: time.Now()},
 		Project:   stores.Project{ID: uuid.New(), Name: "demo"},
 		Steps: []stepView{{
 			StepResult: stores.StepResult{

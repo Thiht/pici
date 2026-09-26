@@ -106,20 +106,20 @@ Filtering applies to webhook-triggered runs only; `pici-cli run`, schedules and 
 
 ## Built-in environment variables
 
-| Variable            | Description                                   |
-| ------------------- | --------------------------------------------- |
-| `CI`                | always `true`                                 |
-| `PICI_PROJECT`      | project name                                  |
-| `PICI_PROJECT_ID` | project id |
-| `PICI_REPO_URL` | repo clone URL |
-| `PICI_REPO_SLUG` | repo path (`owner/repo`) without `.git` |
-| `PICI_WORKFLOW` | workflow name |
-| `PICI_EXECUTION_ID` | execution id                                  |
-| `PICI_REF` | the ref being built |
-| `PICI_VERSION` | tag name when building a tag, otherwise the short commit SHA |
-| `PICI_COMMIT_SHA` | resolved commit SHA |
-| `PICI_REPO_DIR` | mount path of the repo (default `/workspace`) |
-| `PICI_WORKFLOW_DIR` | mount path of the workflow folder |
+| Variable            | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `CI`                | always `true`                                                |
+| `PICI_PROJECT`      | project name                                                 |
+| `PICI_PROJECT_ID`   | project id                                                   |
+| `PICI_REPO_URL`     | repo clone URL                                               |
+| `PICI_REPO_SLUG`    | repo path (`owner/repo`) without `.git`                      |
+| `PICI_WORKFLOW`     | workflow name                                                |
+| `PICI_EXECUTION_ID` | execution number (per project)                               |
+| `PICI_REF`          | the ref being built                                          |
+| `PICI_VERSION`      | tag name when building a tag, otherwise the short commit SHA |
+| `PICI_COMMIT_SHA`   | resolved commit SHA                                          |
+| `PICI_REPO_DIR`     | mount path of the repo (default `/workspace`)                |
+| `PICI_WORKFLOW_DIR` | mount path of the workflow folder                            |
 
 Git is pre-configured to trust the mounted repo (`safe.directory`), so `git` commands and Go's VCS stamping work out of the box regardless of uid/gid. No `git config` setup is needed in your steps.
 

@@ -35,10 +35,10 @@ Add the `source` line to your shell rc file to make it permanent. Completion que
 pici-cli run demo build --ref main
 
 # watch an execution status
-pici-cli status <execution-id>
+pici-cli status demo 42
 
 # stream logs (--follow keeps streaming)
-pici-cli logs <execution-id> --follow
+pici-cli logs demo 42 --follow
 
 # list a project's executions
 pici-cli executions demo --limit 10
@@ -78,18 +78,18 @@ pici-cli vars rm NPM_TOKEN --project demo
 
 ```sh
 # cancel or re-run an execution
-pici-cli cancel <execution-id>
-pici-cli rebuild <execution-id>
+pici-cli cancel demo 42
+pici-cli rebuild demo 42
 ```
 
 ## Artifacts
 
 ```sh
 # list artifacts of an execution
-pici-cli artifacts <execution-id>
+pici-cli artifacts demo 42
 
 # download one (writes to the basename of the path)
-pici-cli artifacts get <execution-id> build/dist/app.tar.gz
+pici-cli artifacts get demo 42 build/dist/app.tar.gz
 ```
 
 ## Cache

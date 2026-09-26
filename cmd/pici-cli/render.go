@@ -185,10 +185,10 @@ func printExecution(e client.Execution) {
 func printExecutions(list []client.Execution) {
 	for _, e := range list {
 		status := string(e.Status)
-		fmt.Printf("%s  %-28s  %s  %s\n",
+		fmt.Printf("%s  %-28s  %-6s  %s\n",
 			paint(statusSymbol(status)+" "+status, statusColor(status)),
 			e.Workflow+"@"+e.Ref,
-			e.ID.String()[:8],
+			fmt.Sprintf("#%d", e.ID),
 			e.CreatedAt.Local().Format("2006-01-02 15:04"),
 		)
 	}

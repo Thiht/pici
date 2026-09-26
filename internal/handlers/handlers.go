@@ -60,14 +60,14 @@ func (h *Handler) Routes() http.Handler {
 
 	mux.HandleFunc("POST /api/projects/{id}/executions", h.executions.Create)
 	mux.HandleFunc("GET /api/projects/{id}/executions", h.executions.List)
-	mux.HandleFunc("GET /api/executions/{id}", h.executions.Get)
-	mux.HandleFunc("GET /api/executions/{id}/logs", h.executions.Logs)
-	mux.HandleFunc("GET /api/executions/{id}/logs/stream", h.executions.LogStream)
-	mux.HandleFunc("GET /api/executions/{id}/steps/{step}/logs", h.executions.StepLogs)
-	mux.HandleFunc("POST /api/executions/{id}/cancel", h.executions.Cancel)
-	mux.HandleFunc("POST /api/executions/{id}/rebuild", h.executions.Rebuild)
-	mux.HandleFunc("GET /api/executions/{id}/artifacts", h.artifacts.List)
-	mux.HandleFunc("GET /api/executions/{id}/artifacts/{step}/{path...}", h.artifacts.Download)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}", h.executions.Get)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/logs", h.executions.Logs)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/logs/stream", h.executions.LogStream)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/steps/{step}/logs", h.executions.StepLogs)
+	mux.HandleFunc("POST /api/projects/{id}/executions/{executionID}/cancel", h.executions.Cancel)
+	mux.HandleFunc("POST /api/projects/{id}/executions/{executionID}/rebuild", h.executions.Rebuild)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/artifacts", h.artifacts.List)
+	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.artifacts.Download)
 
 	mux.HandleFunc("POST /api/validate", h.system.Validate)
 

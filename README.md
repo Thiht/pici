@@ -61,7 +61,7 @@ steps:
 | `PICI_REPO_URL`     | repo clone URL                                |
 | `PICI_REPO_SLUG`    | repo path (`owner/repo`) without `.git`       |
 | `PICI_WORKFLOW`     | workflow name                                 |
-| `PICI_EXECUTION_ID` | execution id                                  |
+| `PICI_EXECUTION_ID` | execution number (per project)                |
 | `PICI_REF`          | the ref being built                           |
 | `PICI_VERSION`      | tag name when building a tag, else short SHA  |
 | `PICI_COMMIT_SHA`   | resolved commit SHA                           |
@@ -146,17 +146,17 @@ pici-cli vars set NPM_TOKEN secret --project demo --secret
 ### Executions
 
 ```
-POST  /api/projects/{id}/executions       trigger a run
-GET   /api/projects/{id}/executions       list executions
-GET   /api/executions/{id}                get an execution
-GET   /api/executions/{id}/logs           stream logs
-POST  /api/executions/{id}/cancel         cancel a running execution
+POST  /api/projects/{id}/executions                        trigger a run
+GET   /api/projects/{id}/executions                        list executions
+GET   /api/projects/{id}/executions/{executionID}          get an execution
+GET   /api/projects/{id}/executions/{executionID}/logs     stream logs
+POST  /api/projects/{id}/executions/{executionID}/cancel   cancel a running execution
 ```
 
 ```sh
 pici-cli run demo build
 
-pici-cli logs <id>
+pici-cli logs demo 42
 ```
 
 ### Cache
@@ -226,5 +226,5 @@ task ui:build   # npm install, build app.css, copy htmx
 
 ## Not yet implemented
 
-- Live log streaming in the UI (the API exposes SSE at `/api/executions/{id}/logs/stream`).
+- Live log streaming in the UI (the API exposes SSE at `/api/projects/{id}/executions/{executionID}/logs/stream`).
 - GitLab MR pipelines (webhooks are supported).

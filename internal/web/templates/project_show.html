@@ -42,12 +42,13 @@
 <div class="overflow-x-auto">
 <table class="table">
 <caption class="sr-only">Recent executions</caption>
-<thead><tr><th scope="col">Status</th><th scope="col">Workflow</th><th scope="col">Ref</th><th scope="col">Trigger</th><th scope="col">Duration</th><th scope="col">Created</th></tr></thead>
+<thead><tr><th scope="col">ID</th><th scope="col">Status</th><th scope="col">Workflow</th><th scope="col">Ref</th><th scope="col">Trigger</th><th scope="col">Duration</th><th scope="col">Created</th></tr></thead>
 <tbody>
 {{range .Executions}}
 <tr class="relative">
+<td class="font-mono text-xs">#{{.ID}}</td>
 <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
-<td><a class="link link-primary font-medium stretched-link" href="/executions/{{.ID}}">{{.Workflow}}</a></td>
+<td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a></td>
 <td class="font-mono text-xs">{{.Ref}}</td>
 <td>{{.Trigger}}</td>
 <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>

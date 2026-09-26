@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,14 +94,17 @@ func newRunCmd(c *client.Client) *cobra.Command {
 func newLogsCmd(c *client.Client) *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "logs <execution-id>",
+		Use:   "logs <project> <execution-id>",
 		Short: "Stream execution logs",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
 			offset := 0
 			for {
-				logs, err := c.ExecutionLogs(context.Background(), id)
+				logs, err := c.ExecutionLogs(context.Background(), args[0], id)
 				if err != nil {
 					return err
 				}
@@ -122,14 +126,18 @@ func newLogsCmd(c *client.Client) *cobra.Command {
 
 func newStatusCmd(c *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "status <execution-id>",
+		Use:   "status <project> <execution-id>",
 		Short: "Show execution status",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyFormat(cmd); err != nil {
 				return err
 			}
-			exec, err := c.GetExecution(context.Background(), args[0])
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			exec, err := c.GetExecution(context.Background(), args[0], id)
 			if err != nil {
 				return err
 			}
@@ -370,11 +378,15 @@ func newVarRmCmd(c *client.Client, project *string) *cobra.Command {
 
 func newCancelCmd(c *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cancel <execution-id>",
+		Use:   "cancel <project> <execution-id>",
 		Short: "Cancel an execution",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return c.CancelExecution(context.Background(), args[0])
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			return c.CancelExecution(context.Background(), args[0], id)
 		},
 	}
 	cmd.ValidArgsFunction = noCompletions
@@ -383,14 +395,18 @@ func newCancelCmd(c *client.Client) *cobra.Command {
 
 func newRebuildCmd(c *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rebuild <execution-id>",
+		Use:   "rebuild <project> <execution-id>",
 		Short: "Rebuild an execution",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyFormat(cmd); err != nil {
 				return err
 			}
-			exec, err := c.RebuildExecution(context.Background(), args[0])
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			exec, err := c.RebuildExecution(context.Background(), args[0], id)
 			if err != nil {
 				return err
 			}
@@ -403,14 +419,18 @@ func newRebuildCmd(c *client.Client) *cobra.Command {
 
 func newArtifactsCmd(c *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "artifacts <execution-id>",
+		Use:   "artifacts <project> <execution-id>",
 		Short: "List execution artifacts",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyFormat(cmd); err != nil {
 				return err
 			}
-			artifacts, err := c.ListArtifacts(context.Background(), args[0])
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			artifacts, err := c.ListArtifacts(context.Background(), args[0], id)
 			if err != nil {
 				return err
 			}
@@ -424,15 +444,19 @@ func newArtifactsCmd(c *client.Client) *cobra.Command {
 
 func newArtifactGetCmd(c *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get <execution-id> <step>/<path>",
+		Use:   "get <project> <execution-id> <step>/<path>",
 		Short: "Download an artifact",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(3),
 		RunE: func(_ *cobra.Command, args []string) error {
-			step, path, ok := strings.Cut(args[1], "/")
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			step, path, ok := strings.Cut(args[2], "/")
 			if !ok {
 				return fmt.Errorf("artifact path must be <step>/<path>")
 			}
-			data, err := c.DownloadArtifact(context.Background(), args[0], step, path)
+			data, err := c.DownloadArtifact(context.Background(), args[0], id, step, path)
 			if err != nil {
 				return err
 			}
@@ -575,8 +599,8 @@ const usageText = `pici — minimal CI client
 
 Usage:
   pici-cli run <project> <workflow> [--ref <ref>]
-  pici-cli logs <execution-id> [--follow]
-  pici-cli status <execution-id>
+  pici-cli logs <project> <execution-id> [--follow]
+  pici-cli status <project> <execution-id>
   pici-cli projects
   pici-cli projects add <name> <repo_url> [flags]
   pici-cli projects show <name-or-id>
@@ -589,10 +613,10 @@ Usage:
   pici-cli cache <project>
   pici-cli cache rm-image <project> <reference>
   pici-cli cache rm-volume <project> <name>
-  pici-cli cancel <execution-id>
-  pici-cli rebuild <execution-id>
-  pici-cli artifacts <execution-id>
-  pici-cli artifacts get <execution-id> <step>/<path>
+  pici-cli cancel <project> <execution-id>
+  pici-cli rebuild <project> <execution-id>
+  pici-cli artifacts <project> <execution-id>
+  pici-cli artifacts get <project> <execution-id> <step>/<path>
   pici-cli validate <ci.yml>
   pici-cli health
   pici-cli version [--server]

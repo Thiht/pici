@@ -64,8 +64,8 @@ func TestMigrations(t *testing.T) {
 	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatalf("goose version table: %v", err)
 	}
-	if version != 2 {
-		t.Fatalf("expected migration version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected migration version 3, got %d", version)
 	}
 }
 
@@ -151,24 +151,25 @@ func TestExecutionCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	projectID := mustUUID("11111111-1111-1111-1111-111111111111")
-	execID := mustUUID("22222222-2222-2222-2222-222222222222")
 
 	if _, err := s.CreateProject(ctx, Project{ID: projectID, Name: "demo"}); err != nil {
 		t.Fatal(err)
 	}
 
 	e := Execution{
-		ID:        execID,
 		ProjectID: projectID,
 		Workflow:  "build",
 		Status:    StatusPending,
 		Steps:     []StepResult{{Name: "install", Status: StepStatusPending}},
 	}
-	if err := s.CreateExecution(ctx, e); err != nil {
+	if err := s.CreateExecution(ctx, &e); err != nil {
 		t.Fatal(err)
 	}
+	if e.ID != 1 {
+		t.Fatalf("expected first execution id 1, got %d", e.ID)
+	}
 
-	got, err := s.GetExecution(ctx, execID)
+	got, err := s.GetExecution(ctx, projectID, e.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +186,7 @@ func TestExecutionCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, _ := s.GetExecution(ctx, execID)
+	updated, _ := s.GetExecution(ctx, projectID, e.ID)
 	if updated.Status != StatusSuccess {
 		t.Fatalf("expected success, got %s", updated.Status)
 	}
@@ -206,35 +207,34 @@ func TestCancelRunningInGroup(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	projectID := mustUUID("11111111-1111-1111-1111-111111111111")
-	e1 := mustUUID("22222222-2222-2222-2222-222222222222")
-	e2 := mustUUID("33333333-3333-3333-3333-333333333333")
-	e3 := mustUUID("44444444-4444-4444-4444-444444444444")
 
 	if _, err := s.CreateProject(ctx, Project{ID: projectID, Name: "demo"}); err != nil {
 		t.Fatal(err)
 	}
 
+	var ids []int64
 	for _, e := range []Execution{
-		{ID: e1, ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "deploy"},
-		{ID: e2, ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "deploy"},
-		{ID: e3, ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "other"},
+		{ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "deploy"},
+		{ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "deploy"},
+		{ProjectID: projectID, Workflow: "deploy", Status: StatusRunning, ConcurrencyGroup: "other"},
 	} {
-		if err := s.CreateExecution(ctx, e); err != nil {
+		if err := s.CreateExecution(ctx, &e); err != nil {
 			t.Fatal(err)
 		}
+		ids = append(ids, e.ID)
 	}
 
-	if err := s.CancelRunningInGroup(ctx, projectID, "deploy", e2); err != nil {
+	if err := s.CancelRunningInGroup(ctx, projectID, "deploy", ids[1]); err != nil {
 		t.Fatal(err)
 	}
 
-	if ok, _ := s.IsCancelRequested(ctx, e1); !ok {
+	if ok, _ := s.IsCancelRequested(ctx, projectID, ids[0]); !ok {
 		t.Fatal("expected e1 to be canceled")
 	}
-	if ok, _ := s.IsCancelRequested(ctx, e2); ok {
+	if ok, _ := s.IsCancelRequested(ctx, projectID, ids[1]); ok {
 		t.Fatal("e2 should not be canceled (excluded)")
 	}
-	if ok, _ := s.IsCancelRequested(ctx, e3); ok {
+	if ok, _ := s.IsCancelRequested(ctx, projectID, ids[2]); ok {
 		t.Fatal("e3 should not be canceled (different group)")
 	}
 }

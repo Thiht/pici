@@ -6,18 +6,20 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"uuid"
 )
 
-func (r *Runner) ArtifactDir(execID string) string {
-	return filepath.Join(r.WorkspaceDir, "artifacts", execID)
+func (r *Runner) ArtifactDir(projectID uuid.UUID, execID int64) string {
+	return filepath.Join(r.WorkspaceDir, "artifacts", projectID.String(), strconv.FormatInt(execID, 10))
 }
 
-func (r *Runner) collectArtifacts(execID string, index int, patterns []string, repoDir string) {
+func (r *Runner) collectArtifacts(projectID uuid.UUID, execID int64, index int, patterns []string, repoDir string) {
 	if len(patterns) == 0 {
 		return
 	}
-	destRoot := filepath.Join(r.ArtifactDir(execID), fmt.Sprintf("%03d", index))
+	destRoot := filepath.Join(r.ArtifactDir(projectID, execID), fmt.Sprintf("%03d", index))
 	_ = filepath.WalkDir(repoDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil

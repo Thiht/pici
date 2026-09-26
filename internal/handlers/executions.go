@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
@@ -62,17 +61,17 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		render.Error(w, http.StatusNotFound, err)
-		return
-	}
-	previous, err := h.store.GetExecution(r.Context(), id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	project, err := h.store.GetProject(r.Context(), previous.ProjectID)
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		render.Error(w, http.StatusNotFound, err)
+		return
+	}
+	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -102,12 +101,17 @@ func (h *ExecutionsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), id)
+	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -116,17 +120,22 @@ func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), id); err != nil {
+	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
 		storeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
-	for _, path := range h.runner.LogPaths(r.PathValue("id")) {
+	for _, path := range h.runner.LogPaths(project.ID, id) {
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -137,14 +146,19 @@ func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
 	step := r.PathValue("step")
 
-	execution, err := h.store.GetExecution(r.Context(), id)
+	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -161,7 +175,7 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := os.Open(h.runner.StepLogPath(r.PathValue("id"), index, step))
+	f, err := os.Open(h.runner.StepLogPath(project.ID, id, index, step))
 	if err != nil {
 		render.Error(w, http.StatusNotFound, errors.New("step logs not found"))
 		return
@@ -172,20 +186,25 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), id); err != nil {
+	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
 		storeError(w, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), id); err != nil {
+	if err := h.store.SetCancelRequested(r.Context(), project.ID, id); err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
-	h.runner.Cancel(id)
+	h.runner.Cancel(project.ID, id)
 	render.JSON(w, http.StatusOK, map[string]string{"status": "canceling"})
 }
 
@@ -195,13 +214,17 @@ type streamState struct {
 }
 
 func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	execID, err := uuid.Parse(id)
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	execID, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), execID); err != nil {
+	if _, err := h.store.GetExecution(r.Context(), project.ID, execID); err != nil {
 		storeError(w, err)
 		return
 	}
@@ -226,7 +249,7 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		sweep := func() {
-			for _, path := range h.runner.LogPaths(id) {
+			for _, path := range h.runner.LogPaths(project.ID, execID) {
 				state := states[path]
 				if state == nil {
 					state = &streamState{}
@@ -262,7 +285,7 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 
 		sweep()
 
-		execution, err := h.store.GetExecution(r.Context(), execID)
+		execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
 		if err != nil {
 			return
 		}

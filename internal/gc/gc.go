@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 	"uuid"
 
@@ -60,6 +61,10 @@ func (c *Collector) cleanupWorkspaces(ctx context.Context) {
 		if !proj.IsDir() {
 			continue
 		}
+		projectID, err := uuid.Parse(proj.Name())
+		if err != nil {
+			continue
+		}
 		projPath := filepath.Join(c.WorkspaceDir, proj.Name())
 		execs, err := os.ReadDir(projPath)
 		if err != nil {
@@ -75,7 +80,8 @@ func (c *Collector) cleanupWorkspaces(ctx context.Context) {
 				}
 				continue
 			}
-			if c.expired(ctx, e.Name(), cutoff) {
+			id, err := strconv.ParseInt(e.Name(), 10, 64)
+			if err != nil || c.expired(ctx, projectID, id, cutoff) {
 				_ = os.RemoveAll(filepath.Join(projPath, e.Name()))
 			}
 		}
@@ -84,26 +90,37 @@ func (c *Collector) cleanupWorkspaces(ctx context.Context) {
 
 func (c *Collector) cleanupLogs(ctx context.Context) {
 	cutoff := time.Now().Add(-c.Keep)
-	entries, err := os.ReadDir(c.LogsDir)
+	projects, err := os.ReadDir(c.LogsDir)
 	if err != nil {
 		return
 	}
-	for _, e := range entries {
-		if !e.IsDir() {
+	for _, proj := range projects {
+		if !proj.IsDir() {
 			continue
 		}
-		if c.expired(ctx, e.Name(), cutoff) {
-			_ = os.RemoveAll(filepath.Join(c.LogsDir, e.Name()))
+		projectID, err := uuid.Parse(proj.Name())
+		if err != nil {
+			continue
+		}
+		projPath := filepath.Join(c.LogsDir, proj.Name())
+		execs, err := os.ReadDir(projPath)
+		if err != nil {
+			continue
+		}
+		for _, e := range execs {
+			if !e.IsDir() {
+				continue
+			}
+			id, err := strconv.ParseInt(e.Name(), 10, 64)
+			if err != nil || c.expired(ctx, projectID, id, cutoff) {
+				_ = os.RemoveAll(filepath.Join(projPath, e.Name()))
+			}
 		}
 	}
 }
 
-func (c *Collector) expired(ctx context.Context, execID string, cutoff time.Time) bool {
-	id, err := uuid.Parse(execID)
-	if err != nil {
-		return true
-	}
-	exec, err := c.Store.GetExecution(ctx, id)
+func (c *Collector) expired(ctx context.Context, projectID uuid.UUID, id int64, cutoff time.Time) bool {
+	exec, err := c.Store.GetExecution(ctx, projectID, id)
 	if err != nil {
 		return true
 	}

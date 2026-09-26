@@ -72,7 +72,7 @@ func (s *Steps) Scan(src any) error {
 }
 
 type Execution struct {
-	ID              uuid.UUID  `json:"id"`
+	ID              int64      `json:"id"`
 	ProjectID       uuid.UUID  `json:"project_id"`
 	Project         string     `json:"project,omitempty"`
 	Workflow        string     `json:"workflow"`
