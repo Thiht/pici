@@ -351,12 +351,11 @@ func (r *Runner) materializeSource(ctx context.Context, project stores.Project, 
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
 	}
-	config := "[remote \"origin\"]\n\turl = " + project.RepoURL + "\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+	config := "[remote \"origin\"]\n\turl = " + strconv.Quote(project.RepoURL) + "\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
 	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
 		return err
 	}
 
-	_ = os.Remove(src)
 	return nil
 }
 
@@ -403,6 +402,12 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.
 
 	if project.ID != uuid.Nil() {
 		r.updateCheckRun(persistCtx, project, exec, checkRunID, status, errMsg, setupLog)
+	}
+
+	// The execution is terminal: its snapshot archive is no longer needed and
+	// can be dropped. GC also cleans up stale uploads as a backstop.
+	if exec.Source == stores.SourceSnapshot && exec.SnapshotID != nil {
+		_ = os.Remove(r.snapshotPath(exec.ProjectID, *exec.SnapshotID))
 	}
 
 	if setupLog != nil {

@@ -72,6 +72,9 @@ func newRunCmd(c *client.Client) *cobra.Command {
 		Short: "Trigger a workflow execution",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dir != "" && !local {
+				return fmt.Errorf("--dir requires --local")
+			}
 			if !local {
 				exec, err := c.TriggerExecution(context.Background(), args[0], args[1], ref)
 				if err != nil {

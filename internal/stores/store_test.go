@@ -258,6 +258,21 @@ func TestExecutionSourceRoundTrip(t *testing.T) {
 	if list[0].Source != SourceSnapshot {
 		t.Fatalf("listed source = %q, want snapshot", list[0].Source)
 	}
+	if list[0].SnapshotID == nil || *list[0].SnapshotID != snapshotID {
+		t.Fatalf("listed snapshot id = %v, want %s", list[0].SnapshotID, snapshotID)
+	}
+
+	gitExec := Execution{ProjectID: projectID, Workflow: "build", Status: StatusPending}
+	if err := s.CreateExecution(ctx, &gitExec); err != nil {
+		t.Fatal(err)
+	}
+	gotGit, err := s.GetExecution(ctx, projectID, gitExec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotGit.Source != SourceGit {
+		t.Fatalf("empty source read back as %q, want git", gotGit.Source)
+	}
 }
 
 func TestCancelRunningInGroup(t *testing.T) {

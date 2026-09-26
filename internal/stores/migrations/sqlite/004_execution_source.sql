@@ -1,5 +1,5 @@
 -- +goose Up
-ALTER TABLE executions ADD COLUMN source TEXT NOT NULL DEFAULT 'git';
+ALTER TABLE executions ADD COLUMN source TEXT NOT NULL DEFAULT 'git' CHECK (source IN ('git', 'snapshot'));
 ALTER TABLE executions ADD COLUMN snapshot_id TEXT;
 
 -- +goose Down

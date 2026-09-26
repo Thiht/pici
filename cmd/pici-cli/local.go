@@ -33,6 +33,9 @@ func buildSnapshot(dir string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if strings.Trim(out, "\x00") == "" {
+		return fmt.Errorf("no files to snapshot in %s", dir)
+	}
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)

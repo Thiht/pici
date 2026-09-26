@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -103,8 +102,8 @@ func TestMaterializeSnapshot(t *testing.T) {
 	if !strings.Contains(string(cfg), `[remote "origin"]`) {
 		t.Fatalf("config missing origin section: %s", cfg)
 	}
-	if _, err := os.Stat(filepath.Join(dir, snapshotID.String()+".tar.gz")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("expected archive to be removed after extraction")
+	if _, err := os.Stat(filepath.Join(dir, snapshotID.String()+".tar.gz")); err != nil {
+		t.Fatalf("archive should be kept after materialization (removed on terminal finish): %v", err)
 	}
 }
 

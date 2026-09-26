@@ -40,6 +40,14 @@ The CLI archives the worktree plus `.git/` (never `.git/config`, which may
 contain credentials) and the server extracts it instead of cloning. Snapshot
 executions are marked `local`, cannot be rebuilt, and do not post check runs.
 
+Snapshot uploads require the API process and the execution worker to share the
+same workspace directory (single node, or a shared volume): the upload is
+written under `<workspace>/uploads` by the API and read back by the worker.
+
+Snapshots work with both SQLite and Postgres (they share the same execution
+code path). The repository has no Postgres test harness, so the Postgres path
+is covered only by the SQLite-backed tests and manual runs.
+
 ### ci.yml format
 
 ```yaml

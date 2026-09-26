@@ -78,6 +78,9 @@ func (c Config) Validate() error {
 	if c.APIToken == "" {
 		return errors.New("PICI_API_TOKEN is required (generate one with `openssl rand -hex 24`)")
 	}
+	if c.MaxSnapshotSize <= 0 {
+		return errors.New("PICI_MAX_SNAPSHOT_SIZE must be greater than zero")
+	}
 	repo := strings.TrimRight(filepath.Clean(c.RepoMountPath), string(filepath.Separator)) + string(filepath.Separator)
 	cache := strings.TrimRight(filepath.Clean(ci.CacheMountPath), string(filepath.Separator)) + string(filepath.Separator)
 	if strings.HasPrefix(repo, cache) || strings.HasPrefix(cache, repo) {
