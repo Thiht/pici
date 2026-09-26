@@ -67,6 +67,9 @@ func runGit(dir string, args ...string) (string, error) {
 func addWorktreeFile(tw *tar.Writer, dir, rel string) error {
 	full := filepath.Join(dir, filepath.FromSlash(rel))
 	fi, err := os.Lstat(full)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,9 @@ func TestBuildSnapshot(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "tracked.txt"), "v2")
 	mustWrite(t, filepath.Join(dir, "untracked.txt"), "new")
 	mustWrite(t, filepath.Join(dir, "ignored.txt"), "no")
+	if err := os.Symlink("tracked.txt", filepath.Join(dir, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
 
 	var buf bytes.Buffer
 	if err := buildSnapshot(dir, &buf); err != nil {
@@ -58,6 +62,48 @@ func TestBuildSnapshot(t *testing.T) {
 	}
 	if _, ok := names[".git/config"]; ok {
 		t.Fatal(".git/config should be excluded")
+	}
+	for name := range names {
+		if strings.HasPrefix(name, ".git/hooks/") {
+			t.Fatalf("%s should be excluded", name)
+		}
+		if strings.HasPrefix(name, ".git/logs/") {
+			t.Fatalf("%s should be excluded", name)
+		}
+	}
+	hdr, ok := names["link.txt"]
+	if !ok {
+		t.Fatal("link.txt missing")
+	}
+	if hdr.Typeflag != tar.TypeSymlink || hdr.Linkname != "tracked.txt" {
+		t.Fatalf("link.txt header = %+v", hdr)
+	}
+}
+
+func TestBuildSnapshotDeletedFile(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	git(t, dir, "config", "user.email", "t@t")
+	git(t, dir, "config", "user.name", "t")
+	mustWrite(t, filepath.Join(dir, "gone.txt"), "bye")
+	mustWrite(t, filepath.Join(dir, "stay.txt"), "hi")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+
+	if err := os.Remove(filepath.Join(dir, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := buildSnapshot(dir, &buf); err != nil {
+		t.Fatal(err)
+	}
+	names, _ := readTarGz(t, buf.Bytes())
+	if _, ok := names["gone.txt"]; ok {
+		t.Fatal("gone.txt should be absent")
+	}
+	if _, ok := names["stay.txt"]; !ok {
+		t.Fatal("stay.txt missing")
 	}
 }
 
@@ -89,14 +135,14 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
-func readTarGz(t *testing.T, data []byte) (map[string]bool, map[string]string) {
+func readTarGz(t *testing.T, data []byte) (map[string]*tar.Header, map[string]string) {
 	t.Helper()
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tr := tar.NewReader(gz)
-	names := map[string]bool{}
+	names := map[string]*tar.Header{}
 	contents := map[string]string{}
 	for {
 		hdr, err := tr.Next()
@@ -106,7 +152,7 @@ func readTarGz(t *testing.T, data []byte) (map[string]bool, map[string]string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		names[hdr.Name] = true
+		names[hdr.Name] = hdr
 		if hdr.Typeflag == tar.TypeReg {
 			b, err := io.ReadAll(tr)
 			if err != nil {
