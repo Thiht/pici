@@ -14,39 +14,43 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	args, err := parseGlobalFlags(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
+	if len(args) < 1 {
 		usage()
 		os.Exit(2)
 	}
 
 	c := client.New(cmp.Or(os.Getenv("PICI_ADDR"), "http://localhost:8080"), os.Getenv("PICI_TOKEN"))
 
-	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "run":
-		err = cmdRun(c, os.Args[2:])
+		err = cmdRun(c, args[1:])
 	case "logs":
-		err = cmdLogs(c, os.Args[2:])
+		err = cmdLogs(c, args[1:])
 	case "status":
-		err = cmdStatus(c, os.Args[2:])
+		err = cmdStatus(c, args[1:])
 	case "projects":
-		err = cmdProjects(c, os.Args[2:])
+		err = cmdProjects(c, args[1:])
 	case "executions":
-		err = cmdExecutions(c, os.Args[2:])
+		err = cmdExecutions(c, args[1:])
 	case "vars":
-		err = cmdVars(c, os.Args[2:])
+		err = cmdVars(c, args[1:])
 	case "cancel":
-		err = cmdCancel(c, os.Args[2:])
+		err = cmdCancel(c, args[1:])
 	case "rebuild":
-		err = cmdRebuild(c, os.Args[2:])
+		err = cmdRebuild(c, args[1:])
 	case "artifacts":
-		err = cmdArtifacts(c, os.Args[2:])
+		err = cmdArtifacts(c, args[1:])
 	case "validate":
-		err = cmdValidate(c, os.Args[2:])
+		err = cmdValidate(c, args[1:])
 	case "help", "-h", "--help":
 		usage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
 		usage()
 		os.Exit(2)
 	}
@@ -77,6 +81,10 @@ Usage:
   pici-cli artifacts <execution-id>
   pici-cli artifacts get <execution-id> <step>/<path>
   pici-cli validate <ci.yml>
+
+Global flags:
+  --json             force JSON output
+  --format json|pretty   force output format (default: pretty on a TTY, JSON otherwise)
 
 Project flags (add/update):
   --provider X  --auth-type X  --auth-user X  --auth-secret X
@@ -113,7 +121,7 @@ func cmdStatus(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(exec)
+	return output(exec)
 }
 
 func cmdLogs(c *client.Client, args []string) error {
@@ -149,7 +157,7 @@ func cmdProjects(c *client.Client, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(projects)
+		return output(projects)
 	}
 	switch args[0] {
 	case "add":
@@ -192,7 +200,7 @@ func cmdProjectAdd(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(p)
+	return output(p)
 }
 
 func cmdProjectShow(c *client.Client, args []string) error {
@@ -203,7 +211,7 @@ func cmdProjectShow(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(p)
+	return output(p)
 }
 
 func cmdProjectUpdate(c *client.Client, args []string) error {
@@ -235,7 +243,7 @@ func cmdProjectUpdate(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(p)
+	return output(p)
 }
 
 func cmdProjectRm(c *client.Client, args []string) error {
@@ -258,7 +266,7 @@ func cmdExecutions(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(executions)
+	return output(executions)
 }
 
 func cmdVars(c *client.Client, args []string) error {
@@ -292,7 +300,7 @@ func cmdVars(c *client.Client, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(vars)
+		return output(vars)
 	case pos[0] == "set" && len(pos) == 3:
 		if project == "" {
 			return c.SetGlobalVariable(context.Background(), pos[1], pos[2], secret)
@@ -323,7 +331,7 @@ func cmdRebuild(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(exec)
+	return output(exec)
 }
 
 func cmdArtifacts(c *client.Client, args []string) error {
@@ -340,7 +348,7 @@ func cmdArtifacts(c *client.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(artifacts)
+	return output(artifacts)
 }
 
 func cmdArtifactGet(c *client.Client, args []string) error {

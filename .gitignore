@@ -1,5 +1,6 @@
 /pici.db*
 /pici
+/pici-cli
 *.db
 *.log
 
