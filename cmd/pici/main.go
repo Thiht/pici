@@ -69,6 +69,7 @@ func main() {
 		MountPath:          cfg.RepoMountPath,
 		LogsDir:            filepath.Join(cfg.WorkspaceDir, "logs"),
 		DefaultStepTimeout: cfg.StepTimeout,
+		MaxSnapshotSize:    cfg.MaxSnapshotSize,
 		PublicBaseURL:      cfg.PublicBaseURL,
 	}
 
@@ -97,7 +98,7 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.APIToken, buildVersion).Routes()
+	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.MaxSnapshotSize, cfg.APIToken, buildVersion).Routes()
 	webHandler := web.New(store, runner, cfg.WorkspaceDir, cfg.APIToken, buildVersion).Routes()
 
 	root := http.NewServeMux()

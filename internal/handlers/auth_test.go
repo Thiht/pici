@@ -17,7 +17,7 @@ func newAuthedServer(t *testing.T, token string) *Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	return New(store, &ci.Runner{Store: store}, nil, t.TempDir(), "/workspace", token, "dev")
+	return New(store, &ci.Runner{Store: store}, nil, t.TempDir(), "/workspace", 512<<20, token, "dev")
 }
 
 func doReq(t *testing.T, s *Handler, method, path string, header, value string) *httptest.ResponseRecorder {

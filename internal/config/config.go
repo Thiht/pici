@@ -10,14 +10,15 @@ import (
 )
 
 type Config struct {
-	HTTPAddr      string
-	DBDriver      string
-	DBDSN         string
-	WorkspaceDir  string
-	RepoMountPath string
-	Concurrency   int
-	StepTimeout   time.Duration
-	ConfigFile    string
+	HTTPAddr        string
+	DBDriver        string
+	DBDSN           string
+	WorkspaceDir    string
+	RepoMountPath   string
+	Concurrency     int
+	StepTimeout     time.Duration
+	MaxSnapshotSize int64
+	ConfigFile      string
 
 	SecretKey         string
 	APIToken          string
@@ -39,6 +40,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&cfg.RepoMountPath, "repo-mount-path", "/workspace", "mount path of the repo inside the runner container")
 	fs.IntVar(&cfg.Concurrency, "concurrency", 4, "maximum concurrent executions")
 	fs.DurationVar(&cfg.StepTimeout, "step-timeout", 30*time.Minute, "default step timeout")
+	fs.Int64Var(&cfg.MaxSnapshotSize, "max-snapshot-size", 512<<20, "maximum size in bytes of an uploaded local snapshot")
 	fs.StringVar(&cfg.ConfigFile, "config", "", "path to a JSON config file")
 
 	fs.StringVar(&cfg.SecretKey, "secret-key", "", "32-byte key (hex or base64) used to encrypt secrets at rest (required)")

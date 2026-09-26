@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
@@ -19,12 +21,14 @@ import (
 )
 
 type ExecutionsHandler struct {
-	store  stores.Store
-	runner *ci.Runner
+	store           stores.Store
+	runner          *ci.Runner
+	workspaceDir    string
+	maxSnapshotSize int64
 }
 
-func NewExecutionsHandler(store stores.Store, runner *ci.Runner) *ExecutionsHandler {
-	return &ExecutionsHandler{store: store, runner: runner}
+func NewExecutionsHandler(store stores.Store, runner *ci.Runner, workspaceDir string, maxSnapshotSize int64) *ExecutionsHandler {
+	return &ExecutionsHandler{store: store, runner: runner, workspaceDir: workspaceDir, maxSnapshotSize: maxSnapshotSize}
 }
 
 type executionRequest struct {
@@ -36,6 +40,11 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
+		return
+	}
+
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "multipart/form-data" {
+		h.createSnapshot(w, r, project)
 		return
 	}
 
@@ -60,6 +69,74 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, http.StatusAccepted, execution)
 }
 
+func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Request, project stores.Project) {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxSnapshotSize)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			render.Error(w, http.StatusRequestEntityTooLarge, errors.New("snapshot exceeds maximum size"))
+			return
+		}
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	workflow := strings.TrimSpace(r.FormValue("workflow"))
+	if workflow == "" {
+		render.Error(w, http.StatusBadRequest, errors.New("workflow is required"))
+		return
+	}
+	ref := r.FormValue("ref")
+	if ref == "" {
+		ref = project.DefaultBranch
+	}
+
+	file, _, err := r.FormFile("snapshot")
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, errors.New("snapshot file is required"))
+		return
+	}
+	defer file.Close()
+
+	snapshotID := uuid.New()
+	dir := filepath.Join(h.workspaceDir, "uploads", project.ID.String())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	tmp := filepath.Join(dir, snapshotID.String()+".tar.gz.tmp")
+	dst := filepath.Join(dir, snapshotID.String()+".tar.gz")
+	out, err := os.Create(tmp)
+	if err != nil {
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if _, err := io.Copy(out, file); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	execution, err := h.runner.EnqueueSnapshot(r.Context(), project, workflow, ref, r.FormValue("commit_sha"), snapshotID)
+	if err != nil {
+		_ = os.Remove(dst)
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	render.JSON(w, http.StatusAccepted, execution)
+}
+
 func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -74,6 +151,11 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		storeError(w, err)
+		return
+	}
+
+	if previous.Source == stores.SourceSnapshot {
+		render.Error(w, http.StatusConflict, errors.New("snapshot executions cannot be rebuilt"))
 		return
 	}
 
