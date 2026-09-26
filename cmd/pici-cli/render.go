@@ -65,6 +65,8 @@ func output(v any) error {
 		printVars(x)
 	case []client.Artifact:
 		printArtifacts(x)
+	case client.Health:
+		printHealth(x)
 	default:
 		return printJSON(v)
 	}
@@ -223,6 +225,23 @@ func printArtifacts(list []client.Artifact) {
 	for _, a := range list {
 		fmt.Printf("%s/%s  %s\n", a.Step, a.Path, humanBytes(a.Size))
 	}
+}
+
+func printHealth(h client.Health) {
+	fmt.Printf("status: %s\n", paint(h.Status, healthColor(h.Status)))
+	if h.Docker != "" {
+		fmt.Printf("docker: %s\n", paint(h.Docker, healthColor(h.Docker)))
+	}
+	if h.Queue != nil {
+		fmt.Printf("queue:  %d\n", *h.Queue)
+	}
+}
+
+func healthColor(v string) string {
+	if v == "ok" {
+		return green
+	}
+	return red
 }
 
 func humanBytes(n int64) string {

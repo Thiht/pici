@@ -98,3 +98,10 @@ pici-cli artifacts get <execution-id> build/dist/app.tar.gz
 # validate a ci.yml
 pici-cli validate .ci/build/ci.yml
 ```
+
+## Health
+
+```sh
+# check server health (exits non-zero if the server is unreachable or unhealthy)
+pici-cli health
+```

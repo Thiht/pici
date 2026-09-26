@@ -50,6 +50,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		newRebuildCmd(c),
 		newArtifactsCmd(c),
 		newValidateCmd(c),
+		newHealthCmd(c),
 	)
 	return root
 }
@@ -460,6 +461,25 @@ func newValidateCmd(c *client.Client) *cobra.Command {
 	return cmd
 }
 
+func newHealthCmd(c *client.Client) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check server health",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := applyFormat(cmd); err != nil {
+				return err
+			}
+			h, err := c.Health(context.Background())
+			if err != nil {
+				return err
+			}
+			return output(h)
+		},
+	}
+	return cmd
+}
+
 func printJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -541,6 +561,7 @@ Usage:
   pici-cli artifacts <execution-id>
   pici-cli artifacts get <execution-id> <step>/<path>
   pici-cli validate <ci.yml>
+  pici-cli health
   pici-cli completion [bash|zsh|fish|powershell]
 
 Global flags:

@@ -67,6 +67,21 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	return c.do(ctx, http.MethodGet, path, nil)
 }
 
+type Health struct {
+	Status string `json:"status"`
+	Docker string `json:"docker,omitempty"`
+	Queue  *int   `json:"queue,omitempty"`
+}
+
+func (c *Client) Health(ctx context.Context) (Health, error) {
+	data, err := c.get(ctx, "/health")
+	if err != nil {
+		return Health{}, err
+	}
+	var h Health
+	return h, json.Unmarshal(data, &h)
+}
+
 type Project struct {
 	ID            uuid.UUID `json:"id"`
 	Name          string    `json:"name"`
