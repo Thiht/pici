@@ -17,6 +17,7 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+	upload  *http.Client
 }
 
 func New(baseURL, token string) *Client {
@@ -24,6 +25,7 @@ func New(baseURL, token string) *Client {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		http:    &http.Client{Timeout: 30 * time.Second},
+		upload:  &http.Client{},
 	}
 }
 
@@ -59,7 +61,11 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 }
 
 func (c *Client) send(req *http.Request) ([]byte, error) {
-	resp, err := c.http.Do(req)
+	return c.sendWith(c.http, req)
+}
+
+func (c *Client) sendWith(client *http.Client, req *http.Request) ([]byte, error) {
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +187,7 @@ type Execution struct {
 	CommitSHA       string       `json:"commit_sha"`
 	Status          Status       `json:"status"`
 	Trigger         Trigger      `json:"trigger"`
+	Source          Source       `json:"source,omitempty"`
 	Steps           []StepResult `json:"steps,omitempty"`
 	Error           string       `json:"error,omitempty"`
 	StartedAt       *time.Time   `json:"started_at,omitempty"`
