@@ -39,11 +39,7 @@ func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	execution, err := h.store.GetExecution(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 
@@ -84,11 +80,7 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	execution, err := h.store.GetExecution(r.Context(), execID)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 

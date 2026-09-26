@@ -33,28 +33,10 @@ type executionRequest struct {
 }
 
 func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 
 	var req executionRequest
@@ -86,20 +68,12 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 	}
 	previous, err := h.store.GetExecution(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 	project, err := h.store.GetProject(r.Context(), previous.ProjectID)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 
@@ -112,28 +86,10 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) List(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	executions, err := h.store.ListExecutions(r.Context(), project.ID, limit)
@@ -152,11 +108,7 @@ func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	execution, err := h.store.GetExecution(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 	render.JSON(w, http.StatusOK, execution)
@@ -169,7 +121,7 @@ func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.store.GetExecution(r.Context(), id); err != nil {
-		render.Error(w, http.StatusNotFound, err)
+		storeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
@@ -193,11 +145,7 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 
 	execution, err := h.store.GetExecution(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 	index := -1
@@ -229,7 +177,7 @@ func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.store.GetExecution(r.Context(), id); err != nil {
-		render.Error(w, http.StatusNotFound, err)
+		storeError(w, err)
 		return
 	}
 	if err := h.store.SetCancelRequested(r.Context(), id); err != nil {
@@ -253,11 +201,7 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.store.GetExecution(r.Context(), execID); err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 

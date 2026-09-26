@@ -25,28 +25,10 @@ type variableRequest struct {
 }
 
 func (h *VariablesHandler) SetProject(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	h.set(w, r, &project.ID)
 }
@@ -75,28 +57,10 @@ func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID
 }
 
 func (h *VariablesHandler) ListProject(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	h.list(w, r, &project.ID)
 }
@@ -119,28 +83,10 @@ func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectI
 }
 
 func (h *VariablesHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	h.delete(w, r, &project.ID, r.PathValue("key"))
 }

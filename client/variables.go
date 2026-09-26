@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 )
 
@@ -17,21 +16,11 @@ func (c *Client) SetGlobalVariable(ctx context.Context, key, value string, secre
 }
 
 func (c *Client) ListProjectVariables(ctx context.Context, project string) ([]Variable, error) {
-	data, err := c.get(ctx, "/api/projects/"+project+"/variables")
-	if err != nil {
-		return nil, err
-	}
-	var variables []Variable
-	return variables, json.Unmarshal(data, &variables)
+	return getJSON[[]Variable](c, ctx, "/api/projects/"+project+"/variables")
 }
 
 func (c *Client) ListGlobalVariables(ctx context.Context) ([]Variable, error) {
-	data, err := c.get(ctx, "/api/variables")
-	if err != nil {
-		return nil, err
-	}
-	var variables []Variable
-	return variables, json.Unmarshal(data, &variables)
+	return getJSON[[]Variable](c, ctx, "/api/variables")
 }
 
 func (c *Client) DeleteProjectVariable(ctx context.Context, project, key string) error {

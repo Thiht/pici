@@ -7,14 +7,24 @@ import (
 	"sort"
 
 	"github.com/Thiht/pici/internal/git"
+	"github.com/Thiht/pici/internal/stores"
 )
 
-func DiscoverWorkflows(ctx context.Context, cloneCfg git.CloneConfig) ([]string, error) {
-	if err := git.Clone(ctx, cloneCfg); err != nil {
+func projectCloneConfig(p stores.Project, dir, ref string) git.CloneConfig {
+	return git.CloneConfig{
+		URL:  p.RepoURL,
+		Dir:  dir,
+		Ref:  ref,
+		Auth: git.Auth{Type: p.AuthType.String(), User: p.AuthUser, Secret: p.AuthSecret},
+	}
+}
+
+func DiscoverProjectWorkflows(ctx context.Context, p stores.Project, dir, ref string) ([]string, error) {
+	if err := git.Clone(ctx, projectCloneConfig(p, dir, ref)); err != nil {
 		return nil, err
 	}
 
-	ciDir := filepath.Join(cloneCfg.Dir, ".ci")
+	ciDir := filepath.Join(dir, ".ci")
 	entries, err := os.ReadDir(ciDir)
 	if err != nil {
 		return nil, err

@@ -14,12 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"uuid"
 
 	gh "github.com/google/go-github/v92/github"
 
 	"github.com/Thiht/pici/internal/ci"
-	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
@@ -57,28 +55,10 @@ type pullRequestPayload struct {
 }
 
 func (h *WebhooksHandler) GitHub(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -159,13 +139,7 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 	if sha != "" {
 		cloneRef = sha
 	}
-	cloneCfg := git.CloneConfig{
-		URL:  project.RepoURL,
-		Dir:  dir,
-		Ref:  cloneRef,
-		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
-	}
-	workflows, err := ci.DiscoverWorkflows(ctx, cloneCfg)
+	workflows, err := ci.DiscoverProjectWorkflows(ctx, project, dir, cloneRef)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
@@ -226,28 +200,10 @@ type gitlabMergeRequest struct {
 }
 
 func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 
 	body, err := io.ReadAll(r.Body)

@@ -8,7 +8,6 @@ import (
 	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
-	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
@@ -98,55 +97,19 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	render.JSON(w, http.StatusOK, project)
 }
 
 func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 
 	var req projectRequest
@@ -189,73 +152,27 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 	if err := h.store.DeleteProject(r.Context(), project.ID); err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusNotFound, err)
-		} else {
-			render.Error(w, http.StatusInternalServerError, err)
-		}
+		storeError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *ProjectsHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
-	idOrName := r.PathValue("id")
-	var project stores.Project
-	if id, err := uuid.Parse(idOrName); err == nil {
-		p, err := h.store.GetProject(r.Context(), id)
-		if err == nil {
-			project = p
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			render.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	if project.ID == uuid.Nil() {
-		p, err := h.store.GetProjectByName(r.Context(), idOrName)
-		if err != nil {
-			if errors.Is(err, stores.ErrNotFound) {
-				render.Error(w, http.StatusNotFound, err)
-			} else {
-				render.Error(w, http.StatusInternalServerError, err)
-			}
-			return
-		}
-		project = p
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
 	}
 
 	dir := h.workspaceDir + "/" + project.ID.String() + "/_discovery"
-	cloneCfg := git.CloneConfig{
-		URL:  project.RepoURL,
-		Dir:  dir,
-		Ref:  project.DefaultBranch,
-		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
-	}
-	workflows, err := ci.DiscoverWorkflows(r.Context(), cloneCfg)
+	workflows, err := ci.DiscoverProjectWorkflows(r.Context(), project, dir, project.DefaultBranch)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return

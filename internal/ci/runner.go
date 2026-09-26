@@ -197,13 +197,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	if exec.CommitSHA != "" {
 		cloneRef = exec.CommitSHA
 	}
-	cloneCfg := git.CloneConfig{
-		URL:  project.RepoURL,
-		Dir:  repoDir,
-		Ref:  cloneRef,
-		Auth: git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret},
-	}
-	if err := git.Clone(ctx, cloneCfg); err != nil {
+	if err := git.Clone(ctx, projectCloneConfig(project, repoDir, cloneRef)); err != nil {
 		fmt.Fprintf(setupLog, "clone failed: %v\n", err)
 		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
 		return

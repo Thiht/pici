@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -38,17 +37,28 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 		reader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	req, err := c.newRequest(ctx, method, path, reader)
 	if err != nil {
 		return nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	return c.send(req)
+}
+
+func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	return req, nil
+}
 
+func (c *Client) send(req *http.Request) ([]byte, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -60,13 +70,40 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(data)))
+		return nil, &httpError{status: resp.Status, body: strings.TrimSpace(string(data))}
 	}
 	return data, nil
 }
 
 func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	return c.do(ctx, http.MethodGet, path, nil)
+}
+
+func getJSON[T any](c *Client, ctx context.Context, path string) (T, error) {
+	var out T
+	data, err := c.get(ctx, path)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(data, &out)
+}
+
+func doJSON[T any](c *Client, ctx context.Context, method, path string, body any) (T, error) {
+	var out T
+	data, err := c.do(ctx, method, path, body)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(data, &out)
+}
+
+type httpError struct {
+	status string
+	body   string
+}
+
+func (e *httpError) Error() string {
+	return e.status + ": " + e.body
 }
 
 type Health struct {
@@ -76,23 +113,13 @@ type Health struct {
 }
 
 func (c *Client) Health(ctx context.Context) (Health, error) {
-	data, err := c.get(ctx, "/health")
-	if err != nil {
-		return Health{}, err
-	}
-	var h Health
-	return h, json.Unmarshal(data, &h)
+	return getJSON[Health](c, ctx, "/health")
 }
 
 type Version = version.Info
 
 func (c *Client) Version(ctx context.Context) (Version, error) {
-	data, err := c.get(ctx, "/version")
-	if err != nil {
-		return Version{}, err
-	}
-	var v Version
-	return v, json.Unmarshal(data, &v)
+	return getJSON[Version](c, ctx, "/version")
 }
 
 type Project struct {
