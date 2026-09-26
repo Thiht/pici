@@ -1,0 +1,9 @@
+{
+  "semi": false,
+  "overrides": [
+    {
+      "files": ["*.js", "*.cjs", "*.mjs", "*.jsx", "*.ts", "*.vue"],
+      "options": { "singleQuote": true }
+    }
+  ]
+}

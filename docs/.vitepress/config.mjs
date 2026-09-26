@@ -38,8 +38,6 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/Thiht/pici' },
-    ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/Thiht/pici' }],
   },
 })

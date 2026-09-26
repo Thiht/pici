@@ -1,0 +1,15 @@
+# Go html/template files: not valid HTML, prettier corrupts the {{...}} actions
+internal/web/templates/
+
+# Local agent tooling
+/.agents/
+/.claude/
+/skills-lock.json
+
+# Build output and dependencies
+/dist/
+**/node_modules/
+**/.vitepress/cache/
+**/.vitepress/dist/
+internal/web/static/
+**/package-lock.json

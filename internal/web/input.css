@@ -1,14 +1,24 @@
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: autumn --default, sunset --prefersdark;
-  include: rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock, button, card, badge, table, input, select, checkbox, alert, toast, navbar, menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
+  themes:
+    autumn --default,
+    sunset --prefersdark;
+  include:
+    rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock,
+    button, card, badge, table, input, select, checkbox, alert, toast, navbar,
+    menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
 }
 @source "./templates";
 @source inline("{alert,badge}-{soft,success,error,warning,info,neutral}");
 
 @layer base {
   body {
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 }

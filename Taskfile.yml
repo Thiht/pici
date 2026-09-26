@@ -1,12 +1,16 @@
-version: '3'
+version: "3"
 
 vars:
   PKG: ./...
+  GCL_VERSION: v2.14.0
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
-  REFLEX:
+  GOBIN:
     sh: |
-      if [ -n "$(go env GOBIN)" ]; then echo "$(go env GOBIN)/reflex"; else echo "$(go env GOPATH)/bin/reflex"; fi
+      if [ -n "$(go env GOBIN)" ]; then echo "$(go env GOBIN)"; else echo "$(go env GOPATH)/bin"; fi
+  REFLEX: "{{.GOBIN}}/reflex"
+  GCL: "{{.GOBIN}}/golangci-lint"
+  PRETTIER: node_modules/.bin/prettier
 
 tasks:
   default:
@@ -27,18 +31,37 @@ tasks:
 
   lint:
     desc: Run golangci-lint
+    deps: [gcl:install]
     cmds:
-      - golangci-lint run
+      - "{{.GCL}} run"
+
+  gcl:install:
+    desc: Install golangci-lint
+    status:
+      - test -x {{.GCL}}
+    cmds:
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GCL_VERSION}}
 
   fmt:
-    desc: Format code (gofmt, goimports, gofumpt)
+    desc: Format code (gofmt, goimports, gofumpt, prettier)
+    deps: [prettier:install, gcl:install]
     cmds:
-      - golangci-lint fmt
+      - "{{.GCL}} fmt"
+      - '{{.PRETTIER}} --write "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
 
   fmt:check:
     desc: Check formatting without modifying files
+    deps: [prettier:install, gcl:install]
     cmds:
-      - golangci-lint fmt --diff
+      - "{{.GCL}} fmt --diff"
+      - '{{.PRETTIER}} --check "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
+
+  prettier:install:
+    desc: Install prettier
+    status:
+      - test -x {{.PRETTIER}}
+    cmds:
+      - npm install
 
   check:
     desc: Format check, lint and test
