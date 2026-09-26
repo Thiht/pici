@@ -6,7 +6,7 @@ steps:
     timeout: 10m
 
   - name: fmt-check
-    run: task fmt-check
+    run: task fmt:check
     depends_on: [build]
     timeout: 10m
 
