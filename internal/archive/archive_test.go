@@ -98,6 +98,46 @@ func TestExtractAllowsInternalSymlink(t *testing.T) {
 	}
 }
 
+func TestExtractRejectsEscapingHardlink(t *testing.T) {
+	for _, target := range []string{"../../outside", "/etc/passwd"} {
+		data := tarGz(t,
+			entry{name: "a.txt", body: "x", mode: 0o644},
+			entry{name: "b.txt", typeflag: tar.TypeLink, link: target},
+		)
+		if _, err := extract(t, data); err == nil {
+			t.Fatalf("expected escaping hardlink target %q to be rejected", target)
+		}
+	}
+}
+
+func TestExtractAllowsInternalHardlink(t *testing.T) {
+	data := tarGz(t,
+		entry{name: "a.txt", body: "hello", mode: 0o644},
+		entry{name: "b.txt", typeflag: tar.TypeLink, link: "a.txt"},
+	)
+	dest, err := extract(t, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		got, err := os.ReadFile(filepath.Join(dest, name))
+		if err != nil || string(got) != "hello" {
+			t.Fatalf("%s: got %q err=%v", name, got, err)
+		}
+	}
+}
+
+func TestExtractRejectsEntryThroughSymlinkParent(t *testing.T) {
+	data := tarGz(t,
+		entry{name: "dir", typeflag: tar.TypeDir, mode: 0o755},
+		entry{name: "link", typeflag: tar.TypeSymlink, link: "dir"},
+		entry{name: "link/file.txt", body: "x", mode: 0o644},
+	)
+	if _, err := extract(t, data); err == nil {
+		t.Fatal("expected entry through a symlinked parent to be rejected")
+	}
+}
+
 func TestExtractRejectsSpecialFiles(t *testing.T) {
 	data := tarGz(t, entry{name: "dev", typeflag: tar.TypeChar})
 	if _, err := extract(t, data); err == nil {
