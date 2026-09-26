@@ -1,9 +1,13 @@
-name: test
+name: continuous-integration
 
 steps:
   - name: build
-    run: task build
+    run: |
+      go build -o dist/pici ./cmd/pici
+      go build -o dist/pici-cli ./cmd/pici-cli
     timeout: 10m
+    artifacts:
+      - dist/**
 
   - name: fmt-check
     run: task fmt:check
