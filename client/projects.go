@@ -33,6 +33,15 @@ func (c *Client) GetProject(ctx context.Context, id string) (Project, error) {
 	return p, json.Unmarshal(data, &p)
 }
 
+func (c *Client) UpdateProject(ctx context.Context, id string, req UpdateProjectRequest) (Project, error) {
+	data, err := c.do(ctx, http.MethodPut, "/api/projects/"+id, req)
+	if err != nil {
+		return Project{}, err
+	}
+	var p Project
+	return p, json.Unmarshal(data, &p)
+}
+
 func (c *Client) DeleteProject(ctx context.Context, id string) error {
 	_, err := c.do(ctx, http.MethodDelete, "/api/projects/"+id, nil)
 	return err

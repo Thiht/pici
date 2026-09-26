@@ -69,3 +69,7 @@ func (c *Client) ListArtifacts(ctx context.Context, id string) ([]Artifact, erro
 	var artifacts []Artifact
 	return artifacts, json.Unmarshal(data, &artifacts)
 }
+
+func (c *Client) DownloadArtifact(ctx context.Context, id, step, path string) ([]byte, error) {
+	return c.get(ctx, "/api/executions/"+id+"/artifacts/"+step+"/"+path)
+}

@@ -2,6 +2,8 @@
 
 Base URL: `http://localhost:8080`.
 
+For day-to-day operations, prefer the [CLI](/guide/cli) (`pici-cli`). This page documents the underlying HTTP endpoints.
+
 ## Authentication
 
 The API token is **required** (set via `-api-token` or `PICI_API_TOKEN`; the server refuses to start without it). Send it either as `Authorization: Bearer <token>` or `X-API-Token: <token>`:
@@ -57,14 +59,14 @@ The full API is also available as an [interactive OpenAPI reference](/guide/api-
 | `GET` | `/api/executions/{id}/artifacts/{step}/{path}` | download an artifact |
 
 ```sh
-curl localhost:8080/api/executions/<id>/artifacts
-curl -o app.tar.gz localhost:8080/api/executions/<id>/artifacts/build/dist/app.tar.gz
+pici-cli artifacts <id>
+pici-cli artifacts get <id> build/dist/app.tar.gz
 ```
 
 ## Streaming logs (SSE)
 
 ```sh
-curl -N localhost:8080/api/executions/<id>/logs/stream
+pici-cli logs <id> --follow
 ```
 
 Events are labeled by source (`setup` or the step name); a final `done` event carries the execution status.

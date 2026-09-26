@@ -5,16 +5,10 @@ A project is a git repository. It can be public or private, on GitHub, GitLab, o
 ## Register a project
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "demo",
-    "repo_url": "https://github.com/acme/demo.git",
-    "default_branch": "main"
-  }'
+pici-cli projects add demo https://github.com/acme/demo.git
 ```
 
-Fields:
+Optional fields are set via flags on `add`/`update` (`--provider`, `--auth-type`, `--auth-user`, `--auth-secret`, `--webhook-secret`, `--default-branch`):
 
 | Field | Description |
 |---|---|
@@ -32,19 +26,13 @@ Fields:
 Token (HTTPS):
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"private","repo_url":"https://github.com/acme/private.git",
-       "auth_type":"token","auth_user":"x-access-token","auth_secret":"ghp_..."}'
+pici-cli projects add --auth-type token --auth-user x-access-token --auth-secret ghp_... private https://github.com/acme/private.git
 ```
 
 SSH:
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"private","repo_url":"git@github.com:acme/private.git",
-       "auth_type":"ssh","auth_secret":"-----BEGIN OPENSSH PRIVATE KEY-----\n..."}'
+pici-cli projects add --auth-type ssh --auth-secret '-----BEGIN OPENSSH PRIVATE KEY-----...' private git@github.com:acme/private.git
 ```
 
 The `auth_secret` (a GitHub/GitLab PAT) is also used to report GitHub check runs.
@@ -52,10 +40,10 @@ The `auth_secret` (a GitHub/GitLab PAT) is also used to report GitHub check runs
 ## List / inspect / update / delete
 
 ```sh
-curl localhost:8080/api/projects
-curl localhost:8080/api/projects/demo
-curl -X PUT localhost:8080/api/projects/demo -H 'content-type: application/json' -d '{"default_branch":"develop"}'
-curl -X DELETE localhost:8080/api/projects/demo
+pici-cli projects
+pici-cli projects show demo
+pici-cli projects update demo --default-branch develop
+pici-cli projects rm demo
 ```
 
 Projects are addressable by name **or** id.

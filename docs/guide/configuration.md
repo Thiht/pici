@@ -34,7 +34,7 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 ```
 
 ```sh
-go run ./cmd/pici -config /etc/pici.json
+pici -config /etc/pici.json
 ```
 
 ## Garbage collection

@@ -14,24 +14,21 @@ Two settings are **required** (the server refuses to start without them): a secr
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
 export PICI_API_TOKEN=$(openssl rand -hex 24)
 
-go run ./cmd/pici
+pici
 ```
 
 Configuration is flags-first. See [Configuration](/guide/configuration) for the full list.
 
 ```sh
-go run ./cmd/pici -http-addr :8080 -db-driver sqlite -db-dsn pici.db
+pici -http-addr :8080 -db-driver sqlite -db-dsn pici.db
 ```
 
 ## Add a project
 
-Register a repository (GitHub, GitLab, or any git URL). Include the API token on every request:
+Register a repository (GitHub, GitLab, or any git URL):
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H "Authorization: Bearer $PICI_API_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"name":"demo","repo_url":"https://github.com/acme/demo.git","default_branch":"main"}'
+PICI_TOKEN=$PICI_API_TOKEN pici-cli projects add demo https://github.com/acme/demo.git
 ```
 
 ## Write a workflow
@@ -69,16 +66,11 @@ steps:
 ## Trigger a run
 
 ```sh
-curl -X POST localhost:8080/api/projects/demo/executions \
-  -H "Authorization: Bearer $PICI_API_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"workflow":"build","ref":"main"}'
+PICI_TOKEN=$PICI_API_TOKEN pici-cli run demo build
 ```
 
 Then watch the logs:
 
 ```sh
-curl -H "Authorization: Bearer $PICI_API_TOKEN" localhost:8080/api/executions/<id>/logs
+PICI_TOKEN=$PICI_API_TOKEN pici-cli logs <id> --follow
 ```
-
-Or use the [CLI](/guide/cli): `PICI_TOKEN=$PICI_API_TOKEN pici-cli run demo build`.

@@ -84,13 +84,13 @@ Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker
 
 ```sh
 # flags
-go run ./cmd/pici -http-addr :9090 -concurrency 8
+pici -http-addr :9090 -concurrency 8
 
 # env
-PICI_DB_DSN=/var/lib/pici/pici.db go run ./cmd/pici
+PICI_DB_DSN=/var/lib/pici/pici.db pici
 
 # config file (JSON)
-go run ./cmd/pici -config /etc/pici.json
+pici -config /etc/pici.json
 ```
 
 ## API
@@ -109,23 +109,15 @@ GET    /api/projects/{id}/configs        list workflows discovered in .ci
 Register a public GitHub repo:
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"demo","repo_url":"https://github.com/acme/demo.git","default_branch":"main"}'
+pici-cli projects add demo https://github.com/acme/demo.git
 ```
 
 Register a private repo (token or SSH):
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"private","repo_url":"https://github.com/acme/private.git",
-       "auth_type":"token","auth_user":"x-access-token","auth_secret":"ghp_..."}'
+pici-cli projects add --auth-type token --auth-user x-access-token --auth-secret ghp_... private https://github.com/acme/private.git
 
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"private","repo_url":"git@github.com:acme/private.git",
-       "auth_type":"ssh","auth_secret":"-----BEGIN OPENSSH PRIVATE KEY-----\n..."}'
+pici-cli projects add --auth-type ssh --auth-secret '-----BEGIN OPENSSH PRIVATE KEY-----...' private git@github.com:acme/private.git
 ```
 
 `auth_type` is `none`, `token`, or `ssh`. `auth_user` defaults to `oauth2` (token) / `git` (ssh).
@@ -143,9 +135,7 @@ DELETE /api/projects/{id}/variables/{key} delete a project variable
 ```
 
 ```sh
-curl -X POST localhost:8080/api/projects/demo/variables \
-  -H 'content-type: application/json' \
-  -d '{"key":"NPM_TOKEN","value":"secret","secret":true}'
+pici-cli vars set NPM_TOKEN secret --project demo --secret
 ```
 
 ### Executions
@@ -159,11 +149,9 @@ POST  /api/executions/{id}/cancel         cancel a running execution
 ```
 
 ```sh
-curl -X POST localhost:8080/api/projects/demo/executions \
-  -H 'content-type: application/json' \
-  -d '{"workflow":"build","ref":"main"}'
+pici-cli run demo build
 
-curl localhost:8080/api/executions/<id>/logs
+pici-cli logs <id>
 ```
 
 ## Design notes

@@ -14,19 +14,15 @@ The server exposes a small HTTP API, and execution happens in Docker. Each repos
 ## Quick start
 
 ```sh
-go run ./cmd/pici
+pici
 ```
 
 Then register a project and trigger a run:
 
 ```sh
-curl -X POST localhost:8080/api/projects \
-  -H 'content-type: application/json' \
-  -d '{"name":"demo","repo_url":"https://github.com/acme/demo.git"}'
+pici-cli projects add demo https://github.com/acme/demo.git
 
-curl -X POST localhost:8080/api/projects/demo/executions \
-  -H 'content-type: application/json' \
-  -d '{"workflow":"build","ref":"main"}'
+pici-cli run demo build
 ```
 
 See [Getting started](/guide/getting-started) for a full walkthrough.

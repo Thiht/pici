@@ -52,10 +52,7 @@ A cron workflow can propose dependency updates (à la Renovate/Dependabot). See 
 It needs a project secret named `GH_TOKEN` — a GitHub PAT with `contents: write` and `pull_requests: write`:
 
 ```sh
-curl -X POST localhost:8080/api/projects/pici/variables \
-  -H "Authorization: Bearer $PICI_API_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"key":"GH_TOKEN","value":"<pat>","secret":true}'
+pici-cli vars set GH_TOKEN <pat> --project pici --secret
 ```
 
 The `PICI_REPO_URL` and `PICI_REF` built-in environment variables give the script the repository and base branch.

@@ -105,5 +105,5 @@ Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra 
 ## Validate a ci.yml
 
 ```sh
-curl -X POST localhost:8080/api/validate --data-binary @.ci/build/ci.yml
+pici-cli validate .ci/build/ci.yml
 ```

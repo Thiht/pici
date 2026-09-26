@@ -90,6 +90,17 @@ type CreateProjectRequest struct {
 	DefaultBranch string   `json:"default_branch,omitempty"`
 }
 
+type UpdateProjectRequest struct {
+	Name          string   `json:"name,omitempty"`
+	RepoURL       string   `json:"repo_url,omitempty"`
+	Provider      Provider `json:"provider,omitempty"`
+	AuthType      AuthType `json:"auth_type,omitempty"`
+	AuthUser      string   `json:"auth_user,omitempty"`
+	AuthSecret    string   `json:"auth_secret,omitempty"`
+	WebhookSecret string   `json:"webhook_secret,omitempty"`
+	DefaultBranch string   `json:"default_branch,omitempty"`
+}
+
 type Variable struct {
 	ProjectID *uuid.UUID `json:"project_id"`
 	Key       string     `json:"key"`
