@@ -16,8 +16,8 @@
 </thead>
 <tbody>
 {{range .Projects}}
-<tr class="cursor-pointer" onclick="window.location.href='/projects/{{.ID}}'">
-<td><a class="link link-primary font-medium" href="/projects/{{.ID}}">{{.Name}}</a></td>
+<tr class="relative">
+<td><a class="link link-primary font-medium stretched-link" href="/projects/{{.ID}}">{{.Name}}</a></td>
 <td class="font-mono text-xs">{{.RepoURL}}</td>
 <td>{{.Provider}}</td>
 <td>{{if .DefaultBranch}}{{.DefaultBranch}}{{else}}—{{end}}</td>

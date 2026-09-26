@@ -45,9 +45,9 @@
 <thead><tr><th scope="col">Status</th><th scope="col">Workflow</th><th scope="col">Ref</th><th scope="col">Trigger</th><th scope="col">Duration</th><th scope="col">Created</th></tr></thead>
 <tbody>
 {{range .Executions}}
-<tr class="cursor-pointer" onclick="window.location.href='/executions/{{.ID}}'">
+<tr class="relative">
 <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
-<td><a class="link link-primary font-medium" href="/executions/{{.ID}}">{{.Workflow}}</a></td>
+<td><a class="link link-primary font-medium stretched-link" href="/executions/{{.ID}}">{{.Workflow}}</a></td>
 <td class="font-mono text-xs">{{.Ref}}</td>
 <td>{{.Trigger}}</td>
 <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>

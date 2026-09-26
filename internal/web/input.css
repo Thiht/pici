@@ -29,6 +29,13 @@
     transform: translateY(0);
   }
 
+  /* Lets a single anchor make its whole table row clickable. */
+  .stretched-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
   /* Action-result toasts dismiss themselves after a few seconds. */
   @keyframes toast-dismiss {
     0%,
@@ -38,7 +45,7 @@
     }
     100% {
       opacity: 0;
-      transform: translateY(-0.5rem);
+      transform: translateY(0.5rem);
       visibility: hidden;
     }
   }

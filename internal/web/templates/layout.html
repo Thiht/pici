@@ -38,7 +38,7 @@
 </div>
 </div>
 </header>
-<div id="flash" class="toast toast-top toast-end z-50">{{template "flash" .}}</div>
+<div id="flash" class="toast toast-end z-50">{{template "flash" .}}</div>
 {{end}}
 
 {{define "flash"}}{{if .FlashText}}<div class="alert alert-soft alert-{{.FlashKind}}" role="status">{{.FlashText}}</div>{{end}}{{end}}
