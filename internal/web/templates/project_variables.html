@@ -41,6 +41,33 @@
 {{end}}
 </div>
 
+<div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+<h2 class="text-lg font-semibold">Inherited from instance</h2>
+<a class="link link-primary text-sm" href="/variables">Manage global variables</a>
+</div>
+<p class="mt-1 text-sm opacity-70">Global variables inherited by every project. Overridden by a project variable with the same key.</p>
+<div class="card mt-4 border border-base-300">
+{{if .GlobalVariables}}
+<div class="overflow-x-auto">
+<table class="table">
+<caption class="sr-only">Inherited global variables</caption>
+<thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+{{range .GlobalVariables}}
+<tr>
+<td class="font-mono text-xs">{{.Key}}</td>
+<td class="font-mono text-xs">{{if .Secret}}<span class="badge badge-soft badge-neutral">Secret</span>{{else}}{{.Value}}{{end}}</td>
+<td>{{if index $.Overridden .Key}}<span class="badge badge-soft badge-warning">Overridden</span>{{else}}<span class="badge badge-soft badge-ghost">Global</span>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p class="p-4 text-sm opacity-70">No inherited variables.</p>
+{{end}}
+</div>
+
 <div id="new-variable" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-variable-title">
 <div class="modal-box max-w-xl">
 <a class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" href="#" aria-label="Close">✕</a>
