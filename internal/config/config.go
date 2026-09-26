@@ -3,10 +3,15 @@ package config
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/peterbourgon/ff/v3"
+
+	"github.com/Thiht/pici/internal/ci"
 )
 
 type Config struct {
@@ -72,6 +77,11 @@ func (c Config) Validate() error {
 	}
 	if c.APIToken == "" {
 		return errors.New("PICI_API_TOKEN is required (generate one with `openssl rand -hex 24`)")
+	}
+	repo := strings.TrimRight(filepath.Clean(c.RepoMountPath), string(filepath.Separator)) + string(filepath.Separator)
+	cache := strings.TrimRight(filepath.Clean(ci.CacheMountPath), string(filepath.Separator)) + string(filepath.Separator)
+	if strings.HasPrefix(repo, cache) || strings.HasPrefix(cache, repo) {
+		return fmt.Errorf("PICI_REPO_MOUNT_PATH (%s) must not overlap the cache mount path (%s)", c.RepoMountPath, ci.CacheMountPath)
 	}
 	return nil
 }

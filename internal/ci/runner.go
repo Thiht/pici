@@ -261,7 +261,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		}
 	}
 
-	autoEnv, autoCache := detectCaches(repoDir, r.MountPath)
+	autoEnv, autoCache := detectCaches(repoDir, CacheMountPath)
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
 	}
@@ -270,9 +270,12 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 			cfg.Env[k] = v
 		}
 	}
-	cfg.Cache = append(cfg.Cache, autoCache...)
 
-	cacheBinds := cacheBinds(project.ID.String(), r.MountPath, cfg.Cache)
+	// Explicit caches are mounted under the repo (they are repo-relative by
+	// design); auto-detected ones live in a dedicated path outside the repo.
+	autoBinds := cacheBinds(project.ID.String(), CacheMountPath, autoCache)
+	explicitBinds := cacheBinds(project.ID.String(), r.MountPath, cfg.Cache)
+	cacheBinds := append(explicitBinds, autoBinds...)
 
 	checkRunID := r.createCheckRun(ctx, project, exec, setupLog)
 
