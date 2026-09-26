@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Thiht/pici/client"
+	"github.com/Thiht/pici/internal/version"
 )
+
+var buildVersion = "dev"
 
 func main() {
 	c := client.New(cmp.Or(os.Getenv("PICI_ADDR"), "http://localhost:8080"), os.Getenv("PICI_TOKEN"))
@@ -27,6 +30,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		Use:           "pici-cli",
 		Short:         "pici — minimal CI client",
 		Long:          usageText,
+		Version:       buildVersion,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -51,6 +55,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		newArtifactsCmd(c),
 		newValidateCmd(c),
 		newHealthCmd(c),
+		newVersionCmd(c),
 	)
 	return root
 }
@@ -480,6 +485,30 @@ func newHealthCmd(c *client.Client) *cobra.Command {
 	return cmd
 }
 
+func newVersionCmd(c *client.Client) *cobra.Command {
+	var server bool
+	cmd := &cobra.Command{
+		Use:   "version",
+		Short: "Show version information",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := applyFormat(cmd); err != nil {
+				return err
+			}
+			if server {
+				v, err := c.Version(context.Background())
+				if err != nil {
+					return err
+				}
+				return output(v)
+			}
+			return output(version.Get(buildVersion))
+		},
+	}
+	cmd.Flags().BoolVar(&server, "server", false, "show the server version instead of the local build")
+	return cmd
+}
+
 func printJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -562,6 +591,7 @@ Usage:
   pici-cli artifacts get <execution-id> <step>/<path>
   pici-cli validate <ci.yml>
   pici-cli health
+  pici-cli version [--server]
   pici-cli completion [bash|zsh|fish|powershell]
 
 Global flags:

@@ -12,6 +12,8 @@ type Config struct {
 	Image       string            `yaml:"image"`
 	Env         map[string]string `yaml:"env"`
 	Schedule    string            `yaml:"schedule"`
+	Tags        []string          `yaml:"tags"`
+	Branches    []string          `yaml:"branches"`
 	Paths       []string          `yaml:"paths"`
 	PathsIgnore []string          `yaml:"paths_ignore"`
 	Cache       []string          `yaml:"cache"`

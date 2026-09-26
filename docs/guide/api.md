@@ -18,45 +18,45 @@ The full API is also available as an [interactive OpenAPI reference](/guide/api-
 
 ## Projects
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/projects` | register a project |
-| `GET` | `/api/projects` | list projects |
-| `GET` | `/api/projects/{id}` | get a project |
-| `PUT` | `/api/projects/{id}` | update a project |
-| `DELETE` | `/api/projects/{id}` | delete a project |
-| `GET` | `/api/projects/{id}/configs` | list discovered workflows |
+| Method   | Path                         | Description               |
+| -------- | ---------------------------- | ------------------------- |
+| `POST`   | `/api/projects`              | register a project        |
+| `GET`    | `/api/projects`              | list projects             |
+| `GET`    | `/api/projects/{id}`         | get a project             |
+| `PUT`    | `/api/projects/{id}`         | update a project          |
+| `DELETE` | `/api/projects/{id}`         | delete a project          |
+| `GET`    | `/api/projects/{id}/configs` | list discovered workflows |
 
 ## Variables
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/variables` | set a global variable |
-| `GET` | `/api/variables` | list global variables |
-| `DELETE` | `/api/variables/{key}` | delete a global variable |
-| `POST` | `/api/projects/{id}/variables` | set a project variable |
-| `GET` | `/api/projects/{id}/variables` | list project variables |
+| Method   | Path                                 | Description               |
+| -------- | ------------------------------------ | ------------------------- |
+| `POST`   | `/api/variables`                     | set a global variable     |
+| `GET`    | `/api/variables`                     | list global variables     |
+| `DELETE` | `/api/variables/{key}`               | delete a global variable  |
+| `POST`   | `/api/projects/{id}/variables`       | set a project variable    |
+| `GET`    | `/api/projects/{id}/variables`       | list project variables    |
 | `DELETE` | `/api/projects/{id}/variables/{key}` | delete a project variable |
 
 ## Executions
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/projects/{id}/executions` | trigger a run |
-| `GET` | `/api/projects/{id}/executions` | list executions |
-| `GET` | `/api/executions/{id}` | get an execution |
-| `GET` | `/api/executions/{id}/logs` | combined logs |
-| `GET` | `/api/executions/{id}/logs/stream` | stream logs over SSE |
-| `GET` | `/api/executions/{id}/steps/{step}/logs` | a single step's logs |
-| `POST` | `/api/executions/{id}/cancel` | cancel a running execution |
-| `POST` | `/api/executions/{id}/rebuild` | re-run with the same commit |
+| Method | Path                                     | Description                 |
+| ------ | ---------------------------------------- | --------------------------- |
+| `POST` | `/api/projects/{id}/executions`          | trigger a run               |
+| `GET`  | `/api/projects/{id}/executions`          | list executions             |
+| `GET`  | `/api/executions/{id}`                   | get an execution            |
+| `GET`  | `/api/executions/{id}/logs`              | combined logs               |
+| `GET`  | `/api/executions/{id}/logs/stream`       | stream logs over SSE        |
+| `GET`  | `/api/executions/{id}/steps/{step}/logs` | a single step's logs        |
+| `POST` | `/api/executions/{id}/cancel`            | cancel a running execution  |
+| `POST` | `/api/executions/{id}/rebuild`           | re-run with the same commit |
 
 ## Artifacts
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/executions/{id}/artifacts` | list collected artifacts |
-| `GET` | `/api/executions/{id}/artifacts/{step}/{path}` | download an artifact |
+| Method | Path                                           | Description              |
+| ------ | ---------------------------------------------- | ------------------------ |
+| `GET`  | `/api/executions/{id}/artifacts`               | list collected artifacts |
+| `GET`  | `/api/executions/{id}/artifacts/{step}/{path}` | download an artifact     |
 
 ```sh
 pici-cli artifacts <id>
@@ -73,12 +73,13 @@ Events are labeled by source (`setup` or the step name); a final `done` event ca
 
 ## Other
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | healthcheck (docker + queue depth) |
-| `POST` | `/api/validate` | validate a `ci.yml` |
-| `POST` | `/api/webhooks/github/{id}` | GitHub webhook |
-| `POST` | `/api/webhooks/gitlab/{id}` | GitLab webhook |
+| Method | Path                        | Description                                       |
+| ------ | --------------------------- | ------------------------------------------------- |
+| `GET`  | `/health`                   | healthcheck (docker + queue depth)                |
+| `GET`  | `/version`                  | server build version + VCS revision/time/modified |
+| `POST` | `/api/validate`             | validate a `ci.yml`                               |
+| `POST` | `/api/webhooks/github/{id}` | GitHub webhook                                    |
+| `POST` | `/api/webhooks/gitlab/{id}` | GitLab webhook                                    |
 
 An execution looks like:
 
@@ -92,7 +93,13 @@ An execution looks like:
   "status": "success",
   "trigger": "manual",
   "steps": [
-    { "name": "test", "status": "success", "exit_code": 0, "started_at": "2026-09-26T14:00:00Z", "finished_at": "2026-09-26T14:00:05Z" }
+    {
+      "name": "test",
+      "status": "success",
+      "exit_code": 0,
+      "started_at": "2026-09-26T14:00:00Z",
+      "finished_at": "2026-09-26T14:00:05Z"
+    }
   ],
   "started_at": "2026-09-26T14:00:00Z",
   "finished_at": "2026-09-26T14:00:05Z",

@@ -25,35 +25,40 @@ A workflow is a folder under `.ci/`. One folder = one workflow.
 ## ci.yml
 
 ```yaml
-name: build                # optional (defaults to folder name)
-image: node:20             # optional: use this image instead of the Dockerfile
+name: build # optional (defaults to folder name)
+image: node:20 # optional: use this image instead of the Dockerfile
 
-env:                       # workflow-level environment variables
+env: # workflow-level environment variables
   NODE_ENV: test
 
-schedule: "0 4 * * *"      # optional: cron schedule (5-field)
+schedule: "0 4 * * *" # optional: cron schedule (5-field)
 
-concurrency: deploy        # optional: cancel running builds in this group when a new one starts
+concurrency: deploy # optional: cancel running builds in this group when a new one starts
 
-paths:                     # optional: only run when these files change
+tags: # optional: only trigger on matching tag pushes
+  - "v*.*.*"
+branches: # optional: only trigger on matching branch pushes
+  - main
+
+paths: # optional: only run when these files change
   - src/**
 paths_ignore:
   - src/generated/**
 
-cache:                     # optional: paths (relative to repo root) persisted between runs
+cache: # optional: paths (relative to repo root) persisted between runs
   - node_modules
   - .cache
 
 steps:
   - name: install
-    script: install.sh     # path relative to .ci/<workflow>/
+    script: install.sh # path relative to .ci/<workflow>/
     timeout: 5m
     retry: 2
 
   - name: build
     run: npm run build
     depends_on: [install]
-    artifacts:             # optional: files to collect (glob, relative to repo root)
+    artifacts: # optional: files to collect (glob, relative to repo root)
       - dist/**
     env:
       FOO: bar
@@ -75,12 +80,12 @@ steps:
 
 Dependency caches are also **detected automatically** from files at the repo root — no `env`/`cache` needed:
 
-| Marker | Env vars | Cached path |
-|---|---|---|
-| `go.mod` | `GOMODCACHE`, `GOCACHE` | `.cache/gomod`, `.cache/gobuild` |
-| `package.json` | `npm_config_cache` | `.npm` |
-| `Cargo.toml` | `CARGO_HOME` | `.cargo` |
-| `requirements.txt` / `pyproject.toml` | `PIP_CACHE_DIR` | `.cache/pip` |
+| Marker                                | Env vars                | Cached path                      |
+| ------------------------------------- | ----------------------- | -------------------------------- |
+| `go.mod`                              | `GOMODCACHE`, `GOCACHE` | `.cache/gomod`, `.cache/gobuild` |
+| `package.json`                        | `npm_config_cache`      | `.npm`                           |
+| `Cargo.toml`                          | `CARGO_HOME`            | `.cargo`                         |
+| `requirements.txt` / `pyproject.toml` | `PIP_CACHE_DIR`         | `.cache/pip`                     |
 
 Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra paths).
 
@@ -88,19 +93,35 @@ Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra 
 
 `concurrency` cancels any currently-running execution in the same group (same project) when a new one starts, so only the latest build of a branch/deployment keeps running.
 
+### Ref filtering
+
+By default a workflow is triggered by every push. `tags` and `branches` restrict it to matching refs (glob patterns):
+
+- only `tags` set → runs on matching tags, never on branches;
+- only `branches` set → runs on matching branches, never on tags;
+- both set → each side is filtered independently;
+- neither set → runs on every push.
+
+Filtering applies to webhook-triggered runs only; `pici-cli run`, schedules and rebuilds are unaffected.
+
 ## Built-in environment variables
 
-| Variable | Description |
-|---|---|
-| `CI` | always `true` |
-| `PICI_PROJECT` | project name |
+| Variable            | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `CI`                | always `true`                                 |
+| `PICI_PROJECT`      | project name                                  |
 | `PICI_PROJECT_ID` | project id |
+| `PICI_REPO_URL` | repo clone URL |
+| `PICI_REPO_SLUG` | repo path (`owner/repo`) without `.git` |
 | `PICI_WORKFLOW` | workflow name |
-| `PICI_EXECUTION_ID` | execution id |
+| `PICI_EXECUTION_ID` | execution id                                  |
 | `PICI_REF` | the ref being built |
+| `PICI_VERSION` | tag name when building a tag, otherwise the short commit SHA |
 | `PICI_COMMIT_SHA` | resolved commit SHA |
 | `PICI_REPO_DIR` | mount path of the repo (default `/workspace`) |
 | `PICI_WORKFLOW_DIR` | mount path of the workflow folder |
+
+Git is pre-configured to trust the mounted repo (`safe.directory`), so `git` commands and Go's VCS stamping work out of the box regardless of uid/gid. No `git config` setup is needed in your steps.
 
 ## Validate a ci.yml
 

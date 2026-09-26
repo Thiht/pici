@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Thiht/pici/client"
+	"github.com/Thiht/pici/internal/version"
 )
 
 type format int
@@ -67,6 +68,8 @@ func output(v any) error {
 		printArtifacts(x)
 	case client.Health:
 		printHealth(x)
+	case version.Info:
+		printVersion(x)
 	default:
 		return printJSON(v)
 	}
@@ -234,6 +237,19 @@ func printHealth(h client.Health) {
 	}
 	if h.Queue != nil {
 		fmt.Printf("queue:  %d\n", *h.Queue)
+	}
+}
+
+func printVersion(v version.Info) {
+	fmt.Printf("version:  %s\n", v.Version)
+	if v.Revision != "" {
+		fmt.Printf("revision: %s\n", v.Revision)
+	}
+	if v.Time != "" {
+		fmt.Printf("time:     %s\n", v.Time)
+	}
+	if v.Modified {
+		fmt.Printf("modified: true\n")
 	}
 }
 

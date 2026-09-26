@@ -10,16 +10,16 @@ pici-cli projects add demo https://github.com/acme/demo.git
 
 Optional fields are set via flags on `add`/`update` (`--provider`, `--auth-type`, `--auth-user`, `--auth-secret`, `--webhook-secret`, `--default-branch`):
 
-| Field | Description |
-|---|---|
-| `name` | unique slug (required) |
-| `repo_url` | git URL (required) |
-| `provider` | `github`, `gitlab`, or `generic` (inferred from URL if omitted) |
-| `auth_type` | `none`, `token`, or `ssh` |
-| `auth_user` | username for token auth (defaults to `oauth2`/`git`) |
-| `auth_secret` | the token or SSH private key |
-| `webhook_secret` | shared secret for webhook signature verification |
-| `default_branch` | branch used when no ref is specified |
+| Field            | Description                                                     |
+| ---------------- | --------------------------------------------------------------- |
+| `name`           | unique slug (required)                                          |
+| `repo_url`       | git URL (required)                                              |
+| `provider`       | `github`, `gitlab`, or `generic` (inferred from URL if omitted) |
+| `auth_type`      | `none`, `token`, or `ssh`                                       |
+| `auth_user`      | username for token auth (defaults to `oauth2`/`git`)            |
+| `auth_secret`    | the token or SSH private key                                    |
+| `webhook_secret` | shared secret for webhook signature verification                |
+| `default_branch` | branch used when no ref is specified                            |
 
 ## Private repositories
 

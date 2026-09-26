@@ -8,15 +8,21 @@ import (
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/version"
 )
 
 type SystemHandler struct {
-	store  stores.Store
-	engine *docker.Engine
+	store        stores.Store
+	engine       *docker.Engine
+	buildVersion string
 }
 
-func NewSystemHandler(store stores.Store, engine *docker.Engine) *SystemHandler {
-	return &SystemHandler{store: store, engine: engine}
+func NewSystemHandler(store stores.Store, engine *docker.Engine, buildVersion string) *SystemHandler {
+	return &SystemHandler{store: store, engine: engine, buildVersion: buildVersion}
+}
+
+func (h *SystemHandler) Version(w http.ResponseWriter, r *http.Request) {
+	render.JSON(w, http.StatusOK, version.Get(h.buildVersion))
 }
 
 func (h *SystemHandler) Health(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +56,8 @@ func (h *SystemHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		"name":     cfg.Name,
 		"steps":    len(cfg.Steps),
 		"schedule": cfg.Schedule,
+		"tags":     cfg.Tags,
+		"branches": cfg.Branches,
 		"paths":    cfg.Paths,
 		"image":    cfg.Image,
 	})

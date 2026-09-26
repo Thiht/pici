@@ -118,7 +118,8 @@ func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter,
 		changed = append(changed, payload.HeadCommit.Modified...)
 		changed = append(changed, payload.HeadCommit.Removed...)
 	}
-	h.trigger(ctx, w, project, normalizeRef(payload.Ref), payload.After, changed)
+	isTag := strings.HasPrefix(payload.Ref, "refs/tags/")
+	h.trigger(ctx, w, project, normalizeRef(payload.Ref), payload.After, changed, isTag)
 }
 
 func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.ResponseWriter, project stores.Project, body []byte) {
@@ -149,10 +150,10 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 		}
 	}
 
-	h.trigger(ctx, w, project, ref, sha, changed)
+	h.trigger(ctx, w, project, ref, sha, changed, false)
 }
 
-func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, ref, sha string, changed []string) {
+func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, ref, sha string, changed []string, isTag bool) {
 	dir := filepath.Join(h.workspaceDir, project.ID.String(), "_discovery")
 	cloneRef := ref
 	if sha != "" {
@@ -179,6 +180,9 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 		}
 		cfg, err := ci.Parse(data)
 		if err != nil {
+			continue
+		}
+		if !ci.MatchesRef(cfg.Tags, cfg.Branches, ref, isTag) {
 			continue
 		}
 		if !ci.MatchesPaths(cfg.Paths, cfg.PathsIgnore, changed) {
@@ -280,7 +284,7 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 			changed = append(changed, c.Modified...)
 			changed = append(changed, c.Removed...)
 		}
-		h.trigger(r.Context(), w, project, normalizeRef(payload.Ref), payload.After, changed)
+		h.trigger(r.Context(), w, project, normalizeRef(payload.Ref), payload.After, changed, kind.ObjectKind == "tag_push")
 	case "merge_request":
 		var payload gitlabMergeRequest
 		if err := json.Unmarshal(body, &payload); err != nil {
@@ -289,7 +293,7 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 		}
 		switch payload.ObjectAttributes.Action {
 		case "open", "reopen", "update":
-			h.trigger(r.Context(), w, project, payload.ObjectAttributes.SourceBranch, payload.ObjectAttributes.LastCommit.ID, nil)
+			h.trigger(r.Context(), w, project, payload.ObjectAttributes.SourceBranch, payload.ObjectAttributes.LastCommit.ID, nil, false)
 		default:
 			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		}

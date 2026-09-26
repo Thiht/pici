@@ -13,6 +13,7 @@ import (
 	"uuid"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	gh "github.com/google/go-github/v92/github"
 
 	"github.com/Thiht/pici/internal/docker"
@@ -270,7 +271,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		}
 	}
 
-	env := buildEnv(project, exec, r.MountPath, sha)
+	env := buildEnv(project, exec, r.MountPath, sha, resolveVersion(repoDir, exec.Ref, sha))
 	for _, v := range vars {
 		env = append(env, v.Key+"="+v.Value)
 	}
@@ -477,20 +478,55 @@ func stepError(steps stores.Steps) string {
 	return ""
 }
 
-func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha string) []string {
+func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, version string) []string {
 	return []string{
 		"CI=true",
 		"PICI=true",
 		"PICI_PROJECT=" + project.Name,
 		"PICI_PROJECT_ID=" + project.ID.String(),
 		"PICI_REPO_URL=" + project.RepoURL,
+		"PICI_REPO_SLUG=" + repoSlug(project.RepoURL),
 		"PICI_WORKFLOW=" + exec.Workflow,
 		"PICI_EXECUTION_ID=" + exec.ID.String(),
 		"PICI_REF=" + exec.Ref,
+		"PICI_VERSION=" + version,
 		"PICI_COMMIT_SHA=" + sha,
 		"PICI_REPO_DIR=" + mountPath,
 		"PICI_WORKFLOW_DIR=" + mountPath + "/.ci/" + exec.Workflow,
+		// Trust the mounted repo whatever its uid/gid, so git and go's VCS
+		// stamping work without any per-workflow setup.
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=*",
 	}
+}
+
+func repoSlug(repoURL string) string {
+	s := strings.TrimSuffix(repoURL, ".git")
+	switch {
+	case strings.Contains(s, "://"):
+		s = s[strings.Index(s, "://")+3:]
+	case strings.Contains(s, "@") && strings.Contains(s, ":"):
+		return strings.Trim(s[strings.Index(s, ":")+1:], "/")
+	default:
+		return strings.Trim(s, "/")
+	}
+	if i := strings.Index(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	return strings.Trim(s, "/")
+}
+
+func resolveVersion(dir, ref, sha string) string {
+	if repo, err := gogit.PlainOpen(dir); err == nil {
+		if _, err := repo.Reference(plumbing.NewTagReferenceName(ref), false); err == nil {
+			return ref
+		}
+	}
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func resolveCommitSHA(dir string) string {

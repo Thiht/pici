@@ -38,6 +38,25 @@ func MatchesPaths(paths, ignore []string, files []string) bool {
 	return true
 }
 
+func MatchesRef(tags, branches []string, ref string, isTag bool) bool {
+	if len(tags) == 0 && len(branches) == 0 {
+		return true
+	}
+	if isTag {
+		return matchesAny(tags, ref)
+	}
+	return matchesAny(branches, ref)
+}
+
+func matchesAny(patterns []string, s string) bool {
+	for _, p := range patterns {
+		if matchGlob(p, s) {
+			return true
+		}
+	}
+	return false
+}
+
 func matchGlob(pattern, s string) bool {
 	var b strings.Builder
 	b.WriteString("^")

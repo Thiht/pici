@@ -78,6 +78,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthUnavailable"
 
+  /version:
+    get:
+      tags: [System]
+      summary: Version
+      description: Build version and VCS revision/time/modified of the running server.
+      operationId: getVersion
+      responses:
+        "200":
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/projects:
     post:
       tags: [Projects]
@@ -563,6 +579,14 @@ paths:
                     type: integer
                   schedule:
                     type: string
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  branches:
+                    type: array
+                    items:
+                      type: string
                   paths:
                     type: array
                     items:
@@ -725,6 +749,23 @@ components:
     StepStatus:
       type: string
       enum: [pending, running, success, failed, skipped, canceled]
+
+    Version:
+      type: object
+      properties:
+        version:
+          type: string
+          example: v1.2.3
+        revision:
+          type: string
+          example: c8f5bfc6bb5356267e0b6387032a9d12d728ebe9
+        time:
+          type: string
+          format: date-time
+          example: "2026-09-26T15:55:56Z"
+        modified:
+          type: boolean
+          example: false
 
     Error:
       type: object

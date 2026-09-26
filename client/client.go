@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/Thiht/pici/internal/version"
 )
 
 type Client struct {
@@ -80,6 +82,17 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	}
 	var h Health
 	return h, json.Unmarshal(data, &h)
+}
+
+type Version = version.Info
+
+func (c *Client) Version(ctx context.Context) (Version, error) {
+	data, err := c.get(ctx, "/version")
+	if err != nil {
+		return Version{}, err
+	}
+	var v Version
+	return v, json.Unmarshal(data, &v)
 }
 
 type Project struct {

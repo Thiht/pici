@@ -20,14 +20,14 @@ type Handler struct {
 	apiToken string
 }
 
-func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath, apiToken string) *Handler {
+func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath, apiToken, buildVersion string) *Handler {
 	return &Handler{
 		projects:   NewProjectsHandler(store, runner, workspaceDir),
 		variables:  NewVariablesHandler(store),
 		executions: NewExecutionsHandler(store, runner),
 		webhooks:   NewWebhooksHandler(store, runner, workspaceDir),
 		artifacts:  NewArtifactsHandler(store, runner),
-		system:     NewSystemHandler(store, engine),
+		system:     NewSystemHandler(store, engine, buildVersion),
 		apiToken:   apiToken,
 	}
 }
@@ -36,6 +36,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", h.system.Health)
+	mux.HandleFunc("GET /version", h.system.Version)
 
 	mux.HandleFunc("POST /api/projects", h.projects.Create)
 	mux.HandleFunc("GET /api/projects", h.projects.List)

@@ -105,3 +105,13 @@ pici-cli validate .ci/build/ci.yml
 # check server health (exits non-zero if the server is unreachable or unhealthy)
 pici-cli health
 ```
+
+## Version
+
+```sh
+# local build version and VCS revision/time/modified
+pici-cli version
+
+# the server's version instead
+pici-cli version --server
+```

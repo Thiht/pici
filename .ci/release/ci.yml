@@ -1,0 +1,9 @@
+name: release
+
+tags:
+  - "v*.*.*"
+
+steps:
+  - name: release
+    script: release.sh
+    timeout: 20m

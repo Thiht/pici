@@ -2,23 +2,23 @@
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
-| Flag | Env | Default | Description |
-|---|---|---|---|
-| `-http-addr` | `PICI_HTTP_ADDR` | `:8080` | HTTP listen address |
-| `-db-driver` | `PICI_DB_DRIVER` | `sqlite` | `sqlite` or `postgres` |
-| `-db-dsn` | `PICI_DB_DSN` | `pici.db` | SQLite path or Postgres DSN |
-| `-workspace-dir` | `PICI_WORKSPACE_DIR` | `~/.pici/workspaces` | clones and logs |
-| `-repo-mount-path` | `PICI_REPO_MOUNT_PATH` | `/workspace` | in-container mount point |
-| `-concurrency` | `PICI_CONCURRENCY` | `4` | max concurrent executions |
-| `-step-timeout` | `PICI_STEP_TIMEOUT` | `30m` | default step timeout |
-| `-secret-key` | `PICI_SECRET_KEY` | — | **required** — 32-byte key (hex/base64) for encrypting secrets |
-| `-api-token` | `PICI_API_TOKEN` | — | **required** — API token required to call the API |
-| `-public-url` | `PICI_PUBLIC_URL` | — | base URL for links in GitHub check runs |
-| `-gc-interval` | `PICI_GC_INTERVAL` | `10m` | garbage collection interval |
-| `-gc-keep` | `PICI_GC_KEEP` | `24h` | keep finished workspaces/logs for this long |
-| `-scheduler-interval` | `PICI_SCHEDULER_INTERVAL` | `1m` | scheduled build polling interval |
-| `-shutdown-timeout` | `PICI_SHUTDOWN_TIMEOUT` | `30s` | grace period for in-flight steps on shutdown |
-| `-config` | `PICI_CONFIG` | — | path to a JSON config file |
+| Flag                  | Env                       | Default              | Description                                                    |
+| --------------------- | ------------------------- | -------------------- | -------------------------------------------------------------- |
+| `-http-addr`          | `PICI_HTTP_ADDR`          | `:8080`              | HTTP listen address                                            |
+| `-db-driver`          | `PICI_DB_DRIVER`          | `sqlite`             | `sqlite` or `postgres`                                         |
+| `-db-dsn`             | `PICI_DB_DSN`             | `pici.db`            | SQLite path or Postgres DSN                                    |
+| `-workspace-dir`      | `PICI_WORKSPACE_DIR`      | `~/.pici/workspaces` | clones and logs                                                |
+| `-repo-mount-path`    | `PICI_REPO_MOUNT_PATH`    | `/workspace`         | in-container mount point                                       |
+| `-concurrency`        | `PICI_CONCURRENCY`        | `4`                  | max concurrent executions                                      |
+| `-step-timeout`       | `PICI_STEP_TIMEOUT`       | `30m`                | default step timeout                                           |
+| `-secret-key`         | `PICI_SECRET_KEY`         | —                    | **required** — 32-byte key (hex/base64) for encrypting secrets |
+| `-api-token`          | `PICI_API_TOKEN`          | —                    | **required** — API token required to call the API              |
+| `-public-url`         | `PICI_PUBLIC_URL`         | —                    | base URL for links in GitHub check runs                        |
+| `-gc-interval`        | `PICI_GC_INTERVAL`        | `10m`                | garbage collection interval                                    |
+| `-gc-keep`            | `PICI_GC_KEEP`            | `24h`                | keep finished workspaces/logs for this long                    |
+| `-scheduler-interval` | `PICI_SCHEDULER_INTERVAL` | `1m`                 | scheduled build polling interval                               |
+| `-shutdown-timeout`   | `PICI_SHUTDOWN_TIMEOUT`   | `30s`                | grace period for in-flight steps on shutdown                   |
+| `-config`             | `PICI_CONFIG`             | —                    | path to a JSON config file                                     |
 
 ## Example config file
 

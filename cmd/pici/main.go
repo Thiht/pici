@@ -22,6 +22,8 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
+var buildVersion = "dev"
+
 func main() {
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
@@ -94,7 +96,7 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	handler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.APIToken)
+	handler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.APIToken, buildVersion)
 
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,

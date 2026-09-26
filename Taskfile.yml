@@ -2,6 +2,8 @@ version: '3'
 
 vars:
   PKG: ./...
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
 
 tasks:
   default:
@@ -12,6 +14,8 @@ tasks:
     desc: Build all packages
     cmds:
       - go build {{.PKG}}
+      - go build -ldflags "-X main.buildVersion={{.VERSION}}" -o dist/pici ./cmd/pici
+      - go build -ldflags "-X main.buildVersion={{.VERSION}}" -o dist/pici-cli ./cmd/pici-cli
 
   test:
     desc: Run tests

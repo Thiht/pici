@@ -1,6 +1,6 @@
 # pici
 
-A minimal, self-hosted CI system. It focuses on *running* workflows (build/test) and stays out of the way of your runtime.
+A minimal, self-hosted CI system. It focuses on _running_ workflows (build/test) and stays out of the way of your runtime.
 
 The server exposes a small HTTP API, and execution happens in Docker. Each repository describes its workflows in a `.ci` directory at the root of the repo.
 
@@ -30,17 +30,17 @@ The server exposes a small HTTP API, and execution happens in Docker. Each repos
 ### ci.yml format
 
 ```yaml
-name: build          # optional (defaults to the folder name)
+name: build # optional (defaults to the folder name)
 
-image: node:20       # optional: use this image instead of building the Dockerfile
+image: node:20 # optional: use this image instead of building the Dockerfile
 
 steps:
   - name: install
-    script: install.sh       # path relative to .ci/<workflow>/
+    script: install.sh # path relative to .ci/<workflow>/
     timeout: 5m
 
   - name: test
-    run: pytest -q           # alternative to `script`: an arbitrary shell command
+    run: pytest -q # alternative to `script`: an arbitrary shell command
     depends_on: [install]
     env:
       FOO: bar
@@ -53,32 +53,37 @@ steps:
 
 ### Built-in environment variables
 
-| Variable | Description |
-|---|---|
-| `CI` | always `true` |
-| `PICI_PROJECT` | project name |
-| `PICI_PROJECT_ID` | project id |
-| `PICI_WORKFLOW` | workflow name |
-| `PICI_EXECUTION_ID` | execution id |
-| `PICI_REF` | the ref being built |
-| `PICI_COMMIT_SHA` | resolved commit SHA |
-| `PICI_REPO_DIR` | mount path of the repo (default `/workspace`) |
-| `PICI_WORKFLOW_DIR` | mount path of the workflow folder |
+| Variable            | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `CI`                | always `true`                                 |
+| `PICI_PROJECT`      | project name                                  |
+| `PICI_PROJECT_ID`   | project id                                    |
+| `PICI_REPO_URL`     | repo clone URL                                |
+| `PICI_REPO_SLUG`    | repo path (`owner/repo`) without `.git`       |
+| `PICI_WORKFLOW`     | workflow name                                 |
+| `PICI_EXECUTION_ID` | execution id                                  |
+| `PICI_REF`          | the ref being built                           |
+| `PICI_VERSION`      | tag name when building a tag, else short SHA  |
+| `PICI_COMMIT_SHA`   | resolved commit SHA                           |
+| `PICI_REPO_DIR`     | mount path of the repo (default `/workspace`) |
+| `PICI_WORKFLOW_DIR` | mount path of the workflow folder             |
+
+The mounted repo is trusted automatically (`safe.directory`), so `git` and Go's VCS stamping work without any setup in your steps.
 
 ## Configuration
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
-| Flag | Env | Default | Description |
-|---|---|---|---|
-| `-http-addr` | `PICI_HTTP_ADDR` | `:8080` | HTTP listen address |
-| `-db-driver` | `PICI_DB_DRIVER` | `sqlite` | `sqlite` or `postgres` |
-| `-db-dsn` | `PICI_DB_DSN` | `pici.db` | SQLite path, or Postgres DSN |
-| `-workspace-dir` | `PICI_WORKSPACE_DIR` | `~/.pici/workspaces` | where clones and logs live |
-| `-repo-mount-path` | `PICI_REPO_MOUNT_PATH` | `/workspace` | in-container mount point of the repo |
-| `-concurrency` | `PICI_CONCURRENCY` | `4` | max concurrent executions |
-| `-step-timeout` | `PICI_STEP_TIMEOUT` | `30m` | default step timeout |
-| `-config` | `PICI_CONFIG` | — | path to a JSON config file |
+| Flag               | Env                    | Default              | Description                          |
+| ------------------ | ---------------------- | -------------------- | ------------------------------------ |
+| `-http-addr`       | `PICI_HTTP_ADDR`       | `:8080`              | HTTP listen address                  |
+| `-db-driver`       | `PICI_DB_DRIVER`       | `sqlite`             | `sqlite` or `postgres`               |
+| `-db-dsn`          | `PICI_DB_DSN`          | `pici.db`            | SQLite path, or Postgres DSN         |
+| `-workspace-dir`   | `PICI_WORKSPACE_DIR`   | `~/.pici/workspaces` | where clones and logs live           |
+| `-repo-mount-path` | `PICI_REPO_MOUNT_PATH` | `/workspace`         | in-container mount point of the repo |
+| `-concurrency`     | `PICI_CONCURRENCY`     | `4`                  | max concurrent executions            |
+| `-step-timeout`    | `PICI_STEP_TIMEOUT`    | `30m`                | default step timeout                 |
+| `-config`          | `PICI_CONFIG`          | —                    | path to a JSON config file           |
 
 Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker`, ...).
 
@@ -165,14 +170,24 @@ pici-cli logs <id>
 
 - Projects (public/private, GitHub/GitLab/generic), variables & secrets.
 - Workflows from `.ci/` (Dockerfile runner, `ci.yml` orchestration).
-- Parallel steps, retries, per-step logs, path filters, workflow-level `env`.
+- Parallel steps, retries, per-step logs, tag/branch filters, path filters, workflow-level `env`.
 - GitHub & GitLab webhooks (push/PR/tag), GitHub check runs, cron schedules.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
-- Streaming logs (SSE), graceful shutdown, garbage collection, healthcheck, and a CLI (`cmd/pici-cli`).
+- Streaming logs (SSE), graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
 
 Full documentation (Vitepress) lives in [`docs/`](docs/).
+
+## Releases
+
+Pushing a `vX.Y.Z` tag triggers the [`.ci/release`](.ci/release) workflow, which builds `pici` and `pici-cli` with `main.buildVersion` injected via `-ldflags`, then creates a GitHub release with both binaries attached. It requires a `GH_TOKEN` secret with `contents: write`:
+
+```sh
+pici-cli vars set GH_TOKEN <token> --secret
+```
+
+Check the running build with `pici-cli version` (local) or `pici-cli version --server`, or `GET /version`.
 
 ## Not yet implemented
 
