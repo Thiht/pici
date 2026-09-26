@@ -1,0 +1,12 @@
+{
+  "name": "pici-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build tooling for the embedded pici web UI",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "daisyui": "^5.7.46",
+    "htmx.org": "^2.0.4",
+    "tailwindcss": "^4.3.3"
+  }
+}

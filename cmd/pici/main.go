@@ -20,6 +20,7 @@ import (
 	"github.com/Thiht/pici/internal/scheduler"
 	"github.com/Thiht/pici/internal/secrets"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/web"
 )
 
 var buildVersion = "dev"
@@ -96,11 +97,18 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	handler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.APIToken, buildVersion)
+	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.APIToken, buildVersion).Routes()
+	webHandler := web.New(store, runner, cfg.WorkspaceDir, cfg.APIToken, buildVersion).Routes()
+
+	root := http.NewServeMux()
+	root.Handle("/", webHandler)
+	root.Handle("/api/", apiHandler)
+	root.Handle("/health", apiHandler)
+	root.Handle("/version", apiHandler)
 
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: handler.Routes(),
+		Handler: root,
 	}
 
 	go func() {

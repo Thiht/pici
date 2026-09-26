@@ -1,0 +1,118 @@
+{{define "project_form"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main id="main" class="mx-auto max-w-5xl px-4 py-6">
+<div class="mx-auto max-w-2xl">
+<nav aria-label="Breadcrumb" class="text-sm">
+<ol class="flex flex-wrap items-center gap-2 opacity-70">
+<li><a class="link link-primary" href="/">Projects</a></li>
+<li aria-hidden="true">/</li>
+{{if .Editing}}
+<li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
+<li aria-hidden="true">/</li>
+<li aria-current="page">Edit</li>
+{{else}}
+<li aria-current="page">New project</li>
+{{end}}
+</ol>
+</nav>
+<div class="mt-2 flex items-center justify-between gap-4">
+<h1 class="text-xl font-semibold">{{if .Editing}}Edit project{{else}}New project{{end}}</h1>
+{{if .Editing}}<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}">Cancel</a>{{end}}
+</div>
+{{if .Error}}<div class="alert alert-soft alert-error mt-4" role="alert">{{.Error}}</div>{{end}}
+<div class="card mt-4 border border-base-300">
+<div class="card-body">
+<form method="post" action="{{if .Editing}}/projects/{{.Project.ID}}{{else}}/projects{{end}}" enctype="multipart/form-data" class="flex flex-col gap-4">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Name</span>
+<input class="input w-full" type="text" name="name" value="{{.Project.Name}}" required autofocus>
+</label>
+{{template "project_fields" .Fields}}
+{{template "secret_fields" .Fields}}
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Webhook secret</span>
+<input class="input w-full" type="password" name="webhook_secret" autocomplete="new-password"{{if .Editing}} placeholder="Leave blank to keep the current secret"{{end}}>
+</label>
+<div class="card-actions mt-2">
+<button class="btn btn-primary" type="submit">{{if .Editing}}Save changes{{else}}Create project{{end}}</button>
+</div>
+</form>
+</div>
+</div>
+{{if .Editing}}
+<form method="post" action="/projects/{{.Project.ID}}/delete" class="mt-6" onsubmit="return confirm('Delete this project and its executions?');">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<button class="btn btn-error" type="submit">Delete project</button>
+</form>
+{{end}}
+</div>
+</main>
+{{template "foot" .}}
+{{end}}
+
+{{define "project_fields"}}
+<div id="project-fields" class="flex flex-col gap-4"
+     hx-post="/projects/detect" hx-trigger="change" hx-target="#project-fields" hx-swap="outerHTML" hx-include="closest form">
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Repository URL</span>
+<input class="input w-full" type="text" name="repo_url" value="{{.RepoURL}}" placeholder="https://github.com/acme/demo.git" required>
+</label>
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Provider</span>
+<select class="select w-full" name="provider">
+<option value="generic"{{if eq (printf "%s" .Provider) "generic"}} selected{{end}}>generic</option>
+<option value="github"{{if eq (printf "%s" .Provider) "github"}} selected{{end}}>github</option>
+<option value="gitlab"{{if eq (printf "%s" .Provider) "gitlab"}} selected{{end}}>gitlab</option>
+</select>
+</label>
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Default branch</span>
+<input class="input w-full" type="text" name="default_branch" value="{{.DefaultBranch}}" placeholder="main">
+</label>
+</div>
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Auth type</span>
+<select class="select w-full" name="auth_type">
+<option value="none"{{if eq (printf "%s" .AuthType) "none"}} selected{{end}}>none</option>
+<option value="token"{{if eq (printf "%s" .AuthType) "token"}} selected{{end}}>token</option>
+<option value="ssh"{{if eq (printf "%s" .AuthType) "ssh"}} selected{{end}}>ssh</option>
+</select>
+</label>
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Auth user</span>
+<input class="input w-full" type="text" name="auth_user" value="{{.AuthUser}}" placeholder="oauth2 / git">
+</label>
+</div>
+</div>
+{{end}}
+
+{{define "secret_fields"}}
+<div id="secret-fields" class="flex flex-col gap-4">{{template "secret_fields_inner" .}}</div>
+{{end}}
+
+{{define "secret_fields_inner"}}
+{{if eq (printf "%s" .AuthType) "token"}}
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">Auth secret</span>
+<input class="input w-full" type="password" name="auth_secret" value="{{.Secret}}" autocomplete="new-password" placeholder="Personal access token (leave blank to keep the current one)">
+</label>
+{{else if eq (printf "%s" .AuthType) "ssh"}}
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">SSH private key</span>
+<textarea class="textarea w-full font-mono text-xs" name="auth_secret" rows="4" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----">{{.Secret}}</textarea>
+</label>
+<label class="flex flex-col gap-1">
+<span class="text-sm font-medium">…or upload a key file</span>
+<input class="file-input w-full" type="file" name="auth_secret_file" accept=".pem,.key,text/plain">
+</label>
+{{end}}
+{{end}}
+
+{{define "project_detect"}}
+{{template "project_fields" .}}
+<div id="secret-fields" class="flex flex-col gap-4" hx-swap-oob="outerHTML">{{template "secret_fields_inner" .}}</div>
+{{end}}

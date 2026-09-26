@@ -1,0 +1,58 @@
+{{define "project_variables"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main id="main" class="mx-auto max-w-5xl px-4 py-6">
+<nav aria-label="Breadcrumb" class="text-sm">
+<ol class="flex flex-wrap items-center gap-2 opacity-70">
+<li><a class="link link-primary" href="/">Projects</a></li>
+<li aria-hidden="true">/</li>
+<li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
+<li aria-hidden="true">/</li>
+<li aria-current="page">Variables &amp; secrets</li>
+</ol>
+</nav>
+<div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+<h1 class="text-xl font-semibold">Variables &amp; secrets</h1>
+<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}">Back to project</a>
+</div>
+<p class="mt-1 text-sm opacity-70">Injected into every workflow execution of this project. Secrets are masked.</p>
+<div class="card mt-4 border border-base-300">
+{{if .Variables}}
+<div class="overflow-x-auto">
+<table class="table">
+<caption class="sr-only">Project variables</caption>
+<thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+<tbody>
+{{range .Variables}}
+<tr>
+<td class="font-mono text-xs">{{.Key}}</td>
+<td class="font-mono text-xs">{{if .Secret}}<span class="badge badge-soft badge-neutral">Secret</span>{{else}}{{.Value}}{{end}}</td>
+<td class="text-right">
+<form method="post" action="/projects/{{$.Project.ID}}/variables/{{.Key | urlquery}}/delete">
+<input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+<button class="btn btn-outline btn-sm" type="submit">Delete</button>
+</form>
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p class="p-4 text-sm opacity-70">No project variables.</p>
+{{end}}
+</div>
+<div class="card mt-4 max-w-xl border border-base-300">
+<div class="card-body">
+<form method="post" action="/projects/{{.Project.ID}}/variables" class="flex flex-wrap items-end gap-3">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<label class="flex flex-1 flex-col gap-1"><span class="text-sm font-medium">Key</span><input class="input w-full" type="text" name="key" required></label>
+<label class="flex flex-1 flex-col gap-1"><span class="text-sm font-medium">Value</span><input class="input w-full" type="text" name="value"></label>
+<label class="flex items-center gap-2 pb-2"><input class="checkbox" type="checkbox" name="secret" value="1"><span class="text-sm font-medium">Secret</span></label>
+<button class="btn btn-primary" type="submit">Save</button>
+</form>
+</div>
+</div>
+</main>
+{{template "foot" .}}
+{{end}}

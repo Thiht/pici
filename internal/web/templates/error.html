@@ -1,0 +1,10 @@
+{{define "error"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main id="main" class="mx-auto max-w-5xl px-4 py-16 text-center">
+<h1 class="text-2xl font-semibold">{{.Title}}</h1>
+<p class="mt-2 opacity-70">{{.Message}}</p>
+<a class="btn btn-outline mt-6" href="/">Back to projects</a>
+</main>
+{{template "foot" .}}
+{{end}}

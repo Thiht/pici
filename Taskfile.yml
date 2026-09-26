@@ -51,6 +51,20 @@ tasks:
     cmds:
       - go run ./cmd/pici-cli {{.CLI_ARGS}}
 
+  ui:install:
+    desc: Install the UI build dependencies (Tailwind, daisyUI, htmx)
+    dir: internal/web
+    cmds:
+      - npm install
+
+  ui:build:
+    desc: Build the embedded UI assets (app.css and htmx)
+    dir: internal/web
+    deps: [ui:install]
+    cmds:
+      - cp node_modules/htmx.org/dist/htmx.min.js static/htmx.min.js
+      - npx @tailwindcss/cli -i input.css -o static/app.css --minify
+
   docker:build:
     desc: Build the Docker image
     cmds:

@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
+	"sort"
+	"strings"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 type Auth struct {
@@ -60,20 +65,69 @@ func Clone(ctx context.Context, cfg CloneConfig) error {
 	}
 }
 
+// Refs lists the remote branches and tags, like `git ls-remote`.
+type Refs struct {
+	Head     string
+	Branches []string
+	Tags     []string
+}
+
+func ListRefs(ctx context.Context, url string, a Auth) (Refs, error) {
+	auth, err := transportAuth(a)
+	if err != nil {
+		return Refs{}, err
+	}
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: "origin", URLs: []string{url}})
+	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: auth})
+	if err != nil {
+		return Refs{}, fmt.Errorf("list refs %s: %w", url, err)
+	}
+
+	var out Refs
+	for _, ref := range refs {
+		name := ref.Name()
+		switch {
+		case name.String() == "HEAD":
+			if ref.Type() == plumbing.SymbolicReference {
+				out.Head = ref.Target().Short()
+			}
+		case strings.HasSuffix(name.String(), "^{}"):
+		case name.IsBranch():
+			out.Branches = append(out.Branches, name.Short())
+		case name.IsTag():
+			out.Tags = append(out.Tags, name.Short())
+		}
+	}
+	sort.Strings(out.Branches)
+	sort.Strings(out.Tags)
+	if out.Head == "" && len(out.Branches) > 0 {
+		switch {
+		case slices.Contains(out.Branches, "main"):
+			out.Head = "main"
+		case slices.Contains(out.Branches, "master"):
+			out.Head = "master"
+		default:
+			out.Head = out.Branches[0]
+		}
+	}
+	return out, nil
+}
+
 func cloneRef(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, ref string) error {
 	opts := *base
 	opts.ReferenceName = plumbing.NewBranchReferenceName(ref)
 	opts.Depth = 1
-	if _, err := git.PlainCloneContext(ctx, cfg.Dir, false, &opts); err == nil {
+	_, branchErr := git.PlainCloneContext(ctx, cfg.Dir, false, &opts)
+	if branchErr == nil {
 		return nil
 	}
 
-	os.RemoveAll(cfg.Dir)
+	_ = os.RemoveAll(cfg.Dir)
 	opts = *base
 	opts.ReferenceName = plumbing.NewTagReferenceName(ref)
 	opts.Depth = 1
 	if _, err := git.PlainCloneContext(ctx, cfg.Dir, false, &opts); err != nil {
-		return fmt.Errorf("clone %s ref %s: %w", cfg.URL, ref, err)
+		return fmt.Errorf("clone %s ref %s: %w (branch: %v)", cfg.URL, ref, err, branchErr)
 	}
 	return nil
 }

@@ -15,7 +15,7 @@ The design decisions below were validated during brainstorming:
   forms/links work (and without JS).
 - **Build:** no Node. Server-rendered Go templates + htmx + Tailwind (standalone CLI),
   assets committed and embedded with `go:embed`.
-- **Design system:** hand-rolled shadcn-like tokens/components, no npm plugins.
+- **Design system:** daisyUI (Tailwind v4 plugin) via npm, build-time only.
 - **Accessibility:** prefer native HTML elements; enhance with htmx; forms work without JS.
 
 ## Goals
@@ -104,29 +104,27 @@ in full on open with a manual refresh button (no streaming in v1).
 
 ## Design system
 
-Tokens ported from shadcn as CSS variables in `static/app.css`:
-`--background`, `--foreground`, `--muted`, `--border`, `--primary`, `--radius`, etc.
-Light + dark via `prefers-color-scheme` and `[data-theme]` for an explicit toggle.
-
-A small set of component classes in `@layer components`:
-`btn` (`btn-primary`, `btn-outline`, `btn-destructive`, `btn-sm`), `card`, `badge`,
-`input`, `select`, `textarea`, `label`, `table`, `dialog`, `alert`, `separator`, `skeleton`.
+daisyUI components, with the light/dark themes (dark via `prefers-color-scheme`).
+A limited `include` list keeps the generated CSS small. Only a couple of custom
+classes live in `@layer components` (the terminal-style `.logs` block and the
+skip link).
 
 Accessibility rules: visible focus, associated labels, native `required`/`minlength`
 before server validation, status/errors announced with `role="status"`/`aria-live`.
 
-Status → badge mapping: `success` green, `failed` red, `running` blue (pulse),
-`pending` neutral, `canceled` gray; step `skipped`/`canceled` muted.
+Status → badge mapping: `success` green, `failed` red, `running` blue,
+`pending` neutral, `canceled`/`skipped` muted.
 
 ## Build & tooling
 
-- htmx (minified) and generated `app.css` are **committed** to `internal/web/static/`
-  and embedded.
+- Generated `app.css` and htmx are **committed** to `internal/web/static/` and embedded.
+- `internal/web/package.json` (Tailwind, `@tailwindcss/cli`, daisyUI, htmx) manages the
+  build-time dependencies; `package-lock.json` is committed.
 - Taskfile additions:
-  - `ui:css` — runs the `tailwindcss` standalone CLI over `internal/web/templates/**/*.html`
-    and writes `internal/web/static/app.css`.
-  - `ui:vendor` — fetches the pinned htmx minified build.
-- No Node/npm at build or runtime. `task check` (fmt/lint/test) is unchanged.
+  - `ui:install` — `npm install`.
+  - `ui:build` — copies htmx from `node_modules` and builds `app.css` with the Tailwind CLI.
+- No Node at runtime; Node/npm is only needed to rebuild the assets. `task check`
+  (fmt/lint/test) is unchanged.
 
 ## Data flow
 

@@ -1,0 +1,49 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · pici</title>
+<script>try{var t=localStorage.getItem("pici-theme");if(t==="light"||t==="cupcake")t="autumn";else if(t==="dark")t="sunset";if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"sunset":"autumn";document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body class="min-h-screen bg-base-100 text-base-content">
+<a class="skip-link" href="#main">Skip to content</a>
+{{end}}
+
+{{define "nav"}}
+<header class="border-b border-base-300 bg-base-100">
+<div class="navbar mx-auto max-w-5xl">
+<div class="navbar-start">
+<a class="text-lg font-semibold" href="/">pici</a>
+<ul class="menu menu-horizontal ml-2 gap-1 px-1">
+<li><a href="/"{{if eq .Active "projects"}} class="menu-active" aria-current="page"{{end}}>Projects</a></li>
+<li><a href="/variables"{{if eq .Active "variables"}} class="menu-active" aria-current="page"{{end}}>Variables</a></li>
+</ul>
+</div>
+<div class="navbar-end gap-3">
+<button type="button" class="btn btn-ghost btn-sm" aria-label="Toggle dark mode" title="Toggle dark mode"
+        onclick="var d=document.documentElement,e=d.dataset.theme==='sunset'?'autumn':'sunset';d.dataset.theme=e;try{localStorage.setItem('pici-theme',e)}catch(_){}">
+<svg class="icon-moon size-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+<svg class="icon-sun size-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+</button>
+<span class="text-xs opacity-60" title="server version">{{.Version}}</span>
+{{if .CSRFToken}}
+<form method="post" action="/logout">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
+</form>
+{{end}}
+</div>
+</div>
+</header>
+<div id="flash" class="mx-auto max-w-5xl px-4">{{template "flash" .}}</div>
+{{end}}
+
+{{define "flash"}}{{if .FlashText}}<div class="alert alert-soft alert-{{.FlashKind}} mt-4" role="status">{{.FlashText}}</div>{{end}}{{end}}
+
+{{define "foot"}}
+</body>
+</html>
+{{end}}

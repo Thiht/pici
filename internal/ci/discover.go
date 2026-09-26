@@ -20,6 +20,12 @@ func projectCloneConfig(p stores.Project, dir, ref string) git.CloneConfig {
 }
 
 func DiscoverProjectWorkflows(ctx context.Context, p stores.Project, dir, ref string) ([]string, error) {
+	// The discovery directory is reused across calls; clear it so each clone
+	// starts from a clean state instead of failing with "repository already
+	// exists".
+	if err := os.RemoveAll(dir); err != nil {
+		return nil, err
+	}
 	if err := git.Clone(ctx, projectCloneConfig(p, dir, ref)); err != nil {
 		return nil, err
 	}

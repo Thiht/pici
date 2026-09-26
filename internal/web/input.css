@@ -1,0 +1,63 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: autumn --default, sunset --prefersdark;
+  include: rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock, button, card, badge, table, input, select, checkbox, alert, navbar, menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
+}
+@source "./templates";
+
+@layer base {
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    transform: translateY(-4rem);
+    border-radius: var(--radius-field);
+    background: var(--color-primary);
+    color: var(--color-primary-content);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  /* Logs always look like a terminal, regardless of the active theme. */
+  .icon-sun {
+    display: none;
+  }
+  [data-theme="sunset"] .icon-sun {
+    display: block;
+  }
+  [data-theme="sunset"] .icon-moon {
+    display: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .icon-sun {
+      display: block;
+    }
+    :root:not([data-theme]) .icon-moon {
+      display: none;
+    }
+  }
+
+  .logs {
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border-radius: var(--radius-box);
+  }
+}

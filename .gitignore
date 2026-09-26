@@ -9,3 +9,6 @@
 /.agents/
 /.claude/
 /skills-lock.json
+
+# UI build dependencies (the compiled app.css is committed)
+node_modules/

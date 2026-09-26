@@ -189,7 +189,25 @@ pici-cli vars set GH_TOKEN <token> --secret
 
 Check the running build with `pici-cli version` (local) or `pici-cli version --server`, or `GET /version`.
 
+## Web UI
+
+An embedded management UI is served at `/` by the same binary (server-rendered Go
+templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
+projects, variables & secrets, triggering/cancelling/rebuilding executions, per-step
+and full logs, and artifacts.
+
+When `PICI_API_TOKEN` is set, the UI asks for it once and stores it in an `HttpOnly`
+cookie (the JSON API keeps using the `X-API-Token` / `Bearer` header). Static assets
+and the login form are the only unauthenticated UI routes.
+
+Embedded assets are committed, so building the Go binary never needs Node. To refresh
+them (Tailwind, daisyUI and htmx via npm, build-time only):
+
+```sh
+task ui:build   # npm install, build app.css, copy htmx
+```
+
 ## Not yet implemented
 
-- UI.
+- Live log streaming in the UI (the API exposes SSE at `/api/executions/{id}/logs/stream`).
 - GitLab MR pipelines (webhooks are supported).
