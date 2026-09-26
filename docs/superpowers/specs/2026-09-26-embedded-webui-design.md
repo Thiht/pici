@@ -62,28 +62,28 @@ The API mux and CLI are untouched.
 
 UI served at `/`, assets at `/static/`. The existing `middlewares.Auth` covers all routes.
 
-| Route | Purpose |
-|---|---|
-| `GET /` | project list (`<table>`) + "New project" (`<dialog>`) |
-| `GET /projects/new` | create form |
-| `POST /projects` | create |
-| `GET /projects/{id}` | detail: info, `.ci` workflows, project variables/secrets, executions |
-| `GET /projects/{id}/edit` | edit form |
-| `POST /projects/{id}` | update |
-| `POST /projects/{id}/delete` | delete |
-| `GET /projects/{id}/variables` | variables fragment/page |
-| `POST /projects/{id}/variables` | set variable |
-| `POST /projects/{id}/variables/{key}/delete` | delete variable |
-| `GET /variables` | global variables |
-| `POST /variables` | set global variable |
-| `POST /variables/{key}/delete` | delete global variable |
-| `POST /projects/{id}/executions` | trigger run (workflow + ref) |
-| `GET /executions/{id}` | execution detail: status, steps table, per-step logs, full logs, artifacts |
-| `POST /executions/{id}/cancel` | cancel |
-| `POST /executions/{id}/rebuild` | rebuild |
-| `GET /login` | token entry form |
-| `POST /login` | validate token, set cookie, redirect to `/` |
-| `POST /logout` | clear cookie |
+| Route                                        | Purpose                                                                    |
+| -------------------------------------------- | -------------------------------------------------------------------------- |
+| `GET /`                                      | project list (`<table>`) + "New project" (`<dialog>`)                      |
+| `GET /projects/new`                          | create form                                                                |
+| `POST /projects`                             | create                                                                     |
+| `GET /projects/{id}`                         | detail: info, `.ci` workflows, project variables/secrets, executions       |
+| `GET /projects/{id}/edit`                    | edit form                                                                  |
+| `POST /projects/{id}`                        | update                                                                     |
+| `POST /projects/{id}/delete`                 | delete                                                                     |
+| `GET /projects/{id}/variables`               | variables fragment/page                                                    |
+| `POST /projects/{id}/variables`              | set variable                                                               |
+| `POST /projects/{id}/variables/{key}/delete` | delete variable                                                            |
+| `GET /variables`                             | global variables                                                           |
+| `POST /variables`                            | set global variable                                                        |
+| `POST /variables/{key}/delete`               | delete global variable                                                     |
+| `POST /projects/{id}/executions`             | trigger run (workflow + ref)                                               |
+| `GET /executions/{id}`                       | execution detail: status, steps table, per-step logs, full logs, artifacts |
+| `POST /executions/{id}/cancel`               | cancel                                                                     |
+| `POST /executions/{id}/rebuild`              | rebuild                                                                    |
+| `GET /login`                                 | token entry form                                                           |
+| `POST /login`                                | validate token, set cookie, redirect to `/`                                |
+| `POST /logout`                               | clear cookie                                                               |
 
 Lists (projects, variables, executions) refresh via htmx after mutations. Logs are fetched
 in full on open with a manual refresh button (no streaming in v1).
