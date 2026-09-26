@@ -50,6 +50,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		newProjectsCmd(c),
 		newExecutionsCmd(c),
 		newVarsCmd(c),
+		newCacheCmd(c),
 		newCancelCmd(c),
 		newRebuildCmd(c),
 		newArtifactsCmd(c),
@@ -585,6 +586,9 @@ Usage:
   pici-cli vars [--project <name>]
   pici-cli vars set <key> <value> [--project <name>] [--secret]
   pici-cli vars rm <key> [--project <name>]
+  pici-cli cache <project>
+  pici-cli cache rm-image <project> <reference>
+  pici-cli cache rm-volume <project> <name>
   pici-cli cancel <execution-id>
   pici-cli rebuild <execution-id>
   pici-cli artifacts <execution-id>

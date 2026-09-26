@@ -78,7 +78,7 @@ func cookieValue(client *http.Client, rawURL, name string) string {
 }
 
 func TestTemplatesParse(t *testing.T) {
-	for _, name := range []string{"head", "nav", "foot", "flash", "login", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "project_show", "project_variables", "workflows", "refs", "variables_list", "execution_show", "error"} {
+	for _, name := range []string{"head", "nav", "foot", "flash", "login", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "project_show", "project_variables", "project_cache", "workflows", "refs", "variables_list", "execution_show", "error"} {
 		if templates.Lookup(name) == nil {
 			t.Errorf("template %q not found", name)
 		}
@@ -170,6 +170,68 @@ func TestGlobalVariableSetAndDelete(t *testing.T) {
 	del := postForm(t, client, srv.URL+"/variables/TOKEN/delete", url.Values{})
 	if del.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 on delete, got %d", del.StatusCode)
+	}
+}
+
+func TestFlashRendersKind(t *testing.T) {
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "flash", base{FlashKind: "success", FlashText: "Image deleted."}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"alert-soft", "alert-success", "Image deleted."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in flash, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestExecutionTemplateHidesZeroExitCode(t *testing.T) {
+	started := time.Now()
+	finished := started.Add(time.Second)
+	data := executionPage{
+		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Execution: stores.Execution{
+			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
+			CreatedAt: started, StartedAt: &started, FinishedAt: &finished,
+		},
+		Steps: []stepView{
+			{StepResult: stores.StepResult{Name: "ok", Status: stores.StepStatusSuccess, ExitCode: 0, StartedAt: &started, FinishedAt: &finished}},
+			{StepResult: stores.StepResult{Name: "bad", Status: stores.StepStatusFailed, ExitCode: 2, Error: "exit code 2", StartedAt: &started, FinishedAt: &finished}},
+		},
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "exit 2") {
+		t.Errorf("expected the failing step exit code, got:\n%s", out)
+	}
+	if strings.Contains(out, "exit 0") {
+		t.Errorf("did not expect a zero exit code on the passing step")
+	}
+}
+
+func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
+	started := time.Now()
+	setupFinished := started.Add(10 * time.Second)
+	finished := started.Add(30 * time.Second)
+	data := executionPage{
+		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Execution: stores.Execution{
+			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
+			CreatedAt: started, StartedAt: &started, SetupFinishedAt: &setupFinished, FinishedAt: &finished,
+		},
+		SetupLog: "cloning...",
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Setup") || !strings.Contains(out, "10s") {
+		t.Fatalf("expected setup duration in page, got:\n%s", out)
 	}
 }
 
@@ -504,5 +566,96 @@ func TestCapitalize(t *testing.T) {
 		if got := capitalize(in); got != want {
 			t.Errorf("capitalize(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func createProject(t *testing.T, client *http.Client, baseURL string) string {
+	t.Helper()
+	resp := postForm(t, client, baseURL+"/projects", url.Values{
+		"name":      {"demo"},
+		"repo_url":  {"https://github.com/acme/demo.git"},
+		"provider":  {"github"},
+		"auth_type": {"none"},
+	})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create project: expected 303, got %d", resp.StatusCode)
+	}
+	return strings.TrimPrefix(resp.Header.Get("Location"), "/projects/")
+}
+
+func TestProjectCacheUnavailableWithoutDocker(t *testing.T) {
+	srv, client := newTestServer(t, "")
+	id := createProject(t, client, srv.URL)
+	resp, err := client.Get(srv.URL + "/projects/" + id + "/cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(body(t, resp), "Docker is unavailable") {
+		t.Fatal("expected a Docker unavailable notice")
+	}
+}
+
+func TestProjectCacheTemplateRenders(t *testing.T) {
+	data := projectCachePage{
+		base:        base{Title: "Cache", Active: "projects", Version: "dev"},
+		Project:     stores.Project{Name: "demo"},
+		Images:      []cacheImage{{Tag: "pici/x-build", Size: 2048, Created: time.Now()}},
+		Volumes:     []cacheVolume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
+		ImagesSize:  2048,
+		VolumesSize: 4096,
+		TotalSize:   6144,
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "project_cache", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"pici/x-build", "pici-cache-x-node_modules", "2.0 KB", "4.0 KB", "cache/images/delete", "cache/volumes/delete"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in page, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestProjectCacheDeleteRejectsForeignResource(t *testing.T) {
+	srv, client := newTestServer(t, "")
+	id := createProject(t, client, srv.URL)
+
+	img := postForm(t, client, srv.URL+"/projects/"+id+"/cache/images/delete", url.Values{"reference": {"pici/other-build"}})
+	if img.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", img.StatusCode)
+	}
+	vol := postForm(t, client, srv.URL+"/projects/"+id+"/cache/volumes/delete", url.Values{"name": {"pici-cache-other-node_modules"}})
+	if vol.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", vol.StatusCode)
+	}
+
+	shown, err := client.Get(srv.URL + "/projects/" + id + "/cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = body(t, shown)
+}
+
+func TestProjectCacheDeleteRequiresCSRF(t *testing.T) {
+	srv, client := newTestServer(t, "secret")
+	if _, err := client.Get(srv.URL + "/login"); err != nil {
+		t.Fatal(err)
+	}
+	if ok := postForm(t, client, srv.URL+"/login", url.Values{"token": {"secret"}}); ok.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login failed: %d", ok.StatusCode)
+	}
+	csrf := cookieValue(client, srv.URL, csrfCookie)
+	created := postForm(t, client, srv.URL+"/projects", url.Values{
+		"_csrf": {csrf}, "name": {"demo"}, "repo_url": {"https://github.com/acme/demo.git"}, "auth_type": {"none"},
+	})
+	id := strings.TrimPrefix(created.Header.Get("Location"), "/projects/")
+
+	resp := postForm(t, client, srv.URL+"/projects/"+id+"/cache/images/delete", url.Values{"reference": {"pici/x-build"}})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 without csrf, got %d", resp.StatusCode)
 	}
 }

@@ -7,13 +7,11 @@
 <li><a class="link link-primary" href="/">Projects</a></li>
 <li aria-hidden="true">/</li>
 <li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
-<li aria-hidden="true">/</li>
-<li aria-current="page">Variables &amp; secrets</li>
 </ol>
 </nav>
 <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
 <h1 class="text-xl font-semibold">Variables &amp; secrets</h1>
-<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}">Back to project</a>
+<a class="btn btn-primary btn-sm" href="#new-variable">New variable</a>
 </div>
 <p class="mt-1 text-sm opacity-70">Injected into every workflow execution of this project. Secrets are masked.</p>
 <div class="card mt-4 border border-base-300">
@@ -42,16 +40,23 @@
 <p class="p-4 text-sm opacity-70">No project variables.</p>
 {{end}}
 </div>
-<div class="card mt-4 max-w-xl border border-base-300">
-<div class="card-body">
-<form method="post" action="/projects/{{.Project.ID}}/variables" class="flex flex-wrap items-end gap-3">
+
+<div id="new-variable" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-variable-title">
+<div class="modal-box max-w-xl">
+<a class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" href="#" aria-label="Close">✕</a>
+<h3 id="new-variable-title" class="text-lg font-semibold">New variable</h3>
+<form method="post" action="/projects/{{.Project.ID}}/variables" class="mt-4 flex flex-col gap-3">
 <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-<label class="flex flex-1 flex-col gap-1"><span class="text-sm font-medium">Key</span><input class="input w-full" type="text" name="key" required></label>
-<label class="flex flex-1 flex-col gap-1"><span class="text-sm font-medium">Value</span><input class="input w-full" type="text" name="value"></label>
-<label class="flex items-center gap-2 pb-2"><input class="checkbox" type="checkbox" name="secret" value="1"><span class="text-sm font-medium">Secret</span></label>
+<label class="flex flex-col gap-1"><span class="text-sm font-medium">Key</span><input class="input w-full" type="text" name="key" required></label>
+<label class="flex flex-col gap-1"><span class="text-sm font-medium">Value</span><input class="input w-full" type="text" name="value"></label>
+<label class="flex items-center gap-2"><input class="checkbox" type="checkbox" name="secret" value="1"><span class="text-sm font-medium">Secret</span></label>
+<div class="modal-action">
+<a class="btn btn-outline" href="#">Cancel</a>
 <button class="btn btn-primary" type="submit">Save</button>
+</div>
 </form>
 </div>
+<a class="modal-backdrop" href="#" aria-label="Close">Close</a>
 </div>
 </main>
 {{template "foot" .}}

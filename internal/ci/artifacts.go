@@ -72,9 +72,7 @@ func cacheBinds(projectID, mountPath string, paths []string) []string {
 
 func volumeName(projectID, path string) string {
 	var b strings.Builder
-	b.WriteString("pici-cache-")
-	b.WriteString(projectID)
-	b.WriteString("-")
+	b.WriteString(VolumePrefix(projectID))
 	for _, r := range strings.ToLower(path) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '.', r == '-':
@@ -84,4 +82,10 @@ func volumeName(projectID, path string) string {
 		}
 	}
 	return b.String()
+}
+
+// VolumePrefix is the name prefix shared by every cross-run cache volume of a
+// project. It is also used to find those volumes for the cache view.
+func VolumePrefix(projectID string) string {
+	return "pici-cache-" + projectID + "-"
 }

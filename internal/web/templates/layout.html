@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · pici</title>
 <script>try{var t=localStorage.getItem("pici-theme");if(t==="light"||t==="cupcake")t="autumn";else if(t==="dark")t="sunset";if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"sunset":"autumn";document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v={{.AssetVersion}}">
 <script src="/static/htmx.min.js" defer></script>
 </head>
 <body class="min-h-screen bg-base-100 text-base-content">
@@ -38,10 +38,10 @@
 </div>
 </div>
 </header>
-<div id="flash" class="mx-auto max-w-5xl px-4">{{template "flash" .}}</div>
+<div id="flash" class="toast toast-top toast-end z-50">{{template "flash" .}}</div>
 {{end}}
 
-{{define "flash"}}{{if .FlashText}}<div class="alert alert-soft alert-{{.FlashKind}} mt-4" role="status">{{.FlashText}}</div>{{end}}{{end}}
+{{define "flash"}}{{if .FlashText}}<div class="alert alert-soft alert-{{.FlashKind}}" role="status">{{.FlashText}}</div>{{end}}{{end}}
 
 {{define "foot"}}
 </body>

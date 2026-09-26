@@ -173,19 +173,20 @@ type StepResult struct {
 }
 
 type Execution struct {
-	ID         uuid.UUID    `json:"id"`
-	ProjectID  uuid.UUID    `json:"project_id"`
-	Project    string       `json:"project,omitempty"`
-	Workflow   string       `json:"workflow"`
-	Ref        string       `json:"ref"`
-	CommitSHA  string       `json:"commit_sha"`
-	Status     Status       `json:"status"`
-	Trigger    Trigger      `json:"trigger"`
-	Steps      []StepResult `json:"steps,omitempty"`
-	Error      string       `json:"error,omitempty"`
-	StartedAt  *time.Time   `json:"started_at,omitempty"`
-	FinishedAt *time.Time   `json:"finished_at,omitempty"`
-	CreatedAt  time.Time    `json:"created_at"`
+	ID              uuid.UUID    `json:"id"`
+	ProjectID       uuid.UUID    `json:"project_id"`
+	Project         string       `json:"project,omitempty"`
+	Workflow        string       `json:"workflow"`
+	Ref             string       `json:"ref"`
+	CommitSHA       string       `json:"commit_sha"`
+	Status          Status       `json:"status"`
+	Trigger         Trigger      `json:"trigger"`
+	Steps           []StepResult `json:"steps,omitempty"`
+	Error           string       `json:"error,omitempty"`
+	StartedAt       *time.Time   `json:"started_at,omitempty"`
+	SetupFinishedAt *time.Time   `json:"setup_finished_at,omitempty"`
+	FinishedAt      *time.Time   `json:"finished_at,omitempty"`
+	CreatedAt       time.Time    `json:"created_at"`
 }
 
 type Artifact struct {

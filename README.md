@@ -159,6 +159,23 @@ pici-cli run demo build
 pici-cli logs <id>
 ```
 
+### Cache
+
+The Docker cache tied to a project: workflow images built by pici and the
+cross-run cache volumes declared in `ci.yml`. Sizes come from the Docker daemon.
+
+```
+GET    /api/projects/{id}/cache                     list images and cache volumes
+DELETE /api/projects/{id}/cache/images?reference=…  remove a built image
+DELETE /api/projects/{id}/cache/volumes?name=…      remove a cross-run cache volume
+```
+
+```sh
+pici-cli cache demo
+pici-cli cache rm-image demo pici/<project-id>-build
+pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
+```
+
 ## Design notes
 
 - Plain `net/http` (Go 1.22+ routing), no framework.
@@ -194,7 +211,7 @@ Check the running build with `pici-cli version` (local) or `pici-cli version --s
 An embedded management UI is served at `/` by the same binary (server-rendered Go
 templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
 projects, variables & secrets, triggering/cancelling/rebuilding executions, per-step
-and full logs, and artifacts.
+and full logs, artifacts, and per-project Docker cache (images and cache volumes).
 
 When `PICI_API_TOKEN` is set, the UI asks for it once and stores it in an `HttpOnly`
 cookie (the JSON API keeps using the `X-API-Token` / `Bearer` header). Static assets

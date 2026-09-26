@@ -64,8 +64,8 @@ func TestMigrations(t *testing.T) {
 	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatalf("goose version table: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("expected migration version 1, got %d", version)
+	if version != 2 {
+		t.Fatalf("expected migration version 2, got %d", version)
 	}
 }
 
@@ -177,6 +177,10 @@ func TestExecutionCRUD(t *testing.T) {
 	}
 
 	got.Status = StatusSuccess
+	started := time.Now().Add(-time.Minute)
+	setupFinished := started.Add(10 * time.Second)
+	got.StartedAt = &started
+	got.SetupFinishedAt = &setupFinished
 	if err := s.UpdateExecution(ctx, got); err != nil {
 		t.Fatal(err)
 	}
@@ -185,10 +189,16 @@ func TestExecutionCRUD(t *testing.T) {
 	if updated.Status != StatusSuccess {
 		t.Fatalf("expected success, got %s", updated.Status)
 	}
+	if updated.SetupFinishedAt == nil || updated.SetupFinishedAt.UnixMilli() != setupFinished.UnixMilli() {
+		t.Fatalf("setup_finished_at not persisted: %+v", updated.SetupFinishedAt)
+	}
 
 	list, err := s.ListExecutions(ctx, projectID, 10)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("expected 1 execution, got %d (err=%v)", len(list), err)
+	}
+	if list[0].SetupFinishedAt == nil || list[0].SetupFinishedAt.UnixMilli() != setupFinished.UnixMilli() {
+		t.Fatalf("setup_finished_at not listed: %+v", list[0].SetupFinishedAt)
 	}
 }
 

@@ -1,0 +1,94 @@
+{{define "project_cache"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main id="main" class="mx-auto max-w-5xl px-4 py-6">
+<nav aria-label="Breadcrumb" class="text-sm">
+<ol class="flex flex-wrap items-center gap-2 opacity-70">
+<li><a class="link link-primary" href="/">Projects</a></li>
+<li aria-hidden="true">/</li>
+<li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
+</ol>
+</nav>
+<div class="mt-2">
+<h1 class="text-xl font-semibold">Cache</h1>
+</div>
+
+{{if .Unavailable}}
+<div class="alert alert-warning mt-4" role="status">Docker is unavailable, so the cache cannot be listed.</div>
+{{else}}
+<p class="mt-1 text-sm opacity-70">Docker images built by this project's workflows and the cross-run cache volumes they use. Total: {{size .TotalSize}}.</p>
+
+<section class="mt-6" aria-labelledby="cache-images-heading">
+<div class="flex items-center justify-between gap-3">
+<h2 id="cache-images-heading" class="text-lg font-semibold">Images</h2>
+<span class="text-sm opacity-70">{{size .ImagesSize}}</span>
+</div>
+<div class="card mt-3 border border-base-300">
+{{if .Images}}
+<div class="overflow-x-auto">
+<table class="table">
+<caption class="sr-only">Built workflow images</caption>
+<thead><tr><th scope="col">Image</th><th scope="col">Size</th><th scope="col">Created</th><th scope="col">Containers</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+<tbody>
+{{range .Images}}
+<tr>
+<td class="font-mono text-xs">{{.Tag}}</td>
+<td class="text-xs opacity-60">{{size .Size}}</td>
+<td class="text-xs opacity-60">{{formatTime .Created}}</td>
+<td class="text-xs opacity-60">{{.Containers}}</td>
+<td class="text-right">
+<form method="post" action="/projects/{{$.Project.ID}}/cache/images/delete">
+<input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+<input type="hidden" name="reference" value="{{.Tag}}">
+<button class="btn btn-outline btn-sm" type="submit">Delete</button>
+</form>
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p class="p-4 text-sm opacity-70">No cached images.</p>
+{{end}}
+</div>
+</section>
+
+<section class="mt-6" aria-labelledby="cache-volumes-heading">
+<div class="flex items-center justify-between gap-3">
+<h2 id="cache-volumes-heading" class="text-lg font-semibold">Cache volumes</h2>
+<span class="text-sm opacity-70">{{size .VolumesSize}}</span>
+</div>
+<div class="card mt-3 border border-base-300">
+{{if .Volumes}}
+<div class="overflow-x-auto">
+<table class="table">
+<caption class="sr-only">Cross-run cache volumes</caption>
+<thead><tr><th scope="col">Cache</th><th scope="col">Size</th><th scope="col">Created</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+<tbody>
+{{range .Volumes}}
+<tr>
+<td class="font-mono text-xs" title="{{.Name}}">{{.Cache}}</td>
+<td class="text-xs opacity-60">{{size .Size}}</td>
+<td class="text-xs opacity-60">{{formatTime .Created}}</td>
+<td class="text-right">
+<form method="post" action="/projects/{{$.Project.ID}}/cache/volumes/delete">
+<input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+<input type="hidden" name="name" value="{{.Name}}">
+<button class="btn btn-outline btn-sm" type="submit">Delete</button>
+</form>
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p class="p-4 text-sm opacity-70">No cache volumes.</p>
+{{end}}
+</div>
+</section>
+{{end}}
+</main>
+{{template "foot" .}}
+{{end}}

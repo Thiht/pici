@@ -10,7 +10,7 @@ go build -o pici-cli ./cmd/pici-cli
 
 ## Shell completion
 
-`pici-cli` ships command, flag, and dynamic value completion (project names, workflows, variable keys). Enable it for your shell:
+`pici-cli` ships command, flag, and dynamic value completion (project names, workflows, variable keys, cache images/volumes). Enable it for your shell:
 
 ```sh
 # bash
@@ -90,6 +90,17 @@ pici-cli artifacts <execution-id>
 
 # download one (writes to the basename of the path)
 pici-cli artifacts get <execution-id> build/dist/app.tar.gz
+```
+
+## Cache
+
+```sh
+# list the project's Docker cache: workflow images and cross-run cache volumes
+pici-cli cache demo
+
+# remove one image (by reference) or cache volume (by name)
+pici-cli cache rm-image demo pici/<project-id>-build
+pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 ```
 
 ## Validate

@@ -6,19 +6,14 @@
 <nav aria-label="Breadcrumb" class="text-sm">
 <ol class="flex flex-wrap items-center gap-2 opacity-70">
 <li><a class="link link-primary" href="/">Projects</a></li>
-<li aria-hidden="true">/</li>
 {{if .Editing}}
-<li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
 <li aria-hidden="true">/</li>
-<li aria-current="page">Edit</li>
-{{else}}
-<li aria-current="page">New project</li>
+<li><a class="link link-primary" href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></li>
 {{end}}
 </ol>
 </nav>
-<div class="mt-2 flex items-center justify-between gap-4">
+<div class="mt-2">
 <h1 class="text-xl font-semibold">{{if .Editing}}Edit project{{else}}New project{{end}}</h1>
-{{if .Editing}}<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}">Cancel</a>{{end}}
 </div>
 {{if .Error}}<div class="alert alert-soft alert-error mt-4" role="alert">{{.Error}}</div>{{end}}
 <div class="card mt-4 border border-base-300">
@@ -36,6 +31,7 @@
 <input class="input w-full" type="password" name="webhook_secret" autocomplete="new-password"{{if .Editing}} placeholder="Leave blank to keep the current secret"{{end}}>
 </label>
 <div class="card-actions mt-2">
+{{if .Editing}}<a class="btn btn-outline" href="/projects/{{.Project.ID}}">Cancel</a>{{end}}
 <button class="btn btn-primary" type="submit">{{if .Editing}}Save changes{{else}}Create project{{end}}</button>
 </div>
 </form>

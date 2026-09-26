@@ -5,8 +5,6 @@
 <nav aria-label="Breadcrumb" class="text-sm">
 <ol class="flex flex-wrap items-center gap-2 opacity-70">
 <li><a class="link link-primary" href="/">Projects</a></li>
-<li aria-hidden="true">/</li>
-<li aria-current="page">{{.Project.Name}}</li>
 </ol>
 </nav>
 <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -14,6 +12,7 @@
 <div class="flex items-center gap-2">
 <a class="btn btn-primary btn-sm" href="#run-modal">Run a workflow</a>
 <a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/variables">Variables &amp; secrets</a>
+<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/cache">Cache</a>
 <a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/edit">Details</a>
 </div>
 </div>
@@ -46,7 +45,7 @@
 <thead><tr><th scope="col">Status</th><th scope="col">Workflow</th><th scope="col">Ref</th><th scope="col">Trigger</th><th scope="col">Duration</th><th scope="col">Created</th></tr></thead>
 <tbody>
 {{range .Executions}}
-<tr>
+<tr class="cursor-pointer" onclick="window.location.href='/executions/{{.ID}}'">
 <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
 <td><a class="link link-primary font-medium" href="/executions/{{.ID}}">{{.Workflow}}</a></td>
 <td class="font-mono text-xs">{{.Ref}}</td>

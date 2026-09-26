@@ -267,18 +267,18 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e Execution) error 
 		e.Trigger = TriggerManual
 	}
 	_, err := s.db.ExecContext(ctx, `
-        INSERT INTO executions (id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, finished_at, created_at, concurrency_group)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    `, e.ID.String(), e.ProjectID.String(), e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup)
+        INSERT INTO executions (id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, e.ID.String(), e.ProjectID.String(), e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup)
 	return err
 }
 
 func (s *postgresStore) UpdateExecution(ctx context.Context, e Execution) error {
 	_, err := s.db.ExecContext(ctx, `
         UPDATE executions
-        SET status = $1, steps_json = $2, error = $3, started_at = $4, finished_at = $5, commit_sha = $6, concurrency_group = $7
-        WHERE id = $8
-    `, e.Status, e.Steps, e.Error, e.StartedAt, e.FinishedAt, e.CommitSHA, e.ConcurrencyGroup, e.ID.String())
+        SET status = $1, steps_json = $2, error = $3, started_at = $4, setup_finished_at = $5, finished_at = $6, commit_sha = $7, concurrency_group = $8
+        WHERE id = $9
+    `, e.Status, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CommitSHA, e.ConcurrencyGroup, e.ID.String())
 	return err
 }
 
@@ -286,10 +286,10 @@ func (s *postgresStore) GetExecution(ctx context.Context, id uuid.UUID) (Executi
 	var e Execution
 	var idStr, projectIDStr string
 	err := s.db.QueryRowContext(ctx, `
-        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, finished_at, created_at, concurrency_group
+        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
         FROM executions
         WHERE id = $1
-    `, id.String()).Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup)
+    `, id.String()).Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -312,7 +312,7 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, finished_at, created_at, concurrency_group
+        SELECT id, project_id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
         FROM executions
         WHERE project_id = $1
         ORDER BY created_at DESC
@@ -327,7 +327,7 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 	for rows.Next() {
 		var e Execution
 		var idStr, projectIDStr string
-		if err := rows.Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup); err != nil {
+		if err := rows.Scan(&idStr, &projectIDStr, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup); err != nil {
 			return nil, err
 		}
 		e.ID, err = uuid.Parse(idStr)

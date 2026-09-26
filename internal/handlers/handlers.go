@@ -16,6 +16,7 @@ type Handler struct {
 	webhooks   *WebhooksHandler
 	artifacts  *ArtifactsHandler
 	system     *SystemHandler
+	cache      *CacheHandler
 
 	apiToken string
 }
@@ -28,6 +29,7 @@ func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspace
 		webhooks:   NewWebhooksHandler(store, runner, workspaceDir),
 		artifacts:  NewArtifactsHandler(store, runner),
 		system:     NewSystemHandler(store, engine, buildVersion),
+		cache:      NewCacheHandler(store, engine),
 		apiToken:   apiToken,
 	}
 }
@@ -44,6 +46,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/projects/{id}", h.projects.Update)
 	mux.HandleFunc("DELETE /api/projects/{id}", h.projects.Delete)
 	mux.HandleFunc("GET /api/projects/{id}/configs", h.projects.ListConfigs)
+
+	mux.HandleFunc("GET /api/projects/{id}/cache", h.cache.Get)
+	mux.HandleFunc("DELETE /api/projects/{id}/cache/images", h.cache.DeleteImage)
+	mux.HandleFunc("DELETE /api/projects/{id}/cache/volumes", h.cache.DeleteVolume)
 
 	mux.HandleFunc("POST /api/projects/{id}/variables", h.variables.SetProject)
 	mux.HandleFunc("GET /api/projects/{id}/variables", h.variables.ListProject)

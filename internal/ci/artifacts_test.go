@@ -3,6 +3,7 @@ package ci
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,15 @@ func TestCacheBinds(t *testing.T) {
 		if binds[i] != want[i] {
 			t.Fatalf("binds[%d] = %q, want %q", i, binds[i], want[i])
 		}
+	}
+}
+
+func TestVolumePrefix(t *testing.T) {
+	if got := VolumePrefix("abc"); got != "pici-cache-abc-" {
+		t.Fatalf("VolumePrefix = %q", got)
+	}
+	if got := volumeName("abc", ".cache/go"); !strings.HasPrefix(got, VolumePrefix("abc")) {
+		t.Fatalf("volumeName %q does not start with the prefix", got)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -104,10 +106,27 @@ func sqliteDSN(dsn string) string {
 	}
 }
 
+// setupGoose routes goose's migration logs through slog.
+func setupGoose() {
+	goose.SetLogger(&gooseLogger{})
+}
+
+type gooseLogger struct{}
+
+func (l *gooseLogger) Fatalf(format string, v ...any) {
+	slog.Error(strings.TrimSpace(fmt.Sprintf(format, v...)))
+	os.Exit(1)
+}
+
+func (l *gooseLogger) Printf(format string, v ...any) {
+	slog.Info(strings.TrimSpace(fmt.Sprintf(format, v...)))
+}
+
 // migrate applies the embedded schema migrations with goose. Each dialect has
 // its own migration directory (migrations/sqlite, migrations/postgres) because
 // the schemas use driver-specific types (enums, timestamptz, uuid, ...).
 func migrate(db *sql.DB, dialect string) error {
+	setupGoose()
 	goose.SetBaseFS(migrationsFS)
 	if err := goose.SetDialect(dialect); err != nil {
 		return fmt.Errorf("migrate: %w", err)

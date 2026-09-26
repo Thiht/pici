@@ -43,6 +43,7 @@ tags:
   - name: Variables
   - name: Executions
   - name: Artifacts
+  - name: Cache
   - name: System
   - name: Webhooks
 
@@ -212,6 +213,80 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/cache:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Cache]
+      summary: List a project's Docker cache
+      description: Lists workflow images built by pici and cross-run cache volumes, with their sizes.
+      operationId: getProjectCache
+      responses:
+        "200":
+          description: Cache contents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cache"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/projects/{id}/cache/images:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    delete:
+      tags: [Cache]
+      summary: Remove a cached workflow image
+      operationId: deleteCacheImage
+      parameters:
+        - name: reference
+          in: query
+          required: true
+          description: Image reference (tag), as returned by the cache listing.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Image removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/projects/{id}/cache/volumes:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    delete:
+      tags: [Cache]
+      summary: Remove a cross-run cache volume
+      operationId: deleteCacheVolume
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: Volume name, as returned by the cache listing.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cache volume removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /api/variables:
     post:
@@ -728,6 +803,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: Docker is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
   schemas:
     Provider:
@@ -927,6 +1008,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        setup_finished_at:
+          type: string
+          format: date-time
+          nullable: true
         finished_at:
           type: string
           format: date-time
@@ -966,3 +1051,56 @@ components:
         docker:
           type: string
           example: unavailable
+
+    CacheImage:
+      type: object
+      required: [reference, size, created, containers]
+      properties:
+        reference:
+          type: string
+          example: pici/6f1e…-build
+        size:
+          type: integer
+          format: int64
+        created:
+          type: string
+          format: date-time
+        containers:
+          type: integer
+          format: int64
+
+    CacheVolume:
+      type: object
+      required: [name, cache, size, created]
+      properties:
+        name:
+          type: string
+          example: pici-cache-6f1e…-node_modules
+        cache:
+          type: string
+          description: Volume name with the project prefix stripped.
+          example: node_modules
+        size:
+          type: integer
+          format: int64
+        created:
+          type: string
+          format: date-time
+
+    Cache:
+      type: object
+      required: [project, images, volumes, total_size]
+      properties:
+        project:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/CacheImage"
+        volumes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CacheVolume"
+        total_size:
+          type: integer
+          format: int64

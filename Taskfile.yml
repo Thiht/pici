@@ -4,6 +4,9 @@ vars:
   PKG: ./...
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  REFLEX:
+    sh: |
+      if [ -n "$(go env GOBIN)" ]; then echo "$(go env GOBIN)/reflex"; else echo "$(go env GOPATH)/bin/reflex"; fi
 
 tasks:
   default:
@@ -45,6 +48,28 @@ tasks:
     desc: Run the server
     cmds:
       - go run ./cmd/pici {{.CLI_ARGS}}
+
+  start:
+    aliases:
+      - serve
+      - start
+      - watch
+    desc: Run the server with live reload
+    deps:
+      - reflex:install
+    cmds:
+      - |
+        {{ .REFLEX }} --start-service \
+          --decoration='none' \
+          --regex='\.(go|html|css)$$' \
+          -- go run ./cmd/pici {{.CLI_ARGS}}
+
+  reflex:install:
+    desc: Install reflex
+    status:
+      - test -x {{ .REFLEX }}
+    cmds:
+      - go install github.com/cespare/reflex@latest
 
   cli:
     desc: Run the CLI client

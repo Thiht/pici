@@ -1,9 +1,10 @@
 @import "tailwindcss";
 @plugin "daisyui" {
   themes: autumn --default, sunset --prefersdark;
-  include: rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock, button, card, badge, table, input, select, checkbox, alert, navbar, menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
+  include: rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock, button, card, badge, table, input, select, checkbox, alert, toast, navbar, menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
 }
 @source "./templates";
+@source inline("{alert,badge}-{soft,success,error,warning,info,neutral}");
 
 @layer base {
   body {
@@ -26,6 +27,23 @@
   }
   .skip-link:focus {
     transform: translateY(0);
+  }
+
+  /* Action-result toasts dismiss themselves after a few seconds. */
+  @keyframes toast-dismiss {
+    0%,
+    75% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-0.5rem);
+      visibility: hidden;
+    }
+  }
+  .toast .alert {
+    animation: toast-dismiss 5s ease-in-out forwards;
   }
 
   /* Logs always look like a terminal, regardless of the active theme. */

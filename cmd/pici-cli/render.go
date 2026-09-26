@@ -66,6 +66,8 @@ func output(v any) error {
 		printVars(x)
 	case []client.Artifact:
 		printArtifacts(x)
+	case client.Cache:
+		printCache(x)
 	case client.Health:
 		printHealth(x)
 	case version.Info:
@@ -228,6 +230,24 @@ func printArtifacts(list []client.Artifact) {
 	for _, a := range list {
 		fmt.Printf("%s/%s  %s\n", a.Step, a.Path, humanBytes(a.Size))
 	}
+}
+
+func printCache(c client.Cache) {
+	fmt.Println("images:")
+	if len(c.Images) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, img := range c.Images {
+		fmt.Printf("  %-48s  %8s  %s\n", img.Reference, humanBytes(img.Size), img.Created.Local().Format("2006-01-02 15:04"))
+	}
+	fmt.Println("volumes:")
+	if len(c.Volumes) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, v := range c.Volumes {
+		fmt.Printf("  %-48s  %8s  %s\n", v.Cache, humanBytes(v.Size), v.Created.Local().Format("2006-01-02 15:04"))
+	}
+	fmt.Printf("total: %s\n", humanBytes(c.TotalSize))
 }
 
 func printHealth(h client.Health) {

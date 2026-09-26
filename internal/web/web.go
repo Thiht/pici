@@ -5,6 +5,7 @@ package web
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
@@ -48,6 +49,16 @@ var funcs = template.FuncMap{
 var templates = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
 
 var staticRoot = mustSub(staticFS, "static")
+
+// assetVersion busts browser caches whenever the compiled CSS changes.
+var assetVersion = func() string {
+	b, err := fs.ReadFile(staticRoot, "app.css")
+	if err != nil {
+		return "dev"
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:4])
+}()
 
 func mustSub(fsys fs.FS, dir string) fs.FS {
 	sub, err := fs.Sub(fsys, dir)
@@ -96,6 +107,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /projects/{id}/delete", h.ProjectDelete)
 	mux.HandleFunc("GET /projects/{id}/configs", h.ProjectConfigs)
 	mux.HandleFunc("GET /projects/{id}/refs", h.ProjectRefs)
+	mux.HandleFunc("GET /projects/{id}/cache", h.ProjectCache)
+	mux.HandleFunc("POST /projects/{id}/cache/images/delete", h.ProjectCacheImageDelete)
+	mux.HandleFunc("POST /projects/{id}/cache/volumes/delete", h.ProjectCacheVolumeDelete)
 
 	mux.HandleFunc("GET /projects/{id}/variables", h.ProjectVariables)
 	mux.HandleFunc("POST /projects/{id}/variables", h.ProjectVariableSet)
@@ -117,16 +131,17 @@ func (h *Handler) Routes() http.Handler {
 
 // base is embedded in every page model. It carries the shared chrome data.
 type base struct {
-	Title     string
-	Active    string
-	CSRFToken string
-	FlashKind string
-	FlashText string
-	Version   string
+	Title        string
+	Active       string
+	CSRFToken    string
+	FlashKind    string
+	FlashText    string
+	Version      string
+	AssetVersion string
 }
 
 func (h *Handler) base(w http.ResponseWriter, r *http.Request, title, active string) base {
-	b := base{Title: title, Active: active, CSRFToken: h.ensureCSRF(w, r), Version: h.buildVersion}
+	b := base{Title: title, Active: active, CSRFToken: h.ensureCSRF(w, r), Version: h.buildVersion, AssetVersion: assetVersion}
 	if c, err := r.Cookie(flashCookie); err == nil && c.Value != "" {
 		kind, text, _ := strings.Cut(c.Value, ":")
 		if decoded, err := url.QueryUnescape(text); err == nil {
@@ -140,6 +155,7 @@ func (h *Handler) base(w http.ResponseWriter, r *http.Request, title, active str
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	if err := templates.ExecuteTemplate(w, name, data); err != nil {
 		slog.Error("render template", "template", name, "error", err)
@@ -239,11 +255,24 @@ func formatTimePtr(t *time.Time) string {
 	return formatTime(*t)
 }
 
-func duration(start, end *time.Time) string {
-	if start == nil || end == nil {
-		return "—"
+func duration(start, end any) string {
+	s, ok := start.(time.Time)
+	if !ok {
+		p, ok := start.(*time.Time)
+		if !ok || p == nil {
+			return "—"
+		}
+		s = *p
 	}
-	return end.Sub(*start).Round(time.Second).String()
+	e, ok := end.(time.Time)
+	if !ok {
+		p, ok := end.(*time.Time)
+		if !ok || p == nil {
+			return "—"
+		}
+		e = *p
+	}
+	return e.Sub(s).Round(time.Second).String()
 }
 
 func since(t *time.Time) string {

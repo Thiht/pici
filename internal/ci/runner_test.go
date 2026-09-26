@@ -10,6 +10,15 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+func TestImagePrefix(t *testing.T) {
+	if got := imageTag("abc", "build"); got != "pici/abc-build" {
+		t.Fatalf("imageTag = %q", got)
+	}
+	if got := ImagePrefix("abc"); got != "pici/abc-" {
+		t.Fatalf("ImagePrefix = %q", got)
+	}
+}
+
 func TestResolveVersion(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := gogit.PlainInit(dir, false)

@@ -273,6 +273,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		env = append(env, k+"="+v)
 	}
 
+	exec.SetupFinishedAt = new(time.Now())
 	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, exec.ID.String(), secrets, cacheBinds)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
@@ -316,6 +317,10 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.
 	exec.Error = errMsg
 	if exec.FinishedAt == nil {
 		exec.FinishedAt = new(time.Now())
+	}
+	// When setup fails before the steps run, all elapsed time was setup.
+	if exec.SetupFinishedAt == nil && setupLog != nil {
+		exec.SetupFinishedAt = exec.FinishedAt
 	}
 
 	persistCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -520,5 +525,11 @@ func resolveCommitSHA(dir string) string {
 }
 
 func imageTag(projectID, workflow string) string {
-	return "pici/" + docker.CleanTags(projectID) + "-" + docker.CleanTags(workflow)
+	return ImagePrefix(projectID) + docker.CleanTags(workflow)
+}
+
+// ImagePrefix is the repository prefix shared by every workflow image built for
+// a project. It is also used to find those images for the cache view.
+func ImagePrefix(projectID string) string {
+	return "pici/" + docker.CleanTags(projectID) + "-"
 }
