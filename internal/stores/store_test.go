@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 	"uuid"
@@ -66,6 +67,21 @@ func TestMigrations(t *testing.T) {
 	}
 	if version != 4 {
 		t.Fatalf("expected migration version 4, got %d", version)
+	}
+}
+
+func TestStepsEnvRoundTrip(t *testing.T) {
+	steps := Steps{{Name: "build", Status: StepStatusSuccess, Env: []string{"CI=true", "TOKEN=***"}}}
+	v, err := steps.Value()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Steps
+	if err := got.Scan(v); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !slices.Equal(got[0].Env, []string{"CI=true", "TOKEN=***"}) {
+		t.Fatalf("env not preserved: %+v", got)
 	}
 }
 

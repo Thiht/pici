@@ -25,6 +25,16 @@ type stepView struct {
 	Logs string
 }
 
+type envVar struct {
+	Key   string
+	Value string
+}
+
+func splitEnv(kv string) envVar {
+	key, value, _ := strings.Cut(kv, "=")
+	return envVar{Key: key, Value: value}
+}
+
 type executionPage struct {
 	base
 	Execution stores.Execution

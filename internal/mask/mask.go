@@ -51,9 +51,16 @@ func (m *Writer) Flush() error {
 }
 
 func (m *Writer) redact(line []byte) []byte {
-	s := string(line)
-	for _, sec := range m.secrets {
+	return []byte(Redact(string(line), m.secrets))
+}
+
+// Redact replaces every occurrence of a secret with the redaction marker.
+func Redact(s string, secrets []string) string {
+	for _, sec := range secrets {
+		if sec == "" {
+			continue
+		}
 		s = strings.ReplaceAll(s, sec, replacement)
 	}
-	return []byte(s)
+	return s
 }

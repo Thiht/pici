@@ -36,6 +36,7 @@ type StepResult struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	ExitCode   int        `json:"exit_code"`
 	Error      string     `json:"error,omitempty"`
+	Env        []string   `json:"env,omitempty"`
 }
 
 // Steps is a JSON-serialized list of step results, stored in a single column.

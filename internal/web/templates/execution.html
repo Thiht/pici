@@ -83,6 +83,22 @@
 </span>
 </summary>
 <div class="collapse-content">
+{{if .Env}}
+<details class="mb-3">
+<summary class="cursor-pointer text-xs font-medium opacity-70">Environment</summary>
+<div class="overflow-x-auto mt-2">
+<table class="table table-sm">
+<caption class="sr-only">Environment variables</caption>
+<thead><tr><th scope="col">Key</th><th scope="col">Value</th></tr></thead>
+<tbody>
+{{range .Env}}{{$e := splitEnv .}}
+<tr><td class="font-mono text-xs">{{$e.Key}}</td><td class="font-mono text-xs break-all">{{$e.Value}}</td></tr>
+{{end}}
+</tbody>
+</table>
+</div>
+</details>
+{{end}}
 {{if .Logs}}<pre class="logs">{{ansi .Logs}}</pre>{{else}}<p class="text-sm opacity-70">No logs.</p>{{end}}
 </div>
 </details>

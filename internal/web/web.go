@@ -44,6 +44,7 @@ var funcs = template.FuncMap{
 	"joined":        strings.Join,
 	"ansi":          ansiToHTML,
 	"capitalize":    capitalize,
+	"splitEnv":      splitEnv,
 }
 
 var templates = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
