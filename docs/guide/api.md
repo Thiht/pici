@@ -12,6 +12,8 @@ curl -H 'Authorization: Bearer <token>' localhost:8080/api/projects
 
 `/health` and `/api/webhooks/*` are exempt (webhooks use their own signature/token). The [CLI](/guide/cli) reads `PICI_TOKEN`.
 
+The full API is also available as an [interactive OpenAPI reference](/guide/api-reference).
+
 ## Projects
 
 | Method | Path | Description |

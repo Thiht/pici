@@ -1,0 +1,927 @@
+openapi: 3.0.3
+info:
+  title: pici API
+  version: 0.1.0
+  description: |
+    The pici HTTP API. It drives projects, variables/secrets, and workflow
+    executions. Day-to-day operations are usually done through the
+    [CLI](/guide/cli) (`pici-cli`), but every operation is available over HTTP.
+
+    ## Authentication
+
+    The API token is required (set via `-api-token` or `PICI_API_TOKEN`).
+    Send it either as `Authorization: Bearer <token>` or `X-API-Token: <token>`.
+
+    `/health` and `/api/webhooks/*` are exempt (webhooks use their own
+    signature/token).
+
+    ## Path parameters
+
+    `{id}` on project routes accepts either the project **UUID** or its **name**.
+    `{id}` on execution routes always expects a UUID.
+servers:
+  - url: "{scheme}://{host}:{port}"
+    description: pici server (editable from Swagger UI)
+    variables:
+      scheme:
+        default: http
+        enum: [http, https]
+        description: Protocol
+      host:
+        default: localhost
+        description: Host where pici is running
+      port:
+        default: "8080"
+        description: HTTP listen port (`-http-addr`)
+
+security:
+  - BearerAuth: []
+  - ApiToken: []
+
+tags:
+  - name: Projects
+  - name: Variables
+  - name: Executions
+  - name: Artifacts
+  - name: System
+  - name: Webhooks
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Healthcheck
+      description: Reports server status, Docker availability and queue depth.
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  docker:
+                    type: string
+                    example: ok
+                  queue:
+                    type: integer
+                    description: Number of pending executions
+                    example: 0
+        "503":
+          description: Docker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthUnavailable"
+
+  /api/projects:
+    post:
+      tags: [Projects]
+      summary: Register a project
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Projects]
+      summary: List projects
+      operationId: listProjects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get a project
+      operationId: getProject
+      responses:
+        "200":
+          description: Project found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Projects]
+      summary: Update a project
+      operationId: updateProject
+      description: Only the fields provided are updated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Projects]
+      summary: Delete a project
+      operationId: deleteProject
+      responses:
+        "204":
+          description: Project deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/configs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List discovered workflows
+      description: Clones the repository and lists workflows found under `.ci/`. Also syncs cron schedules.
+      operationId: listProjectConfigs
+      responses:
+        "200":
+          description: Discovered workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    type: string
+                  workflows:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/variables:
+    post:
+      tags: [Variables]
+      summary: Set a global variable
+      operationId: setGlobalVariable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VariableRequest"
+      responses:
+        "200":
+          description: Variable set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variable"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Variables]
+      summary: List global variables
+      operationId: listGlobalVariables
+      responses:
+        "200":
+          description: List of global variables
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Variable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/variables/{key}:
+    parameters:
+      - $ref: "#/components/parameters/Key"
+    delete:
+      tags: [Variables]
+      summary: Delete a global variable
+      operationId: deleteGlobalVariable
+      responses:
+        "204":
+          description: Variable deleted
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/variables:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Variables]
+      summary: Set a project variable
+      operationId: setProjectVariable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VariableRequest"
+      responses:
+        "200":
+          description: Variable set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variable"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Variables]
+      summary: List project variables
+      operationId: listProjectVariables
+      responses:
+        "200":
+          description: List of project variables
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Variable"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/variables/{key}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/Key"
+    delete:
+      tags: [Variables]
+      summary: Delete a project variable
+      operationId: deleteProjectVariable
+      responses:
+        "204":
+          description: Variable deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/executions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Executions]
+      summary: Trigger a run
+      description: Enqueues a workflow execution. `ref` defaults to the project's default branch.
+      operationId: createExecution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutionRequest"
+      responses:
+        "202":
+          description: Execution enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Execution"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Executions]
+      summary: List executions
+      operationId: listExecutions
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of executions to return
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Execution"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/executions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    get:
+      tags: [Executions]
+      summary: Get an execution
+      operationId: getExecution
+      responses:
+        "200":
+          description: Execution found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Execution"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/executions/{id}/logs:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    get:
+      tags: [Executions]
+      summary: Combined logs
+      description: Concatenated logs for the whole execution as plain text.
+      operationId: getExecutionLogs
+      responses:
+        "200":
+          description: Log content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/executions/{id}/logs/stream:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    get:
+      tags: [Executions]
+      summary: Stream logs (SSE)
+      description: |
+        Streams logs as a `text/event-stream`. Events are labeled by source
+        (`setup` or the step name); a final `done` event carries the execution
+        status.
+      operationId: streamExecutionLogs
+      responses:
+        "200":
+          description: Server-sent events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/executions/{id}/steps/{step}/logs:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Step"
+    get:
+      tags: [Executions]
+      summary: A single step's logs
+      operationId: getStepLogs
+      responses:
+        "200":
+          description: Log content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/executions/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    post:
+      tags: [Executions]
+      summary: Cancel a running execution
+      operationId: cancelExecution
+      responses:
+        "200":
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: canceling
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/executions/{id}/rebuild:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    post:
+      tags: [Executions]
+      summary: Re-run with the same commit
+      operationId: rebuildExecution
+      responses:
+        "202":
+          description: Execution enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Execution"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/executions/{id}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+    get:
+      tags: [Artifacts]
+      summary: List collected artifacts
+      operationId: listArtifacts
+      responses:
+        "200":
+          description: List of artifacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Artifact"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/executions/{id}/artifacts/{step}/{path}:
+    parameters:
+      - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Step"
+      - name: path
+        in: path
+        required: true
+        description: Artifact path (may include slashes)
+        style: simple
+        explode: false
+        schema:
+          type: string
+    get:
+      tags: [Artifacts]
+      summary: Download an artifact
+      operationId: downloadArtifact
+      responses:
+        "200":
+          description: Artifact file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/validate:
+    post:
+      tags: [System]
+      summary: Validate a ci.yml
+      description: Parses and validates the given workflow configuration (YAML).
+      operationId: validateWorkflow
+      requestBody:
+        required: true
+        content:
+          text/yaml:
+            schema:
+              type: string
+            example: |
+              name: build
+              image: node:20
+              steps:
+                - name: test
+                  run: npm test
+      responses:
+        "200":
+          description: Workflow is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: true
+                  name:
+                    type: string
+                  steps:
+                    type: integer
+                  schedule:
+                    type: string
+                  paths:
+                    type: array
+                    items:
+                      type: string
+                  image:
+                    type: string
+        "422":
+          description: Workflow is invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+
+  /api/webhooks/github/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Webhooks]
+      summary: GitHub webhook
+      description: Handles `ping`, `push` and `pull_request` events. Signature is verified with `X-Hub-Signature-256` when a webhook secret is set.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub webhook payload
+      responses:
+        "200":
+          description: Event processed (or ignored)
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/webhooks/gitlab/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Webhooks]
+      summary: GitLab webhook
+      description: Handles `push`, `tag_push` and `merge_request` events. Token is verified with `X-Gitlab-Token` when a webhook secret is set.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitLab webhook payload
+      responses:
+        "200":
+          description: Event processed (or ignored)
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Send the API token as `Authorization: Bearer <token>`.'
+    ApiToken:
+      type: apiKey
+      in: header
+      name: X-API-Token
+      description: Send the API token in the `X-API-Token` header.
+
+  parameters:
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      description: Project ID (UUID) or name
+      schema:
+        type: string
+    ExecutionId:
+      name: id
+      in: path
+      required: true
+      description: Execution ID
+      schema:
+        type: string
+        format: uuid
+    Key:
+      name: key
+      in: path
+      required: true
+      description: Variable key
+      schema:
+        type: string
+    Step:
+      name: step
+      in: path
+      required: true
+      description: Step name
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid API token (or webhook signature)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Provider:
+      type: string
+      enum: [github, gitlab, generic]
+
+    AuthType:
+      type: string
+      enum: [none, token, ssh]
+
+    Status:
+      type: string
+      enum: [pending, running, success, failed, canceled]
+
+    Trigger:
+      type: string
+      enum: [manual, webhook, cron, rebuild]
+
+    StepStatus:
+      type: string
+      enum: [pending, running, success, failed, skipped, canceled]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    Project:
+      type: object
+      required: [id, name, repo_url, provider, auth_type, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        repo_url:
+          type: string
+        provider:
+          $ref: "#/components/schemas/Provider"
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        auth_user:
+          type: string
+          nullable: true
+        default_branch:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProjectRequest:
+      type: object
+      required: [name, repo_url]
+      properties:
+        name:
+          type: string
+        repo_url:
+          type: string
+        provider:
+          $ref: "#/components/schemas/Provider"
+          description: Auto-detected from `repo_url` when omitted.
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+          description: Defaults to `token` when `auth_secret` is set, else `none`.
+        auth_user:
+          type: string
+          description: Defaults to `oauth2` (token) / `git` (ssh).
+        auth_secret:
+          type: string
+          description: Token or SSH private key.
+        webhook_secret:
+          type: string
+        default_branch:
+          type: string
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        repo_url:
+          type: string
+        provider:
+          $ref: "#/components/schemas/Provider"
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        auth_user:
+          type: string
+        auth_secret:
+          type: string
+        webhook_secret:
+          type: string
+        default_branch:
+          type: string
+
+    VariableRequest:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        secret:
+          type: boolean
+          description: When true, the value is masked in API responses and logs.
+
+    Variable:
+      type: object
+      required: [key, secret]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present for project-scoped variables, null for global ones.
+        key:
+          type: string
+        value:
+          type: string
+          description: Empty when `secret` is true.
+        secret:
+          type: boolean
+
+    StepResult:
+      type: object
+      required: [name, status, exit_code]
+      properties:
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/StepStatus"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        exit_code:
+          type: integer
+        error:
+          type: string
+
+    Execution:
+      type: object
+      required: [id, project_id, workflow, ref, commit_sha, status, trigger, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project:
+          type: string
+        workflow:
+          type: string
+        ref:
+          type: string
+        commit_sha:
+          type: string
+        status:
+          $ref: "#/components/schemas/Status"
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepResult"
+        error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ExecutionRequest:
+      type: object
+      required: [workflow]
+      properties:
+        workflow:
+          type: string
+        ref:
+          type: string
+          description: Branch/tag/SHA. Defaults to the project's default branch.
+
+    Artifact:
+      type: object
+      required: [step, path, size]
+      properties:
+        step:
+          type: string
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+
+    HealthUnavailable:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        docker:
+          type: string
+          example: unavailable
