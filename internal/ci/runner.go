@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	gh "github.com/google/go-github/v92/github"
 
+	"github.com/Thiht/pici/internal/archive"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
@@ -38,6 +39,7 @@ type Runner struct {
 	MountPath          string
 	LogsDir            string
 	DefaultStepTimeout time.Duration
+	MaxSnapshotSize    int64
 	PublicBaseURL      string
 
 	workerID string
@@ -146,15 +148,37 @@ func (r *Runner) Cancel(projectID uuid.UUID, execID int64) {
 }
 
 func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger) (stores.Execution, error) {
-	exec := stores.Execution{
+	return r.enqueue(ctx, stores.Execution{
 		ProjectID: project.ID,
 		Project:   project.Name,
 		Workflow:  workflow,
 		Ref:       ref,
 		CommitSHA: commitSHA,
-		Status:    stores.StatusPending,
 		Trigger:   trigger,
+		Source:    stores.SourceGit,
 		CreatedAt: time.Now(),
+	})
+}
+
+// EnqueueSnapshot queues an execution whose code comes from a locally uploaded
+// archive instead of a git clone.
+func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID) (stores.Execution, error) {
+	return r.enqueue(ctx, stores.Execution{
+		ProjectID:  project.ID,
+		Project:    project.Name,
+		Workflow:   workflow,
+		Ref:        ref,
+		CommitSHA:  commitSHA,
+		Trigger:    stores.TriggerManual,
+		Source:     stores.SourceSnapshot,
+		SnapshotID: &snapshotID,
+		CreatedAt:  time.Now(),
+	})
+}
+
+func (r *Runner) enqueue(ctx context.Context, exec stores.Execution) (stores.Execution, error) {
+	if exec.Status == "" {
+		exec.Status = stores.StatusPending
 	}
 	if err := r.Store.CreateExecution(ctx, &exec); err != nil {
 		return stores.Execution{}, err
@@ -199,12 +223,8 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	fmt.Fprintf(setupLog, "pici: starting workflow %q on %s\n", exec.Workflow, exec.Ref)
 
 	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(exec.ID, 10))
-	cloneRef := exec.Ref
-	if exec.CommitSHA != "" {
-		cloneRef = exec.CommitSHA
-	}
-	if err := git.Clone(ctx, projectCloneConfig(project, repoDir, cloneRef)); err != nil {
-		fmt.Fprintf(setupLog, "clone failed: %v\n", err)
+	if err := r.materializeSource(ctx, project, exec, repoDir); err != nil {
+		fmt.Fprintf(setupLog, "prepare source failed: %v\n", err)
 		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
 		return
 	}
@@ -227,8 +247,10 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		return
 	}
 
-	if err := SyncSchedule(ctx, r.Store, project.ID, exec.Workflow, cfg.Schedule); err != nil {
-		fmt.Fprintf(setupLog, "schedule sync failed: %v\n", err)
+	if exec.Source != stores.SourceSnapshot {
+		if err := SyncSchedule(ctx, r.Store, project.ID, exec.Workflow, cfg.Schedule); err != nil {
+			fmt.Fprintf(setupLog, "schedule sync failed: %v\n", err)
+		}
 	}
 
 	if cfg.Concurrency != "" {
@@ -294,6 +316,45 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	exec.Status = status
 
 	r.finish(ctx, exec, status, steps, exec.Error, project, setupLog, checkRunID)
+}
+
+func (r *Runner) materializeSource(ctx context.Context, project stores.Project, exec stores.Execution, repoDir string) error {
+	if exec.Source != stores.SourceSnapshot {
+		cloneRef := exec.Ref
+		if exec.CommitSHA != "" {
+			cloneRef = exec.CommitSHA
+		}
+		return git.Clone(ctx, projectCloneConfig(project, repoDir, cloneRef))
+	}
+	if exec.SnapshotID == nil {
+		return errors.New("snapshot execution is missing its snapshot id")
+	}
+	src := r.snapshotPath(project.ID, *exec.SnapshotID)
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		return err
+	}
+	if err := archive.ExtractTarGz(f, repoDir, r.MaxSnapshotSize); err != nil {
+		return err
+	}
+	_ = os.Remove(src)
+
+	// .git/config is excluded from the upload; recreate just the origin remote
+	// from the project's own repo URL.
+	configPath := filepath.Join(repoDir, ".git", "config")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return err
+	}
+	config := "[remote \"origin\"]\n\turl = " + project.RepoURL + "\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+	return os.WriteFile(configPath, []byte(config), 0o644)
+}
+
+func (r *Runner) snapshotPath(projectID, snapshotID uuid.UUID) string {
+	return filepath.Join(r.WorkspaceDir, "uploads", projectID.String(), snapshotID.String()+".tar.gz")
 }
 
 func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, projectID uuid.UUID, execID int64) {
@@ -365,6 +426,9 @@ func collectSecrets(vars []stores.Variable, project stores.Project) []string {
 }
 
 func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, log io.Writer) int64 {
+	if exec.Source == stores.SourceSnapshot {
+		return 0
+	}
 	if project.Provider != stores.ProviderGithub || project.AuthSecret == "" || exec.CommitSHA == "" {
 		return 0
 	}
@@ -484,9 +548,14 @@ func stepError(steps stores.Steps) string {
 }
 
 func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, version string) []string {
+	source := exec.Source
+	if source == "" {
+		source = stores.SourceGit
+	}
 	return []string{
 		"CI=true",
 		"PICI=true",
+		"PICI_SOURCE=" + string(source),
 		"PICI_PROJECT=" + project.Name,
 		"PICI_PROJECT_ID=" + project.ID.String(),
 		"PICI_REPO_URL=" + project.RepoURL,

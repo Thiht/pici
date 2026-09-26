@@ -1,13 +1,22 @@
 package ci
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/Thiht/pici/internal/stores"
 )
 
 func TestImagePrefix(t *testing.T) {
@@ -49,5 +58,74 @@ func TestResolveVersion(t *testing.T) {
 	}
 	if got := resolveVersion(dir, "main", hash.String()); got != hash.String()[:7] {
 		t.Fatalf("branch ref: got %q, want %q", got, hash.String()[:7])
+	}
+}
+
+func TestBuildEnvSnapshotSource(t *testing.T) {
+	env := buildEnv(stores.Project{}, stores.Execution{Source: stores.SourceSnapshot}, "/workspace", "abcdef12345", "abcdef1")
+	if !slices.Contains(env, "PICI_SOURCE=snapshot") {
+		t.Fatalf("missing PICI_SOURCE=snapshot in %v", env)
+	}
+}
+
+func TestMaterializeSnapshot(t *testing.T) {
+	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
+	snapshotID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
+	ws := t.TempDir()
+	r := &Runner{WorkspaceDir: ws, MaxSnapshotSize: 1 << 20}
+
+	dir := filepath.Join(ws, "uploads", projectID.String())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSnapshot(t, filepath.Join(dir, snapshotID.String()+".tar.gz"), map[string]string{
+		".git/HEAD":        "ref: refs/heads/main\n",
+		".ci/build/ci.yml": "steps:\n",
+	})
+
+	repoDir := filepath.Join(ws, projectID.String(), "1")
+	project := stores.Project{ID: projectID, RepoURL: "https://example.com/acme/demo.git"}
+	exec := stores.Execution{Source: stores.SourceSnapshot, SnapshotID: &snapshotID}
+	if err := r.materializeSource(context.Background(), project, exec, repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".ci", "build", "ci.yml")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := os.ReadFile(filepath.Join(repoDir, ".git", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), project.RepoURL) {
+		t.Fatalf("config missing origin url: %s", cfg)
+	}
+	if _, err := os.Stat(filepath.Join(dir, snapshotID.String()+".tar.gz")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("expected archive to be removed after extraction")
+	}
+}
+
+func writeSnapshot(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	for name, body := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
