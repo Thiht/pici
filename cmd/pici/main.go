@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,31 +28,35 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		log.Fatalf("config: %v", err)
+		slog.Error("load config", "error", err)
+		os.Exit(1)
 	}
 
 	cipher, err := secrets.New(cfg.SecretKey)
 	if err != nil {
-		log.Fatalf("secret key: %v", err)
+		slog.Error("load secret key", "error", err)
+		os.Exit(1)
 	}
 
 	store, err := stores.Open(cfg.DBDriver, cfg.DBDSN, cipher)
 	if err != nil {
-		log.Fatalf("open store: %v", err)
+		slog.Error("open store", "error", err)
+		os.Exit(1)
 	}
 	defer func() { _ = store.Close() }()
 
 	if err := store.RequeueOrphanedExecutions(context.Background()); err != nil {
-		log.Printf("warning: requeue orphaned executions: %v", err)
+		slog.Warn("requeue orphaned executions", "error", err)
 	}
 
 	engine, err := docker.New()
 	if err != nil {
-		log.Printf("warning: docker engine unavailable: %v", err)
+		slog.Warn("docker engine unavailable", "error", err)
 	}
 
 	if err := os.MkdirAll(cfg.WorkspaceDir, 0o755); err != nil {
-		log.Fatalf("create workspace: %v", err)
+		slog.Error("create workspace", "error", err)
+		os.Exit(1)
 	}
 
 	runner := &ci.Runner{
@@ -98,9 +102,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("pici listening on %s", cfg.HTTPAddr)
+		slog.Info("listening", "addr", cfg.HTTPAddr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("http server: %v", err)
+			slog.Error("http server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -108,7 +113,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Printf("shutting down...")
+	slog.Info("shutting down")
 
 	rootCancel()
 

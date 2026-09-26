@@ -2,7 +2,7 @@ package gc
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,7 +45,7 @@ func (c *Collector) tick(ctx context.Context) {
 	c.cleanupLogs(ctx)
 	if c.Engine != nil {
 		if err := c.Engine.PruneImages(ctx); err != nil {
-			log.Printf("gc: prune images: %v", err)
+			slog.WarnContext(ctx, "prune images", "error", err)
 		}
 	}
 }

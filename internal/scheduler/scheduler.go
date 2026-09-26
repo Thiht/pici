@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/Thiht/pici/internal/cron"
@@ -34,7 +34,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 func (s *Scheduler) tick(ctx context.Context) {
 	due, err := s.Store.ListDueSchedules(ctx, time.Now())
 	if err != nil {
-		log.Printf("scheduler: list due schedules: %v", err)
+		slog.ErrorContext(ctx, "list due schedules", "error", err)
 		return
 	}
 	for _, sch := range due {
@@ -44,7 +44,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		}
 		ref := project.DefaultBranch
 		if err := s.Trigger(ctx, project, sch.Workflow, ref, stores.TriggerCron); err != nil {
-			log.Printf("scheduler: trigger %s/%s: %v", project.Name, sch.Workflow, err)
+			slog.ErrorContext(ctx, "trigger workflow", "project", project.Name, "workflow", sch.Workflow, "error", err)
 			continue
 		}
 		if next, err := cron.Next(sch.CronExpr, time.Now()); err == nil {
