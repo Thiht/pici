@@ -100,8 +100,38 @@ func TestMaterializeSnapshot(t *testing.T) {
 	if !strings.Contains(string(cfg), project.RepoURL) {
 		t.Fatalf("config missing origin url: %s", cfg)
 	}
+	if !strings.Contains(string(cfg), `[remote "origin"]`) {
+		t.Fatalf("config missing origin section: %s", cfg)
+	}
 	if _, err := os.Stat(filepath.Join(dir, snapshotID.String()+".tar.gz")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("expected archive to be removed after extraction")
+	}
+}
+
+func TestMaterializeSnapshotKeepsArchiveOnFailure(t *testing.T) {
+	projectID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
+	snapshotID := uuid.MustParse("88888888-8888-8888-8888-888888888888")
+	ws := t.TempDir()
+	r := &Runner{WorkspaceDir: ws, MaxSnapshotSize: 1 << 20}
+
+	dir := filepath.Join(ws, "uploads", projectID.String())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(dir, snapshotID.String()+".tar.gz")
+	if err := os.WriteFile(archivePath, []byte("not gzip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repoDir := filepath.Join(ws, projectID.String(), "1")
+	project := stores.Project{ID: projectID, RepoURL: "https://example.com/acme/demo.git"}
+	exec := stores.Execution{Source: stores.SourceSnapshot, SnapshotID: &snapshotID}
+	if err := r.materializeSource(context.Background(), project, exec, repoDir); err == nil {
+		t.Fatal("expected materialize to fail")
+	}
+
+	if _, err := os.Stat(archivePath); err != nil {
+		t.Fatalf("archive should be kept when materialization fails: %v", err)
 	}
 }
 

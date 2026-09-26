@@ -341,7 +341,6 @@ func (r *Runner) materializeSource(ctx context.Context, project stores.Project, 
 	if err := archive.ExtractTarGz(f, repoDir, r.MaxSnapshotSize); err != nil {
 		return err
 	}
-	_ = os.Remove(src)
 
 	// .git/config is excluded from the upload; recreate just the origin remote
 	// from the project's own repo URL.
@@ -350,7 +349,12 @@ func (r *Runner) materializeSource(ctx context.Context, project stores.Project, 
 		return err
 	}
 	config := "[remote \"origin\"]\n\turl = " + project.RepoURL + "\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
-	return os.WriteFile(configPath, []byte(config), 0o644)
+	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
+		return err
+	}
+
+	_ = os.Remove(src)
+	return nil
 }
 
 func (r *Runner) snapshotPath(projectID, snapshotID uuid.UUID) string {
