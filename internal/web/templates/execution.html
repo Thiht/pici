@@ -13,6 +13,7 @@
 <div class="flex flex-wrap items-center gap-3">
 <h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span></h1>
 <span class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
+{{if eq (printf "%s" .Execution.Source) "snapshot"}}<span class="badge badge-soft badge-accent">local</span>{{end}}
 </div>
 <div class="flex items-center gap-2">
 {{if .Running}}
@@ -21,10 +22,12 @@
 <button class="btn btn-error btn-sm" type="submit">Cancel</button>
 </form>
 {{end}}
+{{if ne (printf "%s" .Execution.Source) "snapshot"}}
 <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild">
 <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
 <button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
 </form>
+{{end}}
 </div>
 </div>
 <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">

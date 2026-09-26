@@ -228,6 +228,11 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
+	if previous.Source == stores.SourceSnapshot {
+		setFlash(w, "error", "Snapshot executions cannot be rebuilt.")
+		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
+		return
+	}
 	execution, err := h.runner.Enqueue(r.Context(), project, previous.Workflow, previous.Ref, previous.CommitSHA, stores.TriggerRebuild)
 	if err != nil {
 		h.serverError(w, r, err)
