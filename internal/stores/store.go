@@ -3,11 +3,13 @@ package stores
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/pressly/goose/v3"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -15,8 +17,10 @@ import (
 	"github.com/Thiht/pici/internal/secrets"
 )
 
-//go:embed schema.sql
-var schemaSQL string
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
+const migrationsDir = "migrations"
 
 type Store interface {
 	CreateProject(ctx context.Context, p Project) (Project, error)
@@ -54,12 +58,17 @@ type Store interface {
 var ErrNotFound = errors.New("not found")
 
 func Open(driver, dsn string, cipher *secrets.Cipher) (Store, error) {
-	var db *sql.DB
-	var err error
+	var (
+		db      *sql.DB
+		err     error
+		dialect string
+	)
 	switch driver {
 	case "sqlite", "sqlite3":
+		dialect = "sqlite"
 		db, err = sql.Open("sqlite", sqliteDSN(dsn))
 	case "postgres", "postgresql":
+		dialect = "postgres"
 		db, err = sql.Open("pgx", dsn)
 	default:
 		return nil, fmt.Errorf("unsupported db driver %q", driver)
@@ -68,7 +77,7 @@ func Open(driver, dsn string, cipher *secrets.Cipher) (Store, error) {
 		return nil, err
 	}
 
-	if err := migrate(db, driver); err != nil {
+	if err := migrate(db, dialect); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -102,50 +111,18 @@ func sqliteDSN(dsn string) string {
 	}
 }
 
-func migrate(db *sql.DB, driver string) error {
-	for _, stmt := range strings.Split(schemaSQL, ";") {
-		if strings.TrimSpace(stmt) == "" {
-			continue
-		}
-		if _, err := db.Exec(stmt); err != nil {
-			return fmt.Errorf("migrate: %w", err)
-		}
+// migrate applies the embedded schema migrations with goose. The schema is
+// shared by all dialects; if one ever needs dialect-specific DDL, split the
+// migrations into per-dialect directories (migrations/sqlite, migrations/postgres).
+func migrate(db *sql.DB, dialect string) error {
+	goose.SetBaseFS(migrationsFS)
+	if err := goose.SetDialect(dialect); err != nil {
+		return fmt.Errorf("migrate: %w", err)
 	}
-
-	additions := []struct{ table, column, ddl string }{
-		{"projects", "webhook_secret", `ALTER TABLE projects ADD COLUMN webhook_secret TEXT NOT NULL DEFAULT ''`},
-		{"executions", "claimed_by", `ALTER TABLE executions ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`},
-		{"executions", "cancel_requested", `ALTER TABLE executions ADD COLUMN cancel_requested BIGINT NOT NULL DEFAULT 0`},
-		{"executions", "concurrency_group", `ALTER TABLE executions ADD COLUMN concurrency_group TEXT NOT NULL DEFAULT ''`},
-	}
-	for _, a := range additions {
-		exists, err := columnExists(db, driver, a.table, a.column)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			if _, err := db.Exec(a.ddl); err != nil {
-				return fmt.Errorf("migrate %s.%s: %w", a.table, a.column, err)
-			}
-		}
+	if err := goose.Up(db, migrationsDir); err != nil {
+		return fmt.Errorf("migrate: %w", err)
 	}
 	return nil
-}
-
-func columnExists(db *sql.DB, driver, table, column string) (bool, error) {
-	var (
-		n   int
-		err error
-	)
-	if driver == "postgres" || driver == "postgresql" {
-		err = db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`, table, column).Scan(&n)
-	} else {
-		err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = ?`, table), column).Scan(&n)
-	}
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
 }
 
 func encrypt(cipher *secrets.Cipher, value string) string {

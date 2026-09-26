@@ -33,7 +33,7 @@ func Load(args []string) (Config, error) {
 	var cfg Config
 
 	fs.StringVar(&cfg.HTTPAddr, "http-addr", ":8080", "HTTP listen address")
-	fs.StringVar(&cfg.DBDriver, "db-driver", "sqlite", "database driver (sqlite|postgres)")
+	fs.StringVar(&cfg.DBDriver, "db-driver", "sqlite", "database driver (sqlite, postgres)")
 	fs.StringVar(&cfg.DBDSN, "db-dsn", "pici.db", "database DSN (path for sqlite, connection string for postgres)")
 	fs.StringVar(&cfg.WorkspaceDir, "workspace-dir", defaultWorkspaceDir(), "directory for clones and logs")
 	fs.StringVar(&cfg.RepoMountPath, "repo-mount-path", "/workspace", "mount path of the repo inside the runner container")
@@ -74,6 +74,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// TODO: use UserConfigDir or UserCacheDir?
 func defaultWorkspaceDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {

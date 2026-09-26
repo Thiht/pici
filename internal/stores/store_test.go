@@ -20,6 +20,48 @@ func newTestStore(t *testing.T) Store {
 	return s
 }
 
+func TestMigrations(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "test.db")
+
+	first, err := Open("sqlite", path, nil)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := first.CreateProject(ctx, Project{ID: "p1", Name: "demo", CreatedAt: 1, UpdatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopening an existing database must not re-apply migrations nor lose data.
+	second, err := Open("sqlite", path, nil)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+
+	p, err := second.GetProject(ctx, "p1")
+	if err != nil || p.Name != "demo" {
+		t.Fatalf("unexpected project: %+v (err=%v)", p, err)
+	}
+
+	raw, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+
+	var version int64
+	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
+		t.Fatalf("goose version table: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("expected migration version 1, got %d", version)
+	}
+}
+
 func TestProjectCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
