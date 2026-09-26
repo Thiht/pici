@@ -42,19 +42,3 @@ func TestResolveVersion(t *testing.T) {
 		t.Fatalf("branch ref: got %q, want %q", got, hash.String()[:7])
 	}
 }
-
-func TestRepoSlug(t *testing.T) {
-	tests := map[string]string{
-		"https://github.com/Thiht/pici.git":     "Thiht/pici",
-		"git@github.com:Thiht/pici.git":         "Thiht/pici",
-		"ssh://git@github.com/Thiht/pici":       "Thiht/pici",
-		"https://gitlab.com/group/sub/repo.git": "group/sub/repo",
-		"git@gitlab.com:group/sub/repo.git":     "group/sub/repo",
-		"https://git.example.com:8443/acme/ci":  "acme/ci",
-	}
-	for url, want := range tests {
-		if got := repoSlug(url); got != want {
-			t.Errorf("repoSlug(%q) = %q, want %q", url, got, want)
-		}
-	}
-}

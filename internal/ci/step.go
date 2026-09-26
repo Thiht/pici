@@ -167,7 +167,7 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 		stepEnv = append(stepEnv, k+"="+v)
 	}
 
-	timeout := step.Timeout.Std()
+	timeout := time.Duration(step.Timeout)
 	if timeout <= 0 {
 		timeout = r.DefaultStepTimeout
 	}

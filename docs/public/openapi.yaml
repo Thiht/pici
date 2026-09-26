@@ -962,7 +962,7 @@ components:
       properties:
         status:
           type: string
-          example: ok
+          example: unavailable
         docker:
           type: string
           example: unavailable

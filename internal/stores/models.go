@@ -64,7 +64,7 @@ func (s *Steps) Scan(src any) error {
 	default:
 		return fmt.Errorf("invalid type for Steps: %T", src)
 	}
-	if len(b) == 0 || string(b) == "[]" {
+	if len(b) == 0 {
 		*s = nil
 		return nil
 	}

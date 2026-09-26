@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseValidConfig(t *testing.T) {
@@ -27,8 +28,8 @@ steps:
 	if len(cfg.Steps) != 2 {
 		t.Fatalf("expected 2 steps, got %d", len(cfg.Steps))
 	}
-	if cfg.Steps[0].Timeout.Std().Minutes() != 5 {
-		t.Errorf("expected 5m timeout, got %v", cfg.Steps[0].Timeout.Std())
+	if time.Duration(cfg.Steps[0].Timeout).Minutes() != 5 {
+		t.Errorf("expected 5m timeout, got %v", time.Duration(cfg.Steps[0].Timeout))
 	}
 }
 

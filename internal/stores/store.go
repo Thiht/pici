@@ -58,36 +58,29 @@ type Store interface {
 var ErrNotFound = errors.New("not found")
 
 func Open(driver, dsn string, cipher *secrets.Cipher) (Store, error) {
-	var (
-		db      *sql.DB
-		err     error
-		dialect string
-	)
+	var dialect, sqlDriver, sqlDSN string
 	switch driver {
 	case "sqlite", "sqlite3":
-		dialect = "sqlite"
-		db, err = sql.Open("sqlite", sqliteDSN(dsn))
+		dialect, sqlDriver, sqlDSN = "sqlite", "sqlite", sqliteDSN(dsn)
 	case "postgres", "postgresql":
-		dialect = "postgres"
-		db, err = sql.Open("pgx", dsn)
+		dialect, sqlDriver, sqlDSN = "postgres", "pgx", dsn
 	default:
 		return nil, fmt.Errorf("unsupported db driver %q", driver)
 	}
+
+	db, err := sql.Open(sqlDriver, sqlDSN)
 	if err != nil {
 		return nil, err
 	}
-
 	if err := migrate(db, dialect); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	switch driver {
-	case "sqlite", "sqlite3":
+	if dialect == "sqlite" {
 		return &sqliteStore{db: db, cipher: cipher}, nil
-	default:
-		return &postgresStore{db: db, cipher: cipher}, nil
 	}
+	return &postgresStore{db: db, cipher: cipher}, nil
 }
 
 func sqliteDSN(dsn string) string {

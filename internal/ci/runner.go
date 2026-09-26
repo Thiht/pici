@@ -479,7 +479,7 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, ver
 		"PICI_PROJECT=" + project.Name,
 		"PICI_PROJECT_ID=" + project.ID.String(),
 		"PICI_REPO_URL=" + project.RepoURL,
-		"PICI_REPO_SLUG=" + repoSlug(project.RepoURL),
+		"PICI_REPO_SLUG=" + github.RepoSlug(project.RepoURL),
 		"PICI_WORKFLOW=" + exec.Workflow,
 		"PICI_EXECUTION_ID=" + exec.ID.String(),
 		"PICI_REF=" + exec.Ref,
@@ -493,22 +493,6 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, ver
 		"GIT_CONFIG_KEY_0=safe.directory",
 		"GIT_CONFIG_VALUE_0=*",
 	}
-}
-
-func repoSlug(repoURL string) string {
-	s := strings.TrimSuffix(repoURL, ".git")
-	switch {
-	case strings.Contains(s, "://"):
-		s = s[strings.Index(s, "://")+3:]
-	case strings.Contains(s, "@") && strings.Contains(s, ":"):
-		return strings.Trim(s[strings.Index(s, ":")+1:], "/")
-	default:
-		return strings.Trim(s, "/")
-	}
-	if i := strings.Index(s, "/"); i >= 0 {
-		s = s[i+1:]
-	}
-	return strings.Trim(s, "/")
 }
 
 func resolveVersion(dir, ref, sha string) string {

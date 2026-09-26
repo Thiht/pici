@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -248,7 +249,7 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 				state.offset += int64(len(data))
 				state.partial = append(state.partial, data...)
 				for {
-					idx := strings.IndexByte(string(state.partial), '\n')
+					idx := bytes.IndexByte(state.partial, '\n')
 					if idx < 0 {
 						break
 					}

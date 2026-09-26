@@ -1,6 +1,7 @@
 package mask
 
 import (
+	"bytes"
 	"io"
 	"strings"
 )
@@ -27,7 +28,7 @@ func (m *Writer) Write(p []byte) (int, error) {
 	n := len(p)
 	m.buf = append(m.buf, p...)
 	for {
-		idx := strings.IndexByte(string(m.buf), '\n')
+		idx := bytes.IndexByte(m.buf, '\n')
 		if idx < 0 {
 			break
 		}

@@ -2,6 +2,7 @@ package ci
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -9,33 +10,10 @@ func MatchesPaths(paths, ignore []string, files []string) bool {
 	if len(files) == 0 {
 		return true
 	}
-
-	matched := len(paths) == 0
-	if !matched {
-		for _, p := range paths {
-			for _, f := range files {
-				if matchGlob(p, f) {
-					matched = true
-					break
-				}
-			}
-			if matched {
-				break
-			}
-		}
-	}
-	if !matched {
+	if len(paths) > 0 && !slices.ContainsFunc(files, func(f string) bool { return matchesAny(paths, f) }) {
 		return false
 	}
-
-	for _, ig := range ignore {
-		for _, f := range files {
-			if matchGlob(ig, f) {
-				return false
-			}
-		}
-	}
-	return true
+	return !slices.ContainsFunc(files, func(f string) bool { return matchesAny(ignore, f) })
 }
 
 func MatchesRef(tags, branches []string, ref string, isTag bool) bool {

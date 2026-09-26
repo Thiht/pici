@@ -34,8 +34,6 @@ type Step struct {
 
 type Duration time.Duration
 
-func (d Duration) Std() time.Duration { return time.Duration(d) }
-
 func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {

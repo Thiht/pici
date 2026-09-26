@@ -29,7 +29,7 @@ func (h *SystemHandler) Health(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"status": "ok"}
 	if h.engine != nil {
 		if err := h.engine.Ping(r.Context()); err != nil {
-			render.JSON(w, http.StatusServiceUnavailable, map[string]any{"status": "ok", "docker": "unavailable"})
+			render.JSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable", "docker": "unavailable"})
 			return
 		}
 		resp["docker"] = "ok"
