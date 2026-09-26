@@ -33,6 +33,17 @@ func (c *Client) GetProject(ctx context.Context, id string) (Project, error) {
 	return p, json.Unmarshal(data, &p)
 }
 
+func (c *Client) ListWorkflows(ctx context.Context, project string) ([]string, error) {
+	data, err := c.get(ctx, "/api/projects/"+project+"/configs")
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Workflows []string `json:"workflows"`
+	}
+	return resp.Workflows, json.Unmarshal(data, &resp)
+}
+
 func (c *Client) UpdateProject(ctx context.Context, id string, req UpdateProjectRequest) (Project, error) {
 	data, err := c.do(ctx, http.MethodPut, "/api/projects/"+id, req)
 	if err != nil {

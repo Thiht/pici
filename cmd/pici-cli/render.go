@@ -20,31 +20,6 @@ const (
 
 var formatFlag = formatAuto
 
-func parseGlobalFlags(args []string) ([]string, error) {
-	var out []string
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--json":
-			formatFlag = formatJSON
-		case args[i] == "--format":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("--format requires a value (json|pretty)")
-			}
-			if err := setFormat(args[i]); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(args[i], "--format="):
-			if err := setFormat(strings.TrimPrefix(args[i], "--format=")); err != nil {
-				return nil, err
-			}
-		default:
-			out = append(out, args[i])
-		}
-	}
-	return out, nil
-}
-
 func setFormat(s string) error {
 	switch s {
 	case "json":

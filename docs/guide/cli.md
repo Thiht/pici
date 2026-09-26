@@ -8,6 +8,26 @@ Build it:
 go build -o pici-cli ./cmd/pici-cli
 ```
 
+## Shell completion
+
+`pici-cli` ships command, flag, and dynamic value completion (project names, workflows, variable keys). Enable it for your shell:
+
+```sh
+# bash
+source <(pici-cli completion bash)
+
+# zsh
+source <(pici-cli completion zsh)
+
+# fish
+pici-cli completion fish | source
+
+# powershell
+pici-cli completion powershell | Out-String | Invoke-Expression
+```
+
+Add the `source` line to your shell rc file to make it permanent. Completion queries the server (`PICI_ADDR`) for dynamic values and silently returns nothing if it is unreachable.
+
 ## Commands
 
 ```sh

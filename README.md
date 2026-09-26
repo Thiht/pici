@@ -170,6 +170,7 @@ pici-cli logs <id>
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
 - Streaming logs (SSE), graceful shutdown, garbage collection, healthcheck, and a CLI (`cmd/pici-cli`).
+- CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
 
 Full documentation (Vitepress) lives in [`docs/`](docs/).
 
