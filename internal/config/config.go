@@ -74,7 +74,6 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// TODO: use UserConfigDir or UserCacheDir?
 func defaultWorkspaceDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
