@@ -64,8 +64,8 @@ func TestMigrations(t *testing.T) {
 	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatalf("goose version table: %v", err)
 	}
-	if version != 3 {
-		t.Fatalf("expected migration version 3, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected migration version 4, got %d", version)
 	}
 }
 
@@ -200,6 +200,47 @@ func TestExecutionCRUD(t *testing.T) {
 	}
 	if list[0].SetupFinishedAt == nil || list[0].SetupFinishedAt.UnixMilli() != setupFinished.UnixMilli() {
 		t.Fatalf("setup_finished_at not listed: %+v", list[0].SetupFinishedAt)
+	}
+}
+
+func TestExecutionSourceRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	projectID := mustUUID("33333333-3333-3333-3333-333333333333")
+
+	if _, err := s.CreateProject(ctx, Project{ID: projectID, Name: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshotID := mustUUID("44444444-4444-4444-4444-444444444444")
+	e := Execution{
+		ProjectID:  projectID,
+		Workflow:   "build",
+		Status:     StatusPending,
+		Source:     SourceSnapshot,
+		SnapshotID: &snapshotID,
+	}
+	if err := s.CreateExecution(ctx, &e); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetExecution(ctx, projectID, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != SourceSnapshot {
+		t.Fatalf("source = %q, want snapshot", got.Source)
+	}
+	if got.SnapshotID == nil || *got.SnapshotID != snapshotID {
+		t.Fatalf("snapshot id = %v, want %s", got.SnapshotID, snapshotID)
+	}
+
+	list, err := s.ListExecutions(ctx, projectID, 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("expected 1 execution, got %d (err=%v)", len(list), err)
+	}
+	if list[0].Source != SourceSnapshot {
+		t.Fatalf("listed source = %q, want snapshot", list[0].Source)
 	}
 }
 

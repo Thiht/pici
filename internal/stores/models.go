@@ -80,6 +80,7 @@ type Execution struct {
 	CommitSHA       string     `json:"commit_sha"`
 	Status          Status     `json:"status"`
 	Trigger         Trigger    `json:"trigger"`
+	Source          Source     `json:"source"`
 	Steps           Steps      `json:"steps,omitempty"`
 	Error           string     `json:"error,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
@@ -87,9 +88,10 @@ type Execution struct {
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 
-	ClaimedBy        string `json:"-"`
-	CancelRequested  bool   `json:"-"`
-	ConcurrencyGroup string `json:"-"`
+	ClaimedBy        string     `json:"-"`
+	CancelRequested  bool       `json:"-"`
+	ConcurrencyGroup string     `json:"-"`
+	SnapshotID       *uuid.UUID `json:"-"`
 }
 
 type Schedule struct {
