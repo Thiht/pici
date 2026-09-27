@@ -27,6 +27,7 @@
 ### Task 1: `Source` enum, migration and store persistence
 
 **Files:**
+
 - Modify: `internal/stores/enums.go`
 - Create: `internal/stores/enums_enum.go` (regenerated)
 - Create: `internal/stores/migrations/sqlite/004_execution_source.sql`
@@ -37,6 +38,7 @@
 - Test: `internal/stores/store_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `stores.Source`, `stores.SourceGit`, `stores.SourceSnapshot`, `stores.Execution.Source stores.Source`, `stores.Execution.SnapshotID *uuid.UUID`.
 
@@ -291,10 +293,12 @@ git commit -m "Add execution source and snapshot id"
 ### Task 2: Hardened `internal/archive` extraction
 
 **Files:**
+
 - Create: `internal/archive/archive.go`
 - Test: `internal/archive/archive_test.go`
 
 **Interfaces:**
+
 - Consumes: std library only.
 - Produces: `archive.ExtractTarGz(src io.Reader, dest string, maxBytes int64) error`.
 
@@ -639,10 +643,12 @@ git commit -m "Add hardened tar.gz extraction"
 ### Task 3: Runner materializes snapshot source
 
 **Files:**
+
 - Modify: `internal/ci/runner.go`
 - Test: `internal/ci/runner_test.go`
 
 **Interfaces:**
+
 - Consumes: `stores.SourceSnapshot`, `stores.Execution.SnapshotID`, `archive.ExtractTarGz`.
 - Produces: `(*Runner).EnqueueSnapshot(ctx, project, workflow, ref, commitSHA string, snapshotID uuid.UUID) (stores.Execution, error)`; `(*Runner).MaxSnapshotSize int64`; `PICI_SOURCE` env var.
 
@@ -928,6 +934,7 @@ git commit -m "Materialize snapshot executions in the runner"
 ### Task 4: Multipart upload endpoint and config limit
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Modify: `cmd/pici/main.go`
 - Modify: `internal/handlers/handlers.go`
@@ -936,6 +943,7 @@ git commit -m "Materialize snapshot executions in the runner"
 - Test: `internal/handlers/auth_test.go`, `internal/handlers/webhooks_test.go` (update `New` calls)
 
 **Interfaces:**
+
 - Consumes: `(*Runner).EnqueueSnapshot`, `stores.SourceSnapshot`.
 - Produces: `handlers.New(store, runner, engine, workspaceDir, mountPath string, maxSnapshotSize int64, apiToken, buildVersion string) *Handler`; `config.Config.MaxSnapshotSize int64`.
 
@@ -1267,6 +1275,7 @@ git commit -m "Accept snapshot uploads on the executions endpoint"
 ### Task 5: CLI `run --local` and archive builder
 
 **Files:**
+
 - Modify: `client/client.go`
 - Create: `client/snapshot.go`
 - Modify: `cmd/pici-cli/main.go`
@@ -1274,6 +1283,7 @@ git commit -m "Accept snapshot uploads on the executions endpoint"
 - Test: `cmd/pici-cli/local_test.go`
 
 **Interfaces:**
+
 - Consumes: `POST /api/projects/{id}/executions` multipart.
 - Produces: `(*client.Client).TriggerSnapshotExecution(ctx, project, workflow, ref, commitSHA string, snapshot io.Reader) (Execution, error)`; `buildSnapshot(dir string, w io.Writer) error`; `worktreeInfo(dir string) (ref, sha string, err error)`.
 
@@ -1735,6 +1745,7 @@ git commit -m "Add pici-cli run --local snapshot upload"
 ### Task 6: GC cleanup, UI badge, rebuild guard, docs
 
 **Files:**
+
 - Modify: `internal/gc/gc.go`
 - Modify: `internal/web/templates/execution.html`
 - Modify: `internal/web/templates/project_show.html`
@@ -1743,6 +1754,7 @@ git commit -m "Add pici-cli run --local snapshot upload"
 - Test: `internal/gc/gc_test.go` (create if absent)
 
 **Interfaces:**
+
 - Consumes: `stores.SourceSnapshot`, `<workspace>/uploads`.
 - Produces: nothing consumed elsewhere.
 
@@ -1861,18 +1873,28 @@ In `internal/web/executions.go` `ExecutionRebuild`, after fetching `previous`:
 In `internal/web/templates/execution.html`, in the title block:
 
 ```html
-<h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span></h1>
-<span class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
-{{if eq (printf "%s" .Execution.Source) "snapshot"}}<span class="badge badge-soft badge-accent">local</span>{{end}}
+<h1 class="text-xl font-semibold">
+  {{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span>
+</h1>
+<span class="{{statusClass .Execution.Status}}"
+  >{{capitalize .Execution.Status}}</span
+>
+{{if eq (printf "%s" .Execution.Source) "snapshot"}}<span
+  class="badge badge-soft badge-accent"
+  >local</span
+>{{end}}
 ```
 
 Wrap the rebuild form:
 
 ```html
 {{if ne (printf "%s" .Execution.Source) "snapshot"}}
-<form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild">
-<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-<button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
+<form
+  method="post"
+  action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild"
+>
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+  <button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
 </form>
 {{end}}
 ```
@@ -1882,7 +1904,14 @@ Wrap the rebuild form:
 In `internal/web/templates/project_show.html`, change the workflow cell:
 
 ```html
-<td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a>{{if eq (printf "%s" .Source) "snapshot"}} <span class="badge badge-soft badge-accent">local</span>{{end}}</td>
+<td>
+  <a
+    class="link link-primary font-medium stretched-link"
+    href="/projects/{{$.Project.ID}}/executions/{{.ID}}"
+    >{{.Workflow}}</a
+  >{{if eq (printf "%s" .Source) "snapshot"}}
+  <span class="badge badge-soft badge-accent">local</span>{{end}}
+</td>
 ```
 
 - [ ] **Step 7: Update the README**
@@ -1890,7 +1919,7 @@ In `internal/web/templates/project_show.html`, change the workflow cell:
 In `README.md`, add `PICI_SOURCE` to the built-in env table:
 
 ```markdown
-| `PICI_SOURCE`       | `git` or `snapshot`                            |
+| `PICI_SOURCE` | `git` or `snapshot` |
 ```
 
 And add a short section after "How a workflow runs":

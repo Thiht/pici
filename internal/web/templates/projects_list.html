@@ -1,35 +1,42 @@
 {{define "projects_list"}}
-{{template "head" .}}
-{{template "nav" .}}
-<main id="main" class="mx-auto max-w-5xl px-4 py-6">
-<div class="mt-2 flex items-center justify-between gap-4">
-<h1 class="text-xl font-semibold">Projects</h1>
-<a class="btn btn-primary btn-sm" href="/projects/new">New project</a>
-</div>
-<div class="card mt-4 border border-base-300">
-{{if .Projects}}
-<div class="overflow-x-auto">
-<table class="table">
-<caption class="sr-only">Registered projects</caption>
-<thead>
-<tr><th scope="col">Name</th><th scope="col">Repository</th><th scope="col">Provider</th><th scope="col">Default branch</th></tr>
-</thead>
-<tbody>
-{{range .Projects}}
-<tr class="relative">
-<td><a class="link link-primary font-medium stretched-link" href="/projects/{{.ID}}">{{.Name}}</a></td>
-<td class="font-mono text-xs">{{.RepoURL}}</td>
-<td>{{.Provider}}</td>
-<td>{{if .DefaultBranch}}{{.DefaultBranch}}{{else}}—{{end}}</td>
-</tr>
-{{end}}
-</tbody>
-</table>
-</div>
-{{else}}
-<p class="p-6 text-sm opacity-70">No projects yet. <a class="link link-primary" href="/projects/new">Create one</a>.</p>
-{{end}}
-</div>
-</main>
-{{template "foot" .}}
+  {{template "head" .}}
+  {{template "nav" .}}
+  <main id="main" class="mx-auto max-w-5xl px-4 py-6">
+    <div class="mt-2 flex items-center justify-between gap-4">
+      <h1 class="text-xl font-semibold">Projects</h1>
+      <a class="btn btn-primary btn-sm" href="/projects/new">New project</a>
+    </div>
+    <div class="card mt-4 border border-base-300">
+      {{if .Projects}}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <caption class="sr-only">Registered projects</caption>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Repository</th>
+                <th scope="col">Provider</th>
+                <th scope="col">Default branch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Projects}}
+                <tr class="relative">
+                  <td><a class="link link-primary font-medium stretched-link"
+   href="/projects/{{.ID}}">{{.Name}}</a></td>
+                  <td class="font-mono text-xs">{{.RepoURL}}</td>
+                  <td>{{.Provider}}</td>
+                  <td>{{if .DefaultBranch}}{{.DefaultBranch}}{{else}}—{{end}}</td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      {{else}}
+        <p class="p-6 text-sm opacity-70">No projects yet. <a class="link link-primary"
+    href="/projects/new">Create one</a>.</p>
+      {{end}}
+    </div>
+  </main>
+  {{template "foot" .}}
 {{end}}

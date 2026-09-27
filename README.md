@@ -86,7 +86,7 @@ steps:
 | `PICI_REF`          | the ref being built                           |
 | `PICI_VERSION`      | tag name when building a tag, else short SHA  |
 | `PICI_COMMIT_SHA`   | resolved commit SHA                           |
-| `PICI_SOURCE`       | `git` or `snapshot`                            |
+| `PICI_SOURCE`       | `git` or `snapshot`                           |
 | `PICI_REPO_DIR`     | mount path of the repo (default `/workspace`) |
 | `PICI_WORKFLOW_DIR` | mount path of the workflow folder             |
 

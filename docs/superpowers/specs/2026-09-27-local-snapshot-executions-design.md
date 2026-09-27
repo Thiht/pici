@@ -69,7 +69,7 @@ Decisions validated during brainstorming:
   Generated with the existing `go-enum --marshal --sql --names` directive.
 - Migration `004_execution_source` (both sqlite and postgres):
   - sqlite: `ALTER TABLE executions ADD COLUMN source TEXT NOT NULL DEFAULT 'git'
-    CHECK (source IN ('git','snapshot'));` and `ADD COLUMN snapshot_id TEXT;`.
+CHECK (source IN ('git','snapshot'));` and `ADD COLUMN snapshot_id TEXT;`.
   - postgres: create `execution_source_enum AS ENUM ('git','snapshot')`, add
     `source execution_source_enum NOT NULL DEFAULT 'git'` and
     `snapshot_id uuid`.

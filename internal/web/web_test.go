@@ -585,7 +585,7 @@ func TestSecretFieldsByAuthType(t *testing.T) {
 		if err := templates.ExecuteTemplate(&buf, "secret_fields_inner", projectFields{AuthType: stores.AuthType(tc.authType)}); err != nil {
 			t.Fatal(err)
 		}
-		out := buf.String()
+		out := strings.Join(strings.Fields(buf.String()), " ")
 		if tc.want != "" && !strings.Contains(out, tc.want) {
 			t.Errorf("%s: expected %q, got %q", tc.authType, tc.want, out)
 		}
