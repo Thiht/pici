@@ -40,6 +40,37 @@ func TestDetectCachesNode(t *testing.T) {
 	}
 }
 
+func TestDetectCachesMaven(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	env, paths := detectCaches(dir, CacheMountPath)
+	want := "-Dmaven.repo.local=" + filepath.Join(CacheMountPath, "m2")
+	if env["MAVEN_OPTS"] != want {
+		t.Fatalf("expected MAVEN_OPTS %q, got %q", want, env["MAVEN_OPTS"])
+	}
+	if len(paths) != 1 || paths[0] != "m2" {
+		t.Fatalf("unexpected paths: %v", paths)
+	}
+}
+
+func TestDetectCachesTerraformGlob(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	env, paths := detectCaches(dir, CacheMountPath)
+	if env["TF_PLUGIN_CACHE_DIR"] != filepath.Join(CacheMountPath, "terraform") {
+		t.Fatalf("expected TF_PLUGIN_CACHE_DIR, got %q", env["TF_PLUGIN_CACHE_DIR"])
+	}
+	if len(paths) != 1 || paths[0] != "terraform" {
+		t.Fatalf("unexpected paths: %v", paths)
+	}
+}
+
 func TestDetectCachesNone(t *testing.T) {
 	env, paths := detectCaches(t.TempDir(), CacheMountPath)
 	if len(env) != 0 || len(paths) != 0 {
