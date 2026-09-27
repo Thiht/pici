@@ -284,6 +284,9 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.Trigger == "" {
 		e.Trigger = TriggerManual
 	}
+	if e.Source == "" {
+		e.Source = SourceGit
+	}
 	var startedMs, setupFinishedMs, finishedMs any
 	if e.StartedAt != nil {
 		startedMs = e.StartedAt.UnixMilli()
@@ -302,10 +305,14 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if err := tx.QueryRowContext(ctx, `UPDATE projects SET execution_seq = execution_seq + 1 WHERE id = ? RETURNING execution_seq`, e.ProjectID.String()).Scan(&e.ID); err != nil {
 		return err
 	}
+	var snapshotID any
+	if e.SnapshotID != nil {
+		snapshotID = e.SnapshotID.String()
+	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup); err != nil {
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -333,13 +340,14 @@ func (s *sqliteStore) UpdateExecution(ctx context.Context, e Execution) error {
 func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
 	var e Execution
 	var projectIDStr string
+	var snapshotID *string
 	var startedMs, setupFinishedMs, finishedMs *int64
 	var createdMs int64
 	err := s.db.QueryRowContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
         FROM executions
         WHERE project_id = ? AND id = ?
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup)
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -349,6 +357,13 @@ func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id 
 	e.ProjectID, err = uuid.Parse(projectIDStr)
 	if err != nil {
 		return Execution{}, err
+	}
+	if snapshotID != nil {
+		parsed, err := uuid.Parse(*snapshotID)
+		if err != nil {
+			return Execution{}, err
+		}
+		e.SnapshotID = &parsed
 	}
 	if startedMs != nil {
 		t := time.UnixMilli(*startedMs)
@@ -371,7 +386,7 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
         FROM executions
         WHERE project_id = ?
         ORDER BY id DESC
@@ -386,14 +401,22 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 	for rows.Next() {
 		var e Execution
 		var projectIDStr string
+		var snapshotID *string
 		var startedMs, setupFinishedMs, finishedMs *int64
 		var createdMs int64
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup); err != nil {
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
 		if err != nil {
 			return nil, err
+		}
+		if snapshotID != nil {
+			parsed, err := uuid.Parse(*snapshotID)
+			if err != nil {
+				return nil, err
+			}
+			e.SnapshotID = &parsed
 		}
 		if startedMs != nil {
 			t := time.UnixMilli(*startedMs)

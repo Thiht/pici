@@ -3,6 +3,8 @@ module github.com/Thiht/pici
 go 1.27.1
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.2
+	github.com/buildkite/terminal-to-html/v3 v3.17.1
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/goccy/go-yaml v1.19.2

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -64,12 +65,47 @@ func newRootCmd(c *client.Client) *cobra.Command {
 
 func newRunCmd(c *client.Client) *cobra.Command {
 	var ref string
+	var local bool
+	var dir string
 	cmd := &cobra.Command{
 		Use:   "run <project> <workflow>",
 		Short: "Trigger a workflow execution",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			exec, err := c.TriggerExecution(context.Background(), args[0], args[1], ref)
+			if dir != "" && !local {
+				return fmt.Errorf("--dir requires --local")
+			}
+			if !local {
+				exec, err := c.TriggerExecution(context.Background(), args[0], args[1], ref)
+				if err != nil {
+					return err
+				}
+				fmt.Println(exec.ID)
+				return nil
+			}
+
+			workdir := dir
+			if workdir == "" {
+				var err error
+				if workdir, err = os.Getwd(); err != nil {
+					return err
+				}
+			}
+			localRef, sha, err := worktreeInfo(workdir)
+			if err != nil {
+				return err
+			}
+			if ref != "" {
+				localRef = ref
+			}
+
+			pr, pw := io.Pipe()
+			go func() {
+				err := buildSnapshot(workdir, pw)
+				pw.CloseWithError(err)
+			}()
+
+			exec, err := c.TriggerSnapshotExecution(context.Background(), args[0], args[1], localRef, sha, pr)
 			if err != nil {
 				return err
 			}
@@ -78,6 +114,8 @@ func newRunCmd(c *client.Client) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&ref, "ref", "", "git ref to build")
+	cmd.Flags().BoolVar(&local, "local", false, "run on the current worktree, including uncommitted changes")
+	cmd.Flags().StringVar(&dir, "dir", "", "worktree directory to snapshot (default: current directory)")
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
 			return projectNames(c), cobra.ShellCompDirectiveNoFileComp
@@ -598,7 +636,7 @@ func noCompletions(_ *cobra.Command, _ []string, _ string) ([]string, cobra.Shel
 const usageText = `pici — minimal CI client
 
 Usage:
-  pici-cli run <project> <workflow> [--ref <ref>]
+  pici-cli run <project> <workflow> [--ref <ref>] [--local [--dir <path>]]
   pici-cli logs <project> <execution-id> [--follow]
   pici-cli status <project> <execution-id>
   pici-cli projects

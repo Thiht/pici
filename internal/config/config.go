@@ -3,21 +3,27 @@ package config
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/peterbourgon/ff/v3"
+
+	"github.com/Thiht/pici/internal/ci"
 )
 
 type Config struct {
-	HTTPAddr      string
-	DBDriver      string
-	DBDSN         string
-	WorkspaceDir  string
-	RepoMountPath string
-	Concurrency   int
-	StepTimeout   time.Duration
-	ConfigFile    string
+	HTTPAddr        string
+	DBDriver        string
+	DBDSN           string
+	WorkspaceDir    string
+	RepoMountPath   string
+	Concurrency     int
+	StepTimeout     time.Duration
+	MaxSnapshotSize int64
+	ConfigFile      string
 
 	SecretKey         string
 	APIToken          string
@@ -39,6 +45,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&cfg.RepoMountPath, "repo-mount-path", "/workspace", "mount path of the repo inside the runner container")
 	fs.IntVar(&cfg.Concurrency, "concurrency", 4, "maximum concurrent executions")
 	fs.DurationVar(&cfg.StepTimeout, "step-timeout", 30*time.Minute, "default step timeout")
+	fs.Int64Var(&cfg.MaxSnapshotSize, "max-snapshot-size", 512<<20, "maximum size in bytes of an uploaded local snapshot")
 	fs.StringVar(&cfg.ConfigFile, "config", "", "path to a JSON config file")
 
 	fs.StringVar(&cfg.SecretKey, "secret-key", "", "32-byte key (hex or base64) used to encrypt secrets at rest (required)")
@@ -70,6 +77,14 @@ func (c Config) Validate() error {
 	}
 	if c.APIToken == "" {
 		return errors.New("PICI_API_TOKEN is required (generate one with `openssl rand -hex 24`)")
+	}
+	if c.MaxSnapshotSize <= 0 {
+		return errors.New("PICI_MAX_SNAPSHOT_SIZE must be greater than zero")
+	}
+	repo := strings.TrimRight(filepath.Clean(c.RepoMountPath), string(filepath.Separator)) + string(filepath.Separator)
+	cache := strings.TrimRight(filepath.Clean(ci.CacheMountPath), string(filepath.Separator)) + string(filepath.Separator)
+	if strings.HasPrefix(repo, cache) || strings.HasPrefix(cache, repo) {
+		return fmt.Errorf("PICI_REPO_MOUNT_PATH (%s) must not overlap the cache mount path (%s)", c.RepoMountPath, ci.CacheMountPath)
 	}
 	return nil
 }

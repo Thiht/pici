@@ -12,3 +12,6 @@
 
 # UI build dependencies (the compiled app.css is committed)
 node_modules/
+
+# djlint virtualenv (Go template HTML formatting)
+/.venv-djlint/

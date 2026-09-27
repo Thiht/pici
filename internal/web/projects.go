@@ -59,8 +59,10 @@ type projectPage struct {
 
 type projectVariablesPage struct {
 	base
-	Project   stores.Project
-	Variables []stores.Variable
+	Project         stores.Project
+	Variables       []stores.Variable
+	GlobalVariables []stores.Variable
+	Overridden      map[string]bool
 }
 
 func (h *Handler) ProjectsList(w http.ResponseWriter, r *http.Request) {

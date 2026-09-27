@@ -8,6 +8,7 @@ type (
 	Status     = stores.Status
 	Trigger    = stores.Trigger
 	StepStatus = stores.StepStatus
+	Source     = stores.Source
 )
 
 const (
@@ -36,6 +37,9 @@ const (
 	StepStatusFailed   = stores.StepStatusFailed
 	StepStatusSkipped  = stores.StepStatusSkipped
 	StepStatusCanceled = stores.StepStatusCanceled
+
+	SourceGit      = stores.SourceGit
+	SourceSnapshot = stores.SourceSnapshot
 )
 
 var (

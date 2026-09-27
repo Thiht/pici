@@ -1,9 +1,11 @@
-# Go html/template files: not valid HTML, prettier corrupts the {{...}} actions
+# Go html/template files: prettier's HTML parser corrupts the {{...}} actions.
+# Formatted with djlint instead (see task fmt).
 internal/web/templates/
 
 # Local agent tooling
 /.agents/
 /.claude/
+/.superpowers/
 /skills-lock.json
 
 # Build output and dependencies

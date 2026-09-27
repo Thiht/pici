@@ -1,21 +1,23 @@
 {{define "login"}}
-{{template "head" .}}
-<main id="main" class="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
-<div class="card border border-base-300">
-<div class="card-body">
-<h1 class="card-title text-xl">Sign in to pici</h1>
-<p class="text-sm opacity-70">Enter the API token configured with <code>PICI_API_TOKEN</code>.</p>
-{{if .Error}}<div class="alert alert-soft alert-error mt-2" role="alert">{{.Error}}</div>{{end}}
-<form method="post" action="/login" class="mt-4 flex flex-col gap-4">
-<input type="hidden" name="next" value="{{.Next}}">
-<label class="flex flex-col gap-1">
-<span class="text-sm font-medium">API token</span>
-<input class="input w-full" type="password" name="token" autocomplete="current-password" required autofocus>
-</label>
-<button class="btn btn-primary" type="submit">Sign in</button>
-</form>
-</div>
-</div>
-</main>
-{{template "foot" .}}
+  {{template "head" .}}
+  <main id="main" class="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
+    <div class="card border border-base-300">
+      <div class="card-body">
+        <h1 class="card-title text-xl">Sign in to pici</h1>
+        <p class="text-sm opacity-70">Enter the API token configured with <code>PICI_API_TOKEN</code>.</p>
+        {{if .Error}}
+          <div class="alert alert-soft alert-error mt-2" role="alert">{{.Error}}</div>
+        {{end}}
+        <form method="post" action="/login" class="mt-4 flex flex-col gap-4">
+          <input type="hidden" name="next" value="{{.Next}}">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm font-medium">API token</span>
+            <input class="input w-full" type="password" name="token" autocomplete="current-password" required autofocus>
+          </label>
+          <button class="btn btn-primary" type="submit">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </main>
+  {{template "foot" .}}
 {{end}}

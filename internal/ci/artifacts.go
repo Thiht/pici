@@ -29,13 +29,10 @@ func (r *Runner) collectArtifacts(projectID uuid.UUID, execID int64, index int, 
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
-		for _, p := range patterns {
-			if matchGlob(p, relSlash) {
-				dest := filepath.Join(destRoot, filepath.FromSlash(relSlash))
-				if err := os.MkdirAll(filepath.Dir(dest), 0o755); err == nil {
-					_ = copyFile(path, dest)
-				}
-				break
+		if matchesAny(patterns, relSlash) {
+			dest := filepath.Join(destRoot, filepath.FromSlash(relSlash))
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err == nil {
+				_ = copyFile(path, dest)
 			}
 		}
 		return nil

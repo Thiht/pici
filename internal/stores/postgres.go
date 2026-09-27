@@ -266,6 +266,9 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if e.Trigger == "" {
 		e.Trigger = TriggerManual
 	}
+	if e.Source == "" {
+		e.Source = SourceGit
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -274,10 +277,14 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if err := tx.QueryRowContext(ctx, `UPDATE projects SET execution_seq = execution_seq + 1 WHERE id = $1 RETURNING execution_seq`, e.ProjectID.String()).Scan(&e.ID); err != nil {
 		return err
 	}
+	var snapshotID any
+	if e.SnapshotID != nil {
+		snapshotID = e.SnapshotID.String()
+	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup); err != nil {
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup, e.Source, snapshotID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -295,11 +302,12 @@ func (s *postgresStore) UpdateExecution(ctx context.Context, e Execution) error 
 func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
 	var e Execution
 	var projectIDStr string
+	var snapshotID *string
 	err := s.db.QueryRowContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
         FROM executions
         WHERE project_id = $1 AND id = $2
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup)
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -310,6 +318,13 @@ func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, i
 	if err != nil {
 		return Execution{}, err
 	}
+	if snapshotID != nil {
+		parsed, err := uuid.Parse(*snapshotID)
+		if err != nil {
+			return Execution{}, err
+		}
+		e.SnapshotID = &parsed
+	}
 	return e, nil
 }
 
@@ -318,7 +333,7 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
         FROM executions
         WHERE project_id = $1
         ORDER BY id DESC
@@ -333,12 +348,20 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 	for rows.Next() {
 		var e Execution
 		var projectIDStr string
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup); err != nil {
+		var snapshotID *string
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
 		if err != nil {
 			return nil, err
+		}
+		if snapshotID != nil {
+			parsed, err := uuid.Parse(*snapshotID)
+			if err != nil {
+				return nil, err
+			}
+			e.SnapshotID = &parsed
 		}
 		executions = append(executions, e)
 	}

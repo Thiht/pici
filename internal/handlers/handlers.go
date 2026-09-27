@@ -21,11 +21,11 @@ type Handler struct {
 	apiToken string
 }
 
-func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath, apiToken, buildVersion string) *Handler {
+func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath string, maxSnapshotSize int64, apiToken, buildVersion string) *Handler {
 	return &Handler{
 		projects:   NewProjectsHandler(store, runner, workspaceDir),
 		variables:  NewVariablesHandler(store),
-		executions: NewExecutionsHandler(store, runner),
+		executions: NewExecutionsHandler(store, runner, workspaceDir, maxSnapshotSize),
 		webhooks:   NewWebhooksHandler(store, runner, workspaceDir),
 		artifacts:  NewArtifactsHandler(store, runner),
 		system:     NewSystemHandler(store, engine, buildVersion),

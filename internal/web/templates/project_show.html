@@ -1,127 +1,154 @@
 {{define "project_show"}}
-{{template "head" .}}
-{{template "nav" .}}
-<main id="main" class="mx-auto max-w-5xl px-4 py-6">
-<nav aria-label="Breadcrumb" class="text-sm">
-<ol class="flex flex-wrap items-center gap-2 opacity-70">
-<li><a class="link link-primary" href="/">Projects</a></li>
-</ol>
-</nav>
-<div class="mt-2 flex flex-wrap items-center justify-between gap-3">
-<h1 class="text-xl font-semibold">{{.Project.Name}}</h1>
-<div class="flex items-center gap-2">
-<a class="btn btn-primary btn-sm" href="#run-modal">Run a workflow</a>
-<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/variables">Variables &amp; secrets</a>
-<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/cache">Cache</a>
-<a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/edit">Details</a>
-</div>
-</div>
+  {{template "head" .}}
+  {{template "nav" .}}
+  <main id="main" class="mx-auto max-w-5xl px-4 py-6">
+    <nav aria-label="Breadcrumb" class="text-sm">
+      <ol class="flex flex-wrap items-center gap-2 opacity-70">
+        <li><a class="link link-primary" href="/">Projects</a></li>
+      </ol>
+    </nav>
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-xl font-semibold">{{.Project.Name}}</h1>
+      <div class="flex items-center gap-2">
+        <a class="btn btn-primary btn-sm" href="#run-modal">Run a workflow</a>
+        <a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/variables">Variables &amp; secrets</a>
+        <a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/cache">Cache</a>
+        <a class="btn btn-outline btn-sm" href="/projects/{{.Project.ID}}/edit">Details</a>
+      </div>
+    </div>
 
-<section id="executions-section" class="mt-6" aria-labelledby="exec-heading">
-<h2 id="exec-heading" class="text-lg font-semibold">Recent executions</h2>
-<form method="get" action="/projects/{{.Project.ID}}" class="mt-3 flex flex-wrap items-end gap-3"
-      hx-get="/projects/{{.Project.ID}}" hx-select="#executions-section" hx-target="#executions-section" hx-swap="outerHTML" hx-trigger="change" hx-push-url="true">
-<label class="flex flex-col gap-1">
-<span class="text-sm font-medium">Status</span>
-<select class="select w-full max-w-40" name="status">
-<option value="">All</option>
-{{range .Statuses}}<option value="{{.}}"{{if eq . $.StatusFilter}} selected{{end}}>{{.}}</option>{{end}}
+    <section id="executions-section" class="mt-6" aria-labelledby="exec-heading">
+      <h2 id="exec-heading" class="text-lg font-semibold">Recent executions</h2>
+      <form method="get"
+            action="/projects/{{.Project.ID}}"
+            class="mt-3 flex flex-wrap items-end gap-3"
+            hx-get="/projects/{{.Project.ID}}"
+            hx-select="#executions-section"
+            hx-target="#executions-section"
+            hx-swap="outerHTML"
+            hx-trigger="change"
+            hx-push-url="true">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">Status</span>
+          <select class="select w-full max-w-40" name="status">
+            <option value="">All</option>
+            {{range .Statuses}}<option value="{{.}}"{{if eq . $.StatusFilter}} selected{{end}}>{{.}}</option>
+{{end}}
 </select>
 </label>
 <label class="flex flex-col gap-1">
-<span class="text-sm font-medium">Workflow</span>
-<select class="select w-full max-w-56 truncate" name="workflow">
-<option value="">All</option>
-{{range .WorkflowNames}}<option value="{{.}}"{{if eq . $.WorkflowFilter}} selected{{end}}>{{.}}</option>{{end}}
+  <span class="text-sm font-medium">Workflow</span>
+  <select class="select w-full max-w-56 truncate" name="workflow">
+    <option value="">All</option>
+    {{range .WorkflowNames}}<option value="{{.}}"{{if eq . $.WorkflowFilter}} selected{{end}}>{{.}}</option>
+  {{end}}
 </select>
 </label>
 <button class="sr-only" type="submit">Apply filters</button>
 </form>
 <div class="card mt-3 border border-base-300">
-{{if .Executions}}
-<div class="overflow-x-auto">
-<table class="table">
-<caption class="sr-only">Recent executions</caption>
-<thead><tr><th scope="col">ID</th><th scope="col">Status</th><th scope="col">Workflow</th><th scope="col">Ref</th><th scope="col">Trigger</th><th scope="col">Duration</th><th scope="col">Created</th></tr></thead>
-<tbody>
-{{range .Executions}}
-<tr class="relative">
-<td class="font-mono text-xs">#{{.ID}}</td>
-<td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
-<td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a></td>
-<td class="font-mono text-xs">{{.Ref}}</td>
-<td>{{.Trigger}}</td>
-<td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>
-<td class="text-xs opacity-60">{{formatTime .CreatedAt}}</td>
-</tr>
-{{end}}
-</tbody>
-</table>
-</div>
-{{else}}
-<p class="p-4 text-sm opacity-70">No executions match the filters.</p>
-{{end}}
+  {{if .Executions}}
+    <div class="overflow-x-auto">
+      <table class="table">
+        <caption class="sr-only">Recent executions</caption>
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Status</th>
+            <th scope="col">Workflow</th>
+            <th scope="col">Ref</th>
+            <th scope="col">Trigger</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Executions}}
+            <tr class="relative">
+              <td class="font-mono text-xs">#{{.ID}}</td>
+              <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
+              <td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a>{{if eq (printf "%s" .Source) "snapshot"}} <span class="badge badge-soft badge-accent">local</span>{{end}}</td>
+              <td class="font-mono text-xs">{{.Ref}}</td>
+              <td>{{.Trigger}}</td>
+              <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>
+              <td class="text-xs opacity-60">{{formatTime .CreatedAt}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="p-4 text-sm opacity-70">No executions match the filters.</p>
+  {{end}}
 </div>
 </section>
 
 <div id="run-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="run-modal-title">
-<div class="modal-box">
-<a class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" href="#" aria-label="Close">✕</a>
-<h3 id="run-modal-title" class="text-lg font-semibold">Run a workflow</h3>
-<form method="post" action="/projects/{{.Project.ID}}/executions" class="mt-4 flex flex-col gap-3">
-<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-<label class="flex flex-col gap-1">
-<span class="text-sm font-medium">Workflow</span>
-<div hx-get="/projects/{{.Project.ID}}/configs" hx-trigger="load" hx-swap="innerHTML">
-<input class="input w-full" type="text" name="workflow" required placeholder="Loading…">
-</div>
-</label>
-<label class="flex flex-col gap-1">
-<span class="text-sm font-medium">Ref</span>
-<div hx-get="/projects/{{.Project.ID}}/refs" hx-trigger="load" hx-swap="innerHTML">
-<input class="input w-full" type="text" name="ref" value="{{.Project.DefaultBranch}}" placeholder="main">
-</div>
-</label>
-<div class="modal-action">
-<a class="btn btn-outline" href="#">Cancel</a>
-<button class="btn btn-primary" type="submit">Run</button>
-</div>
-</form>
-</div>
-<a class="modal-backdrop" href="#" aria-label="Close">Close</a>
+  <div class="modal-box">
+    <a class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" href="#" aria-label="Close">✕</a>
+    <h3 id="run-modal-title" class="text-lg font-semibold">Run a workflow</h3>
+    <form method="post" action="/projects/{{.Project.ID}}/executions" class="mt-4 flex flex-col gap-3">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Workflow</span>
+        <div hx-get="/projects/{{.Project.ID}}/configs" hx-trigger="load" hx-swap="innerHTML">
+          <input class="input w-full" type="text" name="workflow" required placeholder="Loading…">
+        </div>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Ref</span>
+        <div hx-get="/projects/{{.Project.ID}}/refs" hx-trigger="load" hx-swap="innerHTML">
+          <input class="input w-full" type="text" name="ref" value="{{.Project.DefaultBranch}}" placeholder="main">
+        </div>
+      </label>
+      <div class="modal-action">
+        <a class="btn btn-outline" href="#">Cancel</a>
+        <button class="btn btn-primary" type="submit">Run</button>
+      </div>
+    </form>
+  </div>
+  <a class="modal-backdrop" href="#" aria-label="Close">Close</a>
 </div>
 </main>
 {{template "foot" .}}
 {{end}}
 
 {{define "workflows"}}
-{{if .Workflows}}
-<select class="select w-full truncate" name="workflow" required>
-<option value="" selected disabled>Select a workflow…</option>
-{{range .Workflows}}<option value="{{.}}">{{.}}</option>{{end}}
-</select>
-{{else}}
-<input class="input w-full" type="text" name="workflow" required placeholder="No workflows found — type one">
-{{end}}
-{{if .Error}}<p class="mt-1 text-xs text-error">Could not load workflows: {{.Error}}</p>{{end}}
+  {{if .Workflows}}
+    <select class="select w-full truncate" name="workflow" required>
+      <option value="" selected disabled>Select a workflow…</option>
+      {{range .Workflows}}
+        <option value="{{.}}">{{.}}</option>
+      {{end}}
+    </select>
+  {{else}}
+    <input class="input w-full" type="text" name="workflow" required placeholder="No workflows found — type one">
+  {{end}}
+  {{if .Error}}
+    <p class="mt-1 text-xs text-error">Could not load workflows: {{.Error}}</p>
+  {{end}}
 {{end}}
 
 {{define "refs"}}
-{{if or .Branches .Tags}}
-<select class="select w-full truncate" name="ref">
-{{if .Branches}}
-<optgroup label="Branches">
-{{range .Branches}}<option value="{{.}}"{{if eq . $.Default}} selected{{end}}>{{.}}</option>{{end}}
-</optgroup>
-{{end}}
-{{if .Tags}}
-<optgroup label="Tags">
-{{range .Tags}}<option value="{{.}}"{{if eq . $.Default}} selected{{end}}>{{.}}</option>{{end}}
-</optgroup>
+  {{if or .Branches .Tags}}
+    <select class="select w-full truncate" name="ref">
+      {{if .Branches}}
+        <optgroup label="Branches">
+          {{range .Branches}}<option value="{{.}}"{{if eq . $.Default}} selected{{end}}>{{.}}</option>
+      {{end}}
+    </optgroup>
+  {{end}}
+  {{if .Tags}}
+    <optgroup label="Tags">
+      {{range .Tags}}<option value="{{.}}"{{if eq . $.Default}} selected{{end}}>{{.}}</option>
+  {{end}}
+  </optgroup>
 {{end}}
 </select>
 {{else}}
 <input class="input w-full" type="text" name="ref" value="{{.Default}}" placeholder="main">
 {{end}}
-{{if .Error}}<p class="mt-1 text-xs text-error">Could not load refs: {{.Error}}</p>{{end}}
+{{if .Error}}
+  <p class="mt-1 text-xs text-error">Could not load refs: {{.Error}}</p>
+{{end}}
 {{end}}

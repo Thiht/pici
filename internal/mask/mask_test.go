@@ -24,6 +24,13 @@ func TestRedact(t *testing.T) {
 	}
 }
 
+func TestRedactString(t *testing.T) {
+	got := Redact("TOKEN=supersecret KEY=public SECRET=", []string{"supersecret", ""})
+	if got != "TOKEN=*** KEY=public SECRET=" {
+		t.Fatalf("Redact = %q", got)
+	}
+}
+
 func TestRedactAcrossChunks(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewWriter(&buf, []string{"supersecret"})

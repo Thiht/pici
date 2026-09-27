@@ -36,6 +36,7 @@ type StepResult struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	ExitCode   int        `json:"exit_code"`
 	Error      string     `json:"error,omitempty"`
+	Env        []string   `json:"env,omitempty"`
 }
 
 // Steps is a JSON-serialized list of step results, stored in a single column.
@@ -80,6 +81,7 @@ type Execution struct {
 	CommitSHA       string     `json:"commit_sha"`
 	Status          Status     `json:"status"`
 	Trigger         Trigger    `json:"trigger"`
+	Source          Source     `json:"source"`
 	Steps           Steps      `json:"steps,omitempty"`
 	Error           string     `json:"error,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
@@ -87,9 +89,10 @@ type Execution struct {
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 
-	ClaimedBy        string `json:"-"`
-	CancelRequested  bool   `json:"-"`
-	ConcurrencyGroup string `json:"-"`
+	ClaimedBy        string     `json:"-"`
+	CancelRequested  bool       `json:"-"`
+	ConcurrencyGroup string     `json:"-"`
+	SnapshotID       *uuid.UUID `json:"-"`
 }
 
 type Schedule struct {

@@ -173,6 +173,41 @@ func TestGlobalVariableSetAndDelete(t *testing.T) {
 	}
 }
 
+func TestProjectVariablesShowInheritedGlobals(t *testing.T) {
+	srv, client := newTestServer(t, "")
+	created := postForm(t, client, srv.URL+"/projects", url.Values{
+		"name":      {"demo"},
+		"repo_url":  {"https://github.com/acme/demo.git"},
+		"provider":  {"github"},
+		"auth_type": {"none"},
+	})
+	if created.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", created.StatusCode, body(t, created))
+	}
+	project := created.Header.Get("Location")
+
+	if resp := postForm(t, client, srv.URL+"/variables", url.Values{"key": {"SHARED"}, "value": {"global"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", resp.StatusCode)
+	}
+	if resp := postForm(t, client, srv.URL+"/variables", url.Values{"key": {"GLOBAL_ONLY"}, "value": {"on"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", resp.StatusCode)
+	}
+	if resp := postForm(t, client, srv.URL+project+"/variables", url.Values{"key": {"SHARED"}, "value": {"project"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", resp.StatusCode)
+	}
+
+	resp, err := client.Get(srv.URL + project + "/variables")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := body(t, resp)
+	for _, want := range []string{"Inherited from instance", "GLOBAL_ONLY", "SHARED", "Overridden"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in project variables page", want)
+		}
+	}
+}
+
 func TestFlashRendersKind(t *testing.T) {
 	var buf strings.Builder
 	if err := templates.ExecuteTemplate(&buf, "flash", base{FlashKind: "success", FlashText: "Image deleted."}); err != nil {
@@ -550,7 +585,7 @@ func TestSecretFieldsByAuthType(t *testing.T) {
 		if err := templates.ExecuteTemplate(&buf, "secret_fields_inner", projectFields{AuthType: stores.AuthType(tc.authType)}); err != nil {
 			t.Fatal(err)
 		}
-		out := buf.String()
+		out := strings.Join(strings.Fields(buf.String()), " ")
 		if tc.want != "" && !strings.Contains(out, tc.want) {
 			t.Errorf("%s: expected %q, got %q", tc.authType, tc.want, out)
 		}

@@ -21,3 +21,7 @@ type Trigger string
 // StepStatus is the lifecycle status of a single step.
 // ENUM(pending, running, success, failed, skipped, canceled)
 type StepStatus string
+
+// Source is where an execution's code comes from.
+// ENUM(git, snapshot)
+type Source string

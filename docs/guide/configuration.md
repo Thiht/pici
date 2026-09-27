@@ -8,7 +8,7 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-db-driver`          | `PICI_DB_DRIVER`          | `sqlite`             | `sqlite` or `postgres`                                         |
 | `-db-dsn`             | `PICI_DB_DSN`             | `pici.db`            | SQLite path or Postgres DSN                                    |
 | `-workspace-dir`      | `PICI_WORKSPACE_DIR`      | `~/.pici/workspaces` | clones and logs                                                |
-| `-repo-mount-path`    | `PICI_REPO_MOUNT_PATH`    | `/workspace`         | in-container mount point                                       |
+| `-repo-mount-path`    | `PICI_REPO_MOUNT_PATH`    | `/workspace`         | in-container mount point (must not overlap `/pici/cache`)      |
 | `-concurrency`        | `PICI_CONCURRENCY`        | `4`                  | max concurrent executions                                      |
 | `-step-timeout`       | `PICI_STEP_TIMEOUT`       | `30m`                | default step timeout                                           |
 | `-secret-key`         | `PICI_SECRET_KEY`         | —                    | **required** — 32-byte key (hex/base64) for encrypting secrets |

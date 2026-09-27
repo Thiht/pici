@@ -239,6 +239,115 @@ func (x Provider) Value() (driver.Value, error) {
 }
 
 const (
+	// SourceGit is a Source of type git.
+	SourceGit Source = "git"
+	// SourceSnapshot is a Source of type snapshot.
+	SourceSnapshot Source = "snapshot"
+)
+
+var ErrInvalidSource = fmt.Errorf("not a valid Source, try [%s]", strings.Join(_SourceNames, ", "))
+
+var _SourceNames = []string{
+	string(SourceGit),
+	string(SourceSnapshot),
+}
+
+// SourceNames returns a list of possible string values of Source.
+func SourceNames() []string {
+	tmp := make([]string, len(_SourceNames))
+	copy(tmp, _SourceNames)
+	return tmp
+}
+
+// String implements the Stringer interface.
+func (x Source) String() string {
+	return string(x)
+}
+
+// IsValid provides a quick way to determine if the typed value is
+// part of the allowed enumerated values
+func (x Source) IsValid() bool {
+	_, err := ParseSource(string(x))
+	return err == nil
+}
+
+var _SourceValue = map[string]Source{
+	"git":      SourceGit,
+	"snapshot": SourceSnapshot,
+}
+
+// ParseSource attempts to convert a string to a Source.
+func ParseSource(name string) (Source, error) {
+	if x, ok := _SourceValue[name]; ok {
+		return x, nil
+	}
+	return Source(""), fmt.Errorf("%s is %w", name, ErrInvalidSource)
+}
+
+// MarshalText implements the text marshaller method.
+func (x Source) MarshalText() ([]byte, error) {
+	return []byte(string(x)), nil
+}
+
+// UnmarshalText implements the text unmarshaller method.
+func (x *Source) UnmarshalText(text []byte) error {
+	tmp, err := ParseSource(string(text))
+	if err != nil {
+		return err
+	}
+	*x = tmp
+	return nil
+}
+
+// AppendText appends the textual representation of itself to the end of b
+// (allocating a larger slice if necessary) and returns the updated slice.
+//
+// Implementations must not retain b, nor mutate any bytes within b[:len(b)].
+func (x Source) AppendText(b []byte) ([]byte, error) {
+	return append(b, x.String()...), nil
+}
+
+var errSourceNilPtr = errors.New("value pointer is nil") // one per type for package clashes
+
+// Scan implements the Scanner interface.
+func (x *Source) Scan(value interface{}) (err error) {
+	if value == nil {
+		*x = Source("")
+		return
+	}
+
+	// A wider range of scannable types.
+	// driver.Value values at the top of the list for expediency
+	switch v := value.(type) {
+	case string:
+		*x, err = ParseSource(v)
+	case []byte:
+		*x, err = ParseSource(string(v))
+	case Source:
+		*x = v
+	case *Source:
+		if v == nil {
+			return errSourceNilPtr
+		}
+		*x = *v
+	case *string:
+		if v == nil {
+			return errSourceNilPtr
+		}
+		*x, err = ParseSource(*v)
+	default:
+		return errors.New("invalid type for Source")
+	}
+
+	return
+}
+
+// Value implements the driver Valuer interface.
+func (x Source) Value() (driver.Value, error) {
+	return x.String(), nil
+}
+
+const (
 	// StatusPending is a Status of type pending.
 	StatusPending Status = "pending"
 	// StatusRunning is a Status of type running.

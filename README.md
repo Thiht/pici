@@ -27,6 +27,27 @@ The server exposes a small HTTP API, and execution happens in Docker. Each repos
 3. Each step runs as a container from that image, with the repo bind-mounted at `PICI_REPO_DIR`.
 4. Project/global variables and secrets are injected as environment variables.
 
+### Running on local changes
+
+Upload the current worktree — uncommitted and untracked (non-ignored) files
+included — and run a workflow on it without pushing:
+
+```sh
+pici-cli run demo build --local
+```
+
+The CLI archives the worktree plus `.git/` (never `.git/config`, which may
+contain credentials) and the server extracts it instead of cloning. Snapshot
+executions are marked `local`, cannot be rebuilt, and do not post check runs.
+
+Snapshot uploads require the API process and the execution worker to share the
+same workspace directory (single node, or a shared volume): the upload is
+written under `<workspace>/uploads` by the API and read back by the worker.
+
+Snapshots work with both SQLite and Postgres (they share the same execution
+code path). The repository has no Postgres test harness, so the Postgres path
+is covered only by the SQLite-backed tests and manual runs.
+
 ### ci.yml format
 
 ```yaml
@@ -65,6 +86,7 @@ steps:
 | `PICI_REF`          | the ref being built                           |
 | `PICI_VERSION`      | tag name when building a tag, else short SHA  |
 | `PICI_COMMIT_SHA`   | resolved commit SHA                           |
+| `PICI_SOURCE`       | `git` or `snapshot`                           |
 | `PICI_REPO_DIR`     | mount path of the repo (default `/workspace`) |
 | `PICI_WORKFLOW_DIR` | mount path of the workflow folder             |
 

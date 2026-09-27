@@ -34,7 +34,22 @@ func (h *Handler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	data := projectVariablesPage{base: h.base(w, r, project.Name+" variables", "projects"), Project: project, Variables: maskVariables(variables)}
+	global, err := h.store.ListVariables(r.Context(), nil)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	overridden := make(map[string]bool, len(variables))
+	for _, v := range variables {
+		overridden[v.Key] = true
+	}
+	data := projectVariablesPage{
+		base:            h.base(w, r, project.Name+" variables", "projects"),
+		Project:         project,
+		Variables:       maskVariables(variables),
+		GlobalVariables: maskVariables(global),
+		Overridden:      overridden,
+	}
 	h.render(w, r, http.StatusOK, "project_variables", data)
 }
 

@@ -139,7 +139,7 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 		if attempt > 1 {
 			fmt.Fprintf(mw, "\nretrying (%d/%d)...\n", attempt, attempts)
 		}
-		res := r.runStepOnce(ctx, step, baseEnv, image, repoDir, wfDir, mw, cacheBinds)
+		res := r.runStepOnce(ctx, step, baseEnv, image, repoDir, wfDir, mw, secrets, cacheBinds)
 		if res.Status == stores.StepStatusSuccess || attempt == attempts || ctx.Err() != nil {
 			if res.Status == stores.StepStatusSuccess {
 				r.collectArtifacts(projectID, execID, index, step.Artifacts, repoDir)
@@ -150,9 +150,8 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 	return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: "unreachable", FinishedAt: new(time.Now())}
 }
 
-func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, logW *mask.Writer, cacheBinds []string) stores.StepResult {
+func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, logW *mask.Writer, secrets, cacheBinds []string) stores.StepResult {
 	res := stores.StepResult{Name: step.Name, Status: stores.StepStatusRunning, StartedAt: new(time.Now())}
-	fmt.Fprintf(logW, "==> %s\n", step.Name)
 
 	cmd, err := r.stepCommand(wfDir, step)
 	if err != nil {
@@ -166,6 +165,10 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	stepEnv := append([]string{}, baseEnv...)
 	for k, v := range step.Env {
 		stepEnv = append(stepEnv, k+"="+v)
+	}
+	res.Env = make([]string, len(stepEnv))
+	for i, kv := range stepEnv {
+		res.Env[i] = mask.Redact(kv, secrets)
 	}
 
 	timeout := time.Duration(step.Timeout)
@@ -200,7 +203,6 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	default:
 		res.Status = stores.StepStatusSuccess
 	}
-	fmt.Fprintf(logW, "==> %s: %s\n", step.Name, res.Status)
 	return res
 }
 

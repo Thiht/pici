@@ -44,6 +44,7 @@ func (c *Collector) Run(ctx context.Context) {
 func (c *Collector) tick(ctx context.Context) {
 	c.cleanupWorkspaces(ctx)
 	c.cleanupLogs(ctx)
+	c.cleanupUploads()
 	if c.Engine != nil {
 		if err := c.Engine.PruneImages(ctx); err != nil {
 			slog.WarnContext(ctx, "prune images", "error", err)
@@ -114,6 +115,30 @@ func (c *Collector) cleanupLogs(ctx context.Context) {
 			id, err := strconv.ParseInt(e.Name(), 10, 64)
 			if err != nil || c.expired(ctx, projectID, id, cutoff) {
 				_ = os.RemoveAll(filepath.Join(projPath, e.Name()))
+			}
+		}
+	}
+}
+
+func (c *Collector) cleanupUploads() {
+	root := filepath.Join(c.WorkspaceDir, "uploads")
+	projects, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, proj := range projects {
+		if !proj.IsDir() {
+			continue
+		}
+		projPath := filepath.Join(root, proj.Name())
+		files, err := os.ReadDir(projPath)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			path := filepath.Join(projPath, f.Name())
+			if olderThan(path, c.Keep) {
+				_ = os.RemoveAll(path)
 			}
 		}
 	}

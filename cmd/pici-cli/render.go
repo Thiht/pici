@@ -179,6 +179,9 @@ func printExecution(e client.Execution) {
 			line += "  " + paint(s.Error, red)
 		}
 		fmt.Println(line)
+		for _, kv := range s.Env {
+			fmt.Printf("      %s\n", paint(kv, dim))
+		}
 	}
 }
 

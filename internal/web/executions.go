@@ -25,6 +25,16 @@ type stepView struct {
 	Logs string
 }
 
+type envVar struct {
+	Key   string
+	Value string
+}
+
+func splitEnv(kv string) envVar {
+	key, value, _ := strings.Cut(kv, "=")
+	return envVar{Key: key, Value: value}
+}
+
 type executionPage struct {
 	base
 	Execution stores.Execution
@@ -216,6 +226,11 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
 	if err != nil {
 		h.storeError(w, r, err)
+		return
+	}
+	if previous.Source == stores.SourceSnapshot {
+		setFlash(w, "error", "Snapshot executions cannot be rebuilt.")
+		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 		return
 	}
 	execution, err := h.runner.Enqueue(r.Context(), project, previous.Workflow, previous.Ref, previous.CommitSHA, stores.TriggerRebuild)
