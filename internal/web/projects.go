@@ -221,8 +221,12 @@ func (h *Handler) ProjectConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir := h.workspaceDir + "/" + project.ID.String() + "/_discovery"
-	workflows, err := ci.DiscoverProjectWorkflows(r.Context(), project, dir, project.DefaultBranch)
-	if err == nil {
+	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
+	if ref == "" {
+		ref = project.DefaultBranch
+	}
+	workflows, err := ci.DiscoverProjectWorkflows(r.Context(), project, dir, ref)
+	if err == nil && ref == project.DefaultBranch {
 		err = ci.SyncProjectSchedules(r.Context(), h.store, project.ID, dir)
 	}
 	h.render(w, r, http.StatusOK, "workflows", struct {
@@ -243,11 +247,12 @@ func (h *Handler) ProjectRefs(w http.ResponseWriter, r *http.Request) {
 		Secret: project.AuthSecret,
 	})
 	h.render(w, r, http.StatusOK, "refs", struct {
-		Branches []string
-		Tags     []string
-		Default  string
-		Error    string
-	}{Branches: refs.Branches, Tags: refs.Tags, Default: project.DefaultBranch, Error: errorText(err)})
+		ProjectID string
+		Branches  []string
+		Tags      []string
+		Default   string
+		Error     string
+	}{ProjectID: project.ID.String(), Branches: refs.Branches, Tags: refs.Tags, Default: project.DefaultBranch, Error: errorText(err)})
 }
 
 // ProjectDetect fills in the fields that can be guessed from the repository

@@ -459,11 +459,12 @@ func TestFilterExecutions(t *testing.T) {
 func TestRefsTemplateRendersSelect(t *testing.T) {
 	var buf strings.Builder
 	if err := templates.ExecuteTemplate(&buf, "refs", struct {
-		Branches []string
-		Tags     []string
-		Default  string
-		Error    string
-	}{Branches: []string{"main"}, Tags: []string{"v1.0.0"}, Default: "main"}); err != nil {
+		ProjectID string
+		Branches  []string
+		Tags      []string
+		Default   string
+		Error     string
+	}{ProjectID: "abc", Branches: []string{"main"}, Tags: []string{"v1.0.0"}, Default: "main"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -473,21 +474,28 @@ func TestRefsTemplateRendersSelect(t *testing.T) {
 	if !strings.Contains(out, `<option value="main" selected>main</option>`) {
 		t.Fatalf("expected default branch selected, got:\n%s", out)
 	}
+	if !strings.Contains(out, `hx-get="/projects/abc/configs"`) || !strings.Contains(out, `hx-target="#workflow-field"`) {
+		t.Fatalf("expected the ref to refresh workflows, got:\n%s", out)
+	}
 }
 
 func TestRefsTemplateFallsBackToInput(t *testing.T) {
 	var buf strings.Builder
 	if err := templates.ExecuteTemplate(&buf, "refs", struct {
-		Branches []string
-		Tags     []string
-		Default  string
-		Error    string
-	}{Default: "main", Error: "boom"}); err != nil {
+		ProjectID string
+		Branches  []string
+		Tags      []string
+		Default   string
+		Error     string
+	}{ProjectID: "abc", Default: "main", Error: "boom"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, `type="text" name="ref"`) || !strings.Contains(out, "boom") {
 		t.Fatalf("expected text input fallback with error, got:\n%s", out)
+	}
+	if !strings.Contains(out, `hx-get="/projects/abc/configs"`) {
+		t.Fatalf("expected the ref input to refresh workflows, got:\n%s", out)
 	}
 }
 
