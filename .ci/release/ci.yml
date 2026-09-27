@@ -1,7 +1,12 @@
 name: release
 
-tags:
-  - "v*.*.*"
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  manual:
+    tags:
+      - "v*.*.*"
 
 steps:
   - name: build

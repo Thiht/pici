@@ -42,7 +42,8 @@ GitLab authenticates webhooks via the `X-Gitlab-Token` header (unlike GitHub's H
 Add a 5-field cron expression to a workflow:
 
 ```yaml
-schedule: "0 4 * * *"
+on:
+  schedule: "0 4 * * *"
 ```
 
 The schedule is registered whenever the workflow is discovered or run (e.g. via `GET /api/projects/{id}/configs` or any execution). The scheduler polls every `PICI_SCHEDULER_INTERVAL` (default 1m) and enqueues due builds on the default branch.

@@ -38,7 +38,7 @@ func newWebhookServer(t *testing.T, repoURL, webhookSecret string) (*Handler, st
 		Provider:      stores.ProviderGithub,
 		AuthType:      stores.AuthTypeNone,
 		WebhookSecret: webhookSecret,
-		DefaultBranch: "master",
+		DefaultBranch: "main",
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -206,6 +206,7 @@ func TestWebhookPullRequest(t *testing.T) {
 		"pull_request": map[string]any{
 			"number": 42,
 			"head":   map[string]any{"ref": "feature", "sha": sha},
+			"base":   map[string]any{"ref": "main"},
 		},
 	}
 	rr := sendWebhook(t, s, "demo", "pull_request", "", payload)
@@ -225,6 +226,57 @@ func TestWebhookPullRequest(t *testing.T) {
 	}
 	if execs[0].Trigger != stores.TriggerWebhook {
 		t.Fatalf("expected trigger webhook, got %q", execs[0].Trigger)
+	}
+}
+
+func TestWebhookPushTriggerFilter(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/deps/ci.yml":  "on:\n  schedule: \"0 0 * * 0\"\nsteps:\n  - name: a\n    run: echo deps\n",
+		".ci/build/ci.yml": "steps:\n  - name: b\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{"ref": "refs/heads/main", "after": sha}
+	rr := sendWebhook(t, s, "demo", "push", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	got := enqueuedWorkflows(t, store, testProjectID)
+	if len(got) != 1 || got[0] != "build" {
+		t.Fatalf("expected only build workflow, got %v", got)
+	}
+}
+
+func TestWebhookPullRequestBaseBranch(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "on:\n  pull_request:\n    branches: [main]\nsteps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"action": "opened",
+		"pull_request": map[string]any{
+			"number": 42,
+			"head":   map[string]any{"ref": "feature", "sha": sha},
+			"base":   map[string]any{"ref": "develop"},
+		},
+	}
+	rr := sendWebhook(t, s, "demo", "pull_request", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 0 {
+		t.Fatalf("expected no workflow for PR to develop, got %v", got)
+	}
+
+	payload["pull_request"].(map[string]any)["base"] = map[string]any{"ref": "main"}
+	rr = sendWebhook(t, s, "demo", "pull_request", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 1 || got[0] != "build" {
+		t.Fatalf("expected build workflow for PR to main, got %v", got)
 	}
 }
 
@@ -303,6 +355,7 @@ func TestWebhookGitLabMergeRequest(t *testing.T) {
 			"iid":           7,
 			"action":        "open",
 			"source_branch": "feature",
+			"target_branch": "main",
 			"last_commit":   map[string]any{"id": sha},
 		},
 	}

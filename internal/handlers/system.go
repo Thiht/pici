@@ -52,13 +52,11 @@ func (h *SystemHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	render.JSON(w, http.StatusOK, map[string]any{
-		"valid":    true,
-		"name":     cfg.Name,
-		"steps":    len(cfg.Steps),
-		"schedule": cfg.Schedule,
-		"tags":     cfg.Tags,
-		"branches": cfg.Branches,
-		"paths":    cfg.Paths,
-		"image":    cfg.Image,
+		"valid": true,
+		"name":  cfg.Name,
+		"steps": len(cfg.Steps),
+		"on":    cfg.On,
+		"paths": cfg.Paths,
+		"image": cfg.Image,
 	})
 }

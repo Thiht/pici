@@ -11,6 +11,15 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
+// EffectiveSchedule returns the workflow's cron expression, or "" when it
+// declares no `on.schedule`.
+func (cfg Config) EffectiveSchedule() string {
+	if cfg.On == nil {
+		return ""
+	}
+	return cfg.On.Schedule
+}
+
 func SyncSchedule(ctx context.Context, store stores.Store, projectID uuid.UUID, workflow, cronExpr string) error {
 	if cronExpr == "" {
 		return store.DeleteSchedule(ctx, projectID, workflow)
@@ -45,7 +54,7 @@ func SyncProjectSchedules(ctx context.Context, store stores.Store, projectID uui
 		if err != nil {
 			continue
 		}
-		if err := SyncSchedule(ctx, store, projectID, e.Name(), cfg.Schedule); err != nil {
+		if err := SyncSchedule(ctx, store, projectID, e.Name(), cfg.EffectiveSchedule()); err != nil {
 			return err
 		}
 	}

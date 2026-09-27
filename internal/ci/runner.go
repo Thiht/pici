@@ -248,6 +248,16 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		return
 	}
 
+	if exec.Trigger == stores.TriggerManual {
+		isTag := exec.Source != stores.SourceSnapshot && git.IsTag(repoDir, exec.Ref)
+		if !cfg.MatchesManual(exec.Ref, isTag) {
+			msg := fmt.Sprintf("manual run of %q is not allowed on ref %q", exec.Workflow, exec.Ref)
+			fmt.Fprintf(setupLog, "%s\n", msg)
+			r.finish(ctx, exec, stores.StatusFailed, nil, msg, project, setupLog, 0)
+			return
+		}
+	}
+
 	// Persist the planned step order up front so the UI can name steps (and
 	// their artifacts) as soon as the workflow is parsed, before the runner
 	// image is built.
@@ -261,7 +271,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}
 
 	if exec.Source != stores.SourceSnapshot {
-		if err := SyncSchedule(ctx, r.Store, project.ID, exec.Workflow, cfg.Schedule); err != nil {
+		if err := SyncSchedule(ctx, r.Store, project.ID, exec.Workflow, cfg.EffectiveSchedule()); err != nil {
 			fmt.Fprintf(setupLog, "schedule sync failed: %v\n", err)
 		}
 	}

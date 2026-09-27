@@ -54,6 +54,155 @@ steps:
 	}
 }
 
+func TestParseOnForms(t *testing.T) {
+	steps := "steps:\n  - name: a\n    run: echo hi\n"
+
+	t.Run("absent", func(t *testing.T) {
+		cfg, err := Parse([]byte(steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On != nil {
+			t.Fatalf("On = %+v, want nil", cfg.On)
+		}
+	})
+
+	t.Run("scalar", func(t *testing.T) {
+		cfg, err := Parse([]byte("on: push\n" + steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On == nil || cfg.On.Push == nil || cfg.On.PullRequest != nil {
+			t.Fatalf("On = %+v, want push only", cfg.On)
+		}
+	})
+
+	t.Run("list", func(t *testing.T) {
+		cfg, err := Parse([]byte("on: [push, pull_request]\n" + steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On == nil || cfg.On.Push == nil || cfg.On.PullRequest == nil {
+			t.Fatalf("On = %+v, want push and pull_request", cfg.On)
+		}
+	})
+
+	t.Run("empty mapping", func(t *testing.T) {
+		cfg, err := Parse([]byte("on: {}\n" + steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On == nil || cfg.On.Push != nil || cfg.On.PullRequest != nil || cfg.On.Schedule != "" {
+			t.Fatalf("On = %+v, want empty", cfg.On)
+		}
+	})
+
+	t.Run("mapping with filters", func(t *testing.T) {
+		data := "on:\n  push:\n    branches: [main]\n    tags: [\"v*\"]\n  pull_request:\n    branches: [main]\n  schedule: \"0 0 * * 0\"\n" + steps
+		cfg, err := Parse([]byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On.Push == nil || len(cfg.On.Push.Branches) != 1 || len(cfg.On.Push.Tags) != 1 {
+			t.Fatalf("push = %+v", cfg.On.Push)
+		}
+		if cfg.On.PullRequest == nil || len(cfg.On.PullRequest.Branches) != 1 {
+			t.Fatalf("pull_request = %+v", cfg.On.PullRequest)
+		}
+		if cfg.On.Schedule != "0 0 * * 0" {
+			t.Fatalf("schedule = %q", cfg.On.Schedule)
+		}
+	})
+
+	t.Run("push empty value", func(t *testing.T) {
+		cfg, err := Parse([]byte("on:\n  push:\n" + steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On.Push == nil {
+			t.Fatalf("push = nil, want unrestricted")
+		}
+	})
+
+	t.Run("manual filter", func(t *testing.T) {
+		data := "on:\n  manual:\n    branches: [main]\n    tags: [\"v*\"]\n" + steps
+		cfg, err := Parse([]byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On.Manual == nil || len(cfg.On.Manual.Branches) != 1 || len(cfg.On.Manual.Tags) != 1 {
+			t.Fatalf("manual = %+v", cfg.On.Manual)
+		}
+	})
+
+	t.Run("manual empty value", func(t *testing.T) {
+		cfg, err := Parse([]byte("on:\n  manual:\n" + steps))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.On.Manual == nil {
+			t.Fatalf("manual = nil, want unrestricted")
+		}
+	})
+}
+
+func TestParseOnErrors(t *testing.T) {
+	steps := "steps:\n  - name: a\n    run: echo hi\n"
+	tests := []struct {
+		name string
+		on   string
+	}{
+		{"unknown event", "on: merge_request\n"},
+		{"unknown push key", "on:\n  push:\n    foo: bar\n"},
+		{"unknown pull_request key", "on:\n  pull_request:\n    foo: bar\n"},
+		{"pull_request tags", "on:\n  pull_request:\n    tags: [\"v*\"]\n"},
+		{"scalar manual", "on: manual\n"},
+		{"list manual", "on: [push, manual]\n"},
+		{"unknown manual key", "on:\n  manual:\n    foo: bar\n"},
+		{"scalar schedule", "on: schedule\n"},
+		{"null schedule", "on:\n  schedule:\n"},
+		{"invalid on type", "on: 42\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Parse([]byte(tt.on + steps)); err == nil {
+				t.Fatalf("expected error for %q", tt.on)
+			}
+		})
+	}
+}
+
+func TestParseRemovedKeys(t *testing.T) {
+	steps := "steps:\n  - name: a\n    run: echo hi\n"
+	for _, key := range []string{"schedule", "tags", "branches", "triggers"} {
+		t.Run(key, func(t *testing.T) {
+			if _, err := Parse([]byte(key + ": x\n" + steps)); err == nil {
+				t.Fatalf("expected error for removed key %q", key)
+			}
+		})
+	}
+}
+
+func TestEffectiveSchedule(t *testing.T) {
+	steps := "steps:\n  - name: a\n    run: echo hi\n"
+
+	cfg, err := Parse([]byte("on:\n  schedule: \"0 0 * * 0\"\n" + steps))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveSchedule(); got != "0 0 * * 0" {
+		t.Fatalf("EffectiveSchedule = %q, want %q", got, "0 0 * * 0")
+	}
+
+	cfg, err = Parse([]byte(steps))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveSchedule(); got != "" {
+		t.Fatalf("EffectiveSchedule = %q, want empty", got)
+	}
+}
+
 func TestParseNoSteps(t *testing.T) {
 	if _, err := Parse([]byte("name: build\nsteps: []\n")); err == nil {
 		t.Fatal("expected error for empty steps")

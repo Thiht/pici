@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
@@ -64,6 +66,9 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		} else {
 			req.AuthType = stores.AuthTypeNone
 		}
+	}
+	if req.DefaultBranch == "" {
+		req.DefaultBranch = detectDefaultBranch(r.Context(), req.RepoURL, req.AuthType, req.AuthUser, req.AuthSecret)
 	}
 
 	now := time.Now()
@@ -141,6 +146,9 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultBranch != "" {
 		project.DefaultBranch = req.DefaultBranch
 	}
+	if project.DefaultBranch == "" {
+		project.DefaultBranch = detectDefaultBranch(r.Context(), project.RepoURL, project.AuthType, project.AuthUser, project.AuthSecret)
+	}
 	project.UpdatedAt = time.Now()
 
 	updated, err := h.store.UpdateProject(r.Context(), project)
@@ -162,6 +170,18 @@ func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func detectDefaultBranch(ctx context.Context, repoURL string, authType stores.AuthType, authUser, authSecret string) string {
+	refs, err := git.ListRefs(ctx, repoURL, git.Auth{
+		Type:   authType.String(),
+		User:   authUser,
+		Secret: authSecret,
+	})
+	if err != nil {
+		return ""
+	}
+	return refs.Head
 }
 
 func (h *ProjectsHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {

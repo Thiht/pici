@@ -1,5 +1,13 @@
 name: continuous-integration
 
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
 steps:
   - name: build
     run: task build VERSION="$PICI_VERSION"

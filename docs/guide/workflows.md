@@ -31,19 +31,22 @@ image: node:20 # optional: use this image instead of the Dockerfile
 env: # workflow-level environment variables
   NODE_ENV: test
 
-schedule: "0 4 * * *" # optional: cron schedule (5-field)
+on: # optional: what triggers the workflow (see "Triggers")
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  manual:
+    branches: [main] # restrict manual runs to these refs (optional)
+  schedule: "0 4 * * *"
 
-concurrency: deploy # optional: cancel running builds in this group when a new one starts
-
-tags: # optional: only trigger on matching tag pushes
-  - "v*.*.*"
-branches: # optional: only trigger on matching branch pushes
-  - main
-
-paths: # optional: only run when these files change
+paths: # optional: only run when these files change (push and pull_request)
   - src/**
 paths_ignore:
   - src/generated/**
+
+concurrency: deploy # optional: cancel running builds in this group when a new one starts
 
 cache: # optional: paths (relative to repo root) persisted between runs
   - node_modules
@@ -98,16 +101,74 @@ Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra 
 
 `concurrency` cancels any currently-running execution in the same group (same project) when a new one starts, so only the latest build of a branch/deployment keeps running.
 
-### Ref filtering
+### Triggers
 
-By default a workflow is triggered by every push. `tags` and `branches` restrict it to matching refs (glob patterns):
+`on:` declares which events run a workflow. It accepts three forms:
 
-- only `tags` set → runs on matching tags, never on branches;
-- only `branches` set → runs on matching branches, never on tags;
-- both set → each side is filtered independently;
-- neither set → runs on every push.
+```yaml
+on: push # a single event, unrestricted
+on: [push, pull_request] # a list of events
+on: # a mapping with per-event filters
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  schedule: "0 4 * * *"
+```
 
-Filtering applies to webhook-triggered runs only; `pici-cli run`, schedules and rebuilds are unaffected.
+**Default.** When `on:` is absent, the workflow runs on **push to the project's
+default branch** and on **pull requests targeting the default branch**. Nothing
+else — no tags. Manual runs always work.
+
+**Reset.** As soon as `on:` is present, the default no longer applies: only the
+listed events run. `on: {}` (or `on:` empty) runs on nothing automatically —
+manual only, e.g. for a workflow triggered from the CLI or the UI.
+
+**Events.**
+
+- `push` — branch pushes. Filters:
+  - `branches` (globs) — branch pushes matching the pattern;
+  - `tags` (globs) — tag pushes matching the pattern;
+  - if only `branches` is set, tag pushes don't run (and vice versa);
+  - if both are set, each side is filtered independently;
+  - if neither is set (`on: push` or `on: {push: {}}`), every branch and tag push runs.
+- `pull_request` — pull/merge requests. `branches` (globs) matches the **target**
+  (base) branch, so `pull_request: {branches: [main]}` runs on PRs into `main`
+  only. `tags` is not allowed.
+- `manual` — optional filter for manual runs (see below). It accepts
+  `branches`/`tags` like `push`, and only a mapping (not a scalar/list).
+- `schedule` — a single cron expression, run on the default branch. It is
+  independent from `push`/`pull_request` and is never filtered by `paths`.
+
+**Manual runs.** `pici-cli run`, the web UI and `--local` are explicit user
+actions and always run the workflow. `on.manual` optionally restricts the refs
+they may use, with the same `branches`/`tags` matching as `push`:
+
+```yaml
+on:
+  schedule: "0 0 * * 0"
+  manual:
+    branches: [main] # a cron-only workflow runnable by hand on the default branch
+```
+
+Without `on.manual`, a manual run accepts any ref. The filter is enforced when
+the run starts (git and `--local`), and a run on a disallowed ref fails with a
+clear message. Rebuilds reuse the original ref and are not re-validated.
+
+**Paths.** `paths`/`paths_ignore` are global and apply to `push` and
+`pull_request` after the ref match. They do not affect `schedule`, and setting
+them does not change the implicit default.
+
+**Validation is strict:** an unknown event (`on: merge_request`), an unknown key
+under an event, `on.pull_request.tags`, `on: manual` (use `on: {}` for
+manual-only), or any of the removed top-level keys (`schedule`, `tags`,
+`branches`) is a config error.
+
+> **Migrating from the flat keys.** `schedule`, `tags`, `branches` and
+> `triggers` at the top level are replaced by `on:`. A workflow that had no
+> filter previously ran on **every** push; it now runs on the default branch
+> only — add `on: push` to keep running on all branches.
 
 ## Built-in environment variables
 

@@ -18,6 +18,7 @@ import (
 	gh "github.com/google/go-github/v92/github"
 
 	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -52,6 +53,9 @@ type pullRequestPayload struct {
 			Ref string `json:"ref"`
 			SHA string `json:"sha"`
 		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
 	} `json:"pull_request"`
 }
 
@@ -100,7 +104,7 @@ func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter,
 		changed = append(changed, payload.HeadCommit.Removed...)
 	}
 	isTag := strings.HasPrefix(payload.Ref, "refs/tags/")
-	h.trigger(ctx, w, project, normalizeRef(payload.Ref), payload.After, changed, isTag)
+	h.trigger(ctx, w, project, "push", normalizeRef(payload.Ref), payload.After, "", changed, isTag)
 }
 
 func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.ResponseWriter, project stores.Project, body []byte) {
@@ -131,15 +135,27 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 		}
 	}
 
-	h.trigger(ctx, w, project, ref, sha, changed, false)
+	h.trigger(ctx, w, project, "pull_request", ref, sha, payload.PR.Base.Ref, changed, false)
 }
 
-func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, ref, sha string, changed []string, isTag bool) {
+func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, event, ref, sha, baseBranch string, changed []string, isTag bool) {
 	dir := filepath.Join(h.workspaceDir, project.ID.String(), "_discovery")
 	cloneRef := ref
 	if sha != "" {
 		cloneRef = sha
 	}
+
+	defaultBranch := project.DefaultBranch
+	if defaultBranch == "" {
+		if refs, err := git.ListRefs(ctx, project.RepoURL, git.Auth{
+			Type:   project.AuthType.String(),
+			User:   project.AuthUser,
+			Secret: project.AuthSecret,
+		}); err == nil {
+			defaultBranch = refs.Head
+		}
+	}
+
 	workflows, err := ci.DiscoverProjectWorkflows(ctx, project, dir, cloneRef)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
@@ -157,10 +173,13 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 		if err != nil {
 			continue
 		}
-		if !ci.MatchesRef(cfg.Tags, cfg.Branches, ref, isTag) {
-			continue
+		var matches bool
+		if event == "pull_request" {
+			matches = cfg.MatchesPullRequest(defaultBranch, baseBranch, changed)
+		} else {
+			matches = cfg.MatchesPush(defaultBranch, ref, isTag, changed)
 		}
-		if !ci.MatchesPaths(cfg.Paths, cfg.PathsIgnore, changed) {
+		if !matches {
 			continue
 		}
 		if _, err := h.runner.Enqueue(ctx, project, wf, ref, sha, stores.TriggerWebhook); err == nil {
@@ -194,6 +213,7 @@ type gitlabMergeRequest struct {
 		IID          int    `json:"iid"`
 		Action       string `json:"action"`
 		SourceBranch string `json:"source_branch"`
+		TargetBranch string `json:"target_branch"`
 		LastCommit   struct {
 			ID string `json:"id"`
 		} `json:"last_commit"`
@@ -241,7 +261,7 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 			changed = append(changed, c.Modified...)
 			changed = append(changed, c.Removed...)
 		}
-		h.trigger(r.Context(), w, project, normalizeRef(payload.Ref), payload.After, changed, kind.ObjectKind == "tag_push")
+		h.trigger(r.Context(), w, project, "push", normalizeRef(payload.Ref), payload.After, "", changed, kind.ObjectKind == "tag_push")
 	case "merge_request":
 		var payload gitlabMergeRequest
 		if err := json.Unmarshal(body, &payload); err != nil {
@@ -259,7 +279,7 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			h.trigger(r.Context(), w, project, attrs.SourceBranch, attrs.LastCommit.ID, changed, false)
+			h.trigger(r.Context(), w, project, "pull_request", attrs.SourceBranch, attrs.LastCommit.ID, attrs.TargetBranch, changed, false)
 		default:
 			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		}

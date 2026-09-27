@@ -1,5 +1,8 @@
 name: deps
-schedule: "0 0 * * 0"
+on:
+  schedule: "0 0 * * 0"
+  manual:
+    branches: [main]
 
 steps:
   - name: update

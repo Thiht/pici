@@ -714,16 +714,9 @@ paths:
                     type: string
                   steps:
                     type: integer
-                  schedule:
-                    type: string
-                  tags:
-                    type: array
-                    items:
-                      type: string
-                  branches:
-                    type: array
-                    items:
-                      type: string
+                  on:
+                    type: object
+                    nullable: true
                   paths:
                     type: array
                     items:
