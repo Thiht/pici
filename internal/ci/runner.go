@@ -21,6 +21,7 @@ import (
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
+	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/mask"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -247,6 +248,18 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		return
 	}
 
+	// Persist the planned step order up front so the UI can name steps (and
+	// their artifacts) as soon as the workflow is parsed, before the runner
+	// image is built.
+	if order, err := orderSteps(cfg.Steps); err == nil {
+		planned := make(stores.Steps, len(order))
+		for i, name := range order {
+			planned[i] = stores.StepResult{Name: name, Status: stores.StepStatusPending}
+		}
+		exec.Steps = planned
+		_ = r.Store.UpdateExecution(ctx, exec)
+	}
+
 	if exec.Source != stores.SourceSnapshot {
 		if err := SyncSchedule(ctx, r.Store, project.ID, exec.Workflow, cfg.Schedule); err != nil {
 			fmt.Fprintf(setupLog, "schedule sync failed: %v\n", err)
@@ -278,6 +291,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	cacheBinds := append(explicitBinds, autoBinds...)
 
 	checkRunID := r.createCheckRun(ctx, project, exec, setupLog)
+	r.gitlabStatus(ctx, project, exec, "running", setupLog)
 
 	image := cfg.Image
 	if image == "" {
@@ -304,19 +318,18 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		env = append(env, k+"="+v)
 	}
 
-	// Persist the planned step order up front so the UI can name steps (and
-	// their artifacts) while the execution is still running.
-	if order, err := orderSteps(cfg.Steps); err == nil {
-		planned := make(stores.Steps, len(order))
-		for i, name := range order {
-			planned[i] = stores.StepResult{Name: name, Status: stores.StepStatusPending}
-		}
-		exec.Steps = planned
-		_ = r.Store.UpdateExecution(ctx, exec)
-	}
-
 	exec.SetupFinishedAt = new(time.Now())
-	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds)
+	// stepBase carries the execution as it is while steps run; the runner
+	// persists each step transition so the UI can follow along live.
+	stepBase := exec
+	onStepUpdate := func(steps stores.Steps) {
+		e := stepBase
+		e.Steps = steps
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = r.Store.UpdateExecution(updateCtx, e)
+	}
+	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds, onStepUpdate)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
 	exec.FinishedAt = new(time.Now())
@@ -413,6 +426,7 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.
 
 	if project.ID != uuid.Nil() {
 		r.updateCheckRun(persistCtx, project, exec, checkRunID, status, errMsg, setupLog)
+		r.gitlabStatus(persistCtx, project, exec, gitlabState(status), setupLog)
 	}
 
 	// The execution is terminal: its snapshot archive is no longer needed and
@@ -530,6 +544,38 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 	})
 	if err != nil && log != nil {
 		fmt.Fprintf(log, "update github check run failed: %v\n", err)
+	}
+}
+
+// gitlabStatus posts a commit status to a GitLab project so merge requests
+// show the workflow result, mirroring the GitHub check run.
+func (r *Runner) gitlabStatus(ctx context.Context, project stores.Project, exec stores.Execution, state string, log io.Writer) {
+	if exec.Source == stores.SourceSnapshot || project.Provider != stores.ProviderGitlab || project.AuthSecret == "" || exec.CommitSHA == "" {
+		return
+	}
+	base, path, ok := gitlab.ParseRepo(project.RepoURL)
+	if !ok {
+		return
+	}
+	var targetURL string
+	if url := r.detailsURL(project.ID, exec.ID); url != nil {
+		targetURL = *url
+	}
+	if err := gitlab.SetCommitStatus(ctx, base, path, project.AuthSecret, exec.CommitSHA, state, "pici/"+exec.Workflow, targetURL, ""); err != nil && log != nil {
+		fmt.Fprintf(log, "update gitlab status failed: %v\n", err)
+	}
+}
+
+func gitlabState(status stores.Status) string {
+	switch status {
+	case stores.StatusSuccess:
+		return "success"
+	case stores.StatusFailed:
+		return "failed"
+	case stores.StatusCanceled:
+		return "canceled"
+	default:
+		return "running"
 	}
 }
 

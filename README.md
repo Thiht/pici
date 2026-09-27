@@ -198,6 +198,20 @@ pici-cli cache rm-image demo pici/<project-id>-build
 pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 ```
 
+### Badge
+
+A public SVG status badge (shields-style) for a project, suitable for a README.
+`workflow` selects the workflow (newest execution overall otherwise); `label`
+overrides the text shown on the left.
+
+```
+GET    /badge/{id}?workflow=build&label=build
+```
+
+```md
+![build](https://pici.example.com/badge/demo?workflow=build)
+```
+
 ## Design notes
 
 - Plain `net/http` (Go 1.22+ routing), no framework.
@@ -210,10 +224,10 @@ pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 - Projects (public/private, GitHub/GitLab/generic), variables & secrets.
 - Workflows from `.ci/` (Dockerfile runner, `ci.yml` orchestration).
 - Parallel steps, retries, per-step logs, tag/branch filters, path filters, workflow-level `env`.
-- GitHub & GitLab webhooks (push/PR/tag), GitHub check runs, cron schedules.
+- GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
-- Streaming logs (SSE), graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
+- Streaming logs (SSE) in the UI and on the API, public README status badges, graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
 
 Full documentation (Vitepress) lives in [`docs/`](docs/).
@@ -239,14 +253,12 @@ When `PICI_API_TOKEN` is set, the UI asks for it once and stores it in an `HttpO
 cookie (the JSON API keeps using the `X-API-Token` / `Bearer` header). Static assets
 and the login form are the only unauthenticated UI routes.
 
+The execution page streams logs live (SSE) while a run is in progress and falls
+back to a static render once it finishes.
+
 Embedded assets are committed, so building the Go binary never needs Node. To refresh
 them (Tailwind, daisyUI and htmx via npm, build-time only):
 
 ```sh
 task ui:build   # npm install, build app.css, copy htmx
 ```
-
-## Not yet implemented
-
-- Live log streaming in the UI (the API exposes SSE at `/api/projects/{id}/executions/{executionID}/logs/stream`).
-- GitLab MR pipelines (webhooks are supported).

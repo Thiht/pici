@@ -122,6 +122,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /projects/{id}/executions", h.ExecutionCreate)
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}", h.ExecutionShow)
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/logs", h.ExecutionLogs)
+	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/stream", h.ExecutionStream)
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/steps/{step}/logs", h.StepLogs)
 	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/cancel", h.ExecutionCancel)
 	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/rebuild", h.ExecutionRebuild)

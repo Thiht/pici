@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string) (stores.Steps, bool, bool) {
+func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string, onUpdate func(stores.Steps)) (stores.Steps, bool, bool) {
 	steps := cfg.Steps
 	order, err := orderSteps(steps)
 	if err != nil {
@@ -27,6 +28,18 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	pos := make(map[string]int, len(order))
 	for i, n := range order {
 		pos[n] = i
+	}
+
+	// progress mirrors the persisted step list in dependency order so the
+	// caller can show each step's status transition live.
+	progress := make(stores.Steps, len(order))
+	for i, n := range order {
+		progress[i] = stores.StepResult{Name: n, Status: stores.StepStatusPending}
+	}
+	notify := func(snapshot stores.Steps) {
+		if onUpdate != nil {
+			onUpdate(snapshot)
+		}
 	}
 
 	depsByName := make(map[string][]string, len(steps))
@@ -72,12 +85,19 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 			case ctx.Err() != nil:
 				res = stores.StepResult{Name: name, Status: stores.StepStatusCanceled, Error: "canceled"}
 			default:
+				mu.Lock()
+				progress[i] = stores.StepResult{Name: name, Status: stores.StepStatusRunning, StartedAt: new(time.Now())}
+				running := slices.Clone(progress)
+				mu.Unlock()
+				notify(running)
 				res = r.runStep(ctx, step, baseEnv, image, repoDir, wfDir, projectID, execID, i, secrets, cacheBinds)
 			}
 
 			mu.Lock()
 			results[i] = res
 			statuses[i] = res.Status
+			progress[i] = res
+			snapshot := slices.Clone(progress)
 			if res.Status == stores.StepStatusFailed {
 				failed = true
 			}
@@ -98,6 +118,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 				}
 			}
 			mu.Unlock()
+			notify(snapshot)
 
 			for _, c := range ready {
 				launch(c)

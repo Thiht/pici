@@ -18,6 +18,7 @@ type Client struct {
 	token   string
 	http    *http.Client
 	upload  *http.Client
+	stream  *http.Client
 }
 
 func New(baseURL, token string) *Client {
@@ -26,6 +27,7 @@ func New(baseURL, token string) *Client {
 		token:   token,
 		http:    &http.Client{Timeout: 30 * time.Second},
 		upload:  &http.Client{},
+		stream:  &http.Client{},
 	}
 }
 

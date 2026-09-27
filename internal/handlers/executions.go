@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -11,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"uuid"
 
 	"github.com/Thiht/pici/internal/ci"
@@ -290,11 +287,6 @@ func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, http.StatusOK, map[string]string{"status": "canceling"})
 }
 
-type streamState struct {
-	offset  int64
-	partial []byte
-}
-
 func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -321,87 +313,5 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	states := map[string]*streamState{}
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	emit := func(source string, line []byte) {
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", source, line)
-	}
-
-	for {
-		sweep := func() {
-			for _, path := range h.runner.LogPaths(project.ID, execID) {
-				state := states[path]
-				if state == nil {
-					state = &streamState{}
-					states[path] = state
-				}
-				fi, err := os.Stat(path)
-				if err != nil || fi.Size() <= state.offset {
-					continue
-				}
-				f, err := os.Open(path)
-				if err != nil {
-					continue
-				}
-				_, _ = f.Seek(state.offset, io.SeekStart)
-				data, err := io.ReadAll(f)
-				_ = f.Close()
-				if err != nil || len(data) == 0 {
-					continue
-				}
-				state.offset += int64(len(data))
-				state.partial = append(state.partial, data...)
-				for {
-					idx := bytes.IndexByte(state.partial, '\n')
-					if idx < 0 {
-						break
-					}
-					line := state.partial[:idx]
-					state.partial = state.partial[idx+1:]
-					emit(logSource(path), line)
-				}
-			}
-		}
-
-		sweep()
-
-		execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
-		if err != nil {
-			return
-		}
-		switch execution.Status {
-		case stores.StatusSuccess, stores.StatusFailed, stores.StatusCanceled:
-			sweep()
-			for path, state := range states {
-				if len(state.partial) > 0 {
-					emit(logSource(path), state.partial)
-				}
-			}
-			fmt.Fprintf(w, "event: done\ndata: %s\n\n", execution.Status)
-			flusher.Flush()
-			return
-		}
-
-		flusher.Flush()
-
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func logSource(path string) string {
-	base := filepath.Base(path)
-	if base == "setup.log" {
-		return "setup"
-	}
-	name := strings.TrimSuffix(base, ".log")
-	if idx := strings.IndexByte(name, '_'); idx >= 0 {
-		name = name[idx+1:]
-	}
-	return name
+	h.runner.StreamLogs(r.Context(), project.ID, execID, w, flusher.Flush)
 }

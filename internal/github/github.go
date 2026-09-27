@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// parseRemote splits a git remote URL into its host and trimmed path,
+// ParseRemote splits a git remote URL into its host and trimmed path,
 // handling https, ssh and scp-like (git@host:owner/repo) syntaxes.
-func parseRemote(repoURL string) (host, path string, ok bool) {
+func ParseRemote(repoURL string) (host, path string, ok bool) {
 	s := strings.TrimSuffix(repoURL, ".git")
 	if i := strings.Index(s, "://"); i >= 0 {
 		u, err := url.Parse(s)
@@ -25,7 +25,7 @@ func parseRemote(repoURL string) (host, path string, ok bool) {
 }
 
 func ParseRepo(repoURL string) (owner, repo string, ok bool) {
-	host, path, ok := parseRemote(repoURL)
+	host, path, ok := ParseRemote(repoURL)
 	if !ok || (host != "github.com" && host != "www.github.com") {
 		return "", "", false
 	}
@@ -38,6 +38,6 @@ func ParseRepo(repoURL string) (owner, repo string, ok bool) {
 
 // RepoSlug returns the "owner/repo" path of a git remote URL, for any host.
 func RepoSlug(repoURL string) string {
-	_, path, _ := parseRemote(repoURL)
+	_, path, _ := ParseRemote(repoURL)
 	return path
 }

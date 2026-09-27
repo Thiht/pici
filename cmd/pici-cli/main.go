@@ -4,12 +4,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -140,20 +140,35 @@ func newLogsCmd(c *client.Client) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			offset := 0
-			for {
+			if !follow {
 				logs, err := c.ExecutionLogs(context.Background(), args[0], id)
 				if err != nil {
 					return err
 				}
-				if len(logs) > offset {
-					fmt.Print(logs[offset:])
-					offset = len(logs)
-				}
-				if !follow {
+				fmt.Print(logs)
+				return nil
+			}
+
+			stream, err := c.ExecutionStream(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = stream.Close() }()
+			for {
+				event, err := stream.Next()
+				if errors.Is(err, io.EOF) {
 					return nil
 				}
-				time.Sleep(time.Second)
+				if err != nil {
+					return err
+				}
+				switch event.Name {
+				case "state":
+				case "done":
+					return nil
+				default:
+					fmt.Println(event.Data)
+				}
 			}
 		},
 	}

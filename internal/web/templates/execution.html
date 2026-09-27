@@ -12,7 +12,7 @@
     <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-3">
         <h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span></h1>
-        <span class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
+        <span id="exec-status" class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
         {{if eq (printf "%s" .Execution.Source) "snapshot"}}<span class="badge badge-soft badge-accent">local</span>{{end}}
       </div>
       <div class="flex items-center gap-2">
@@ -83,25 +83,26 @@
 
     <section class="mt-6" aria-labelledby="steps-heading">
       <h2 id="steps-heading" class="text-lg font-semibold">Steps</h2>
-      {{if .SetupLog}}
-        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100">
+      {{if or .SetupLog .Running}}
+        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100" {{if .Running}} open{{end}}>
           <summary class="collapse-title flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>Setup</span>
             <span class="ml-auto text-xs opacity-60">{{duration .Execution.StartedAt .Execution.SetupFinishedAt}}</span>
           </summary>
           <div class="collapse-content">
-            <pre class="logs">{{ansi .SetupLog}}</pre>
+            <pre class="logs" data-source="setup">{{ansi .SetupLog}}</pre>
           </div>
         </details>
       {{end}}
       {{range .Steps}}
         <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100"
+                 data-step="{{.Name}}"
                  {{if eq (printf "%s" .Status) "failed"}}
                  open{{end}}>
           <summary class="collapse-title flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>{{.Name}}</span>
             <span class="ml-auto flex items-center gap-2">
-              <span class="{{statusClass .Status}}">{{capitalize .Status}}</span>
+              <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
               {{if and .StartedAt (ne .ExitCode 0)}}<span class="text-xs opacity-60">exit {{.ExitCode}}</span>{{end}}
               <span class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</span>
             </span>
@@ -131,50 +132,123 @@
                 </div>
               </details>
             {{end}}
-            {{if .Logs}}<pre class="logs">{{ansi .Logs}}</pre>{{else}}
-            <p class="text-sm opacity-70">No logs.</p>
-      {{end}}
-    </div>
-  </details>
-{{end}}
-{{if and (not .SetupLog) (not .Steps)}}
-  <p class="mt-3 text-sm opacity-70">No steps yet.</p>
-{{end}}
-</section>
-
-<section class="mt-8" aria-labelledby="artifacts-heading">
-  <h2 id="artifacts-heading" class="text-lg font-semibold">Artifacts</h2>
-  <div class="card mt-3 border border-base-300">
-    {{if .Artifacts}}
-      <div class="overflow-x-auto">
-        <table class="table">
-          <caption class="sr-only">Artifacts</caption>
-          <thead>
-            <tr>
-              <th scope="col">Step</th>
-              <th scope="col">Path</th>
-              <th scope="col">Size</th>
-              <th scope="col"><span class="sr-only">Download</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range .Artifacts}}
-              <tr>
-                <td>{{.Step}}</td>
-                <td class="font-mono text-xs">{{.Path}}</td>
-                <td class="text-xs opacity-60">{{size .Size}}</td>
-                <td class="text-right"><a class="btn btn-outline btn-sm"
-   href="/projects/{{$.Project.ID}}/executions/{{$.Execution.ID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}">Download</a></td>
-              </tr>
+            {{if or .Logs $.Running}}
+              <pre class="logs" data-source="{{.LogSource}}">{{ansi .Logs}}</pre>
+            {{else}}
+              <p class="text-sm opacity-70">No logs.</p>
             {{end}}
-          </tbody>
-        </table>
+          </div>
+        </details>
+      {{end}}
+      {{if and (not .SetupLog) (not .Steps)}}
+        <p class="mt-3 text-sm opacity-70">No steps yet.</p>
+      {{end}}
+    </section>
+
+    <section class="mt-8" aria-labelledby="artifacts-heading">
+      <h2 id="artifacts-heading" class="text-lg font-semibold">Artifacts</h2>
+      <div class="card mt-3 border border-base-300">
+        {{if .Artifacts}}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <caption class="sr-only">Artifacts</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Step</th>
+                  <th scope="col">Path</th>
+                  <th scope="col">Size</th>
+                  <th scope="col"><span class="sr-only">Download</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Artifacts}}
+                  <tr>
+                    <td>{{.Step}}</td>
+                    <td class="font-mono text-xs">{{.Path}}</td>
+                    <td class="text-xs opacity-60">{{size .Size}}</td>
+                    <td class="text-right"><a class="btn btn-outline btn-sm"
+   href="/projects/{{$.Project.ID}}/executions/{{$.Execution.ID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}">Download</a></td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="p-4 text-sm opacity-70">No artifacts.</p>
+        {{end}}
       </div>
-    {{else}}
-      <p class="p-4 text-sm opacity-70">No artifacts.</p>
+    </section>
+
+    {{if .Running}}
+      <script>
+    (() => {
+      const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "");
+      const classFor = (status) => ({
+        success: "badge badge-soft badge-success",
+        failed: "badge badge-soft badge-error",
+        running: "badge badge-soft badge-info",
+        pending: "badge badge-soft badge-warning"
+      })[status] || "badge badge-soft badge-neutral";
+      const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+      const targets = {};
+      document.querySelectorAll("pre.logs[data-source]").forEach((el) => {
+        targets[el.dataset.source] = el;
+      });
+
+      const stream = new EventSource("/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/stream");
+
+      Object.keys(targets).forEach((source) => {
+        stream.addEventListener(source, (e) => {
+          const el = targets[source];
+          const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+          el.textContent += stripAnsi(e.data) + "\n";
+          if (atBottom) el.scrollTop = el.scrollHeight;
+        });
+      });
+
+      stream.addEventListener("state", (e) => {
+        let state;
+        try {
+          state = JSON.parse(e.data);
+        } catch (_) {
+          return;
+        }
+        const execBadge = document.getElementById("exec-status");
+        if (execBadge) {
+          execBadge.className = classFor(state.status);
+          execBadge.textContent = capitalize(state.status);
+        }
+        const rendered = new Set(
+          [...document.querySelectorAll("details[data-step]")].map((d) => d.dataset.step)
+        );
+        const steps = state.steps || [];
+        // The step set can grow after this page was rendered (planning happens
+        // once ci.yml is parsed); reload to pick up the new step blocks.
+        if (steps.length !== rendered.size || steps.some((s) => !rendered.has(s.name))) {
+          stream.close();
+          window.location.reload();
+          return;
+        }
+        steps.forEach((s) => {
+          const details = document.querySelector('details[data-step="' + CSS.escape(s.name) + '"]');
+          if (!details) return;
+          const badge = details.querySelector("[data-step-badge]");
+          if (badge) {
+            badge.className = classFor(s.status);
+            badge.textContent = capitalize(s.status);
+          }
+          if (s.status === "running" && !details.open) details.open = true;
+        });
+      });
+
+      stream.addEventListener("done", () => {
+        stream.close();
+        window.location.reload();
+      });
+    })();
+      </script>
     {{end}}
-  </div>
-</section>
-</main>
-{{template "foot" .}}
+  </main>
+  {{template "foot" .}}
 {{end}}

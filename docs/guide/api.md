@@ -53,6 +53,8 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 | `POST` | `/api/projects/{id}/executions/{executionID}/cancel`            | cancel a running execution  |
 | `POST` | `/api/projects/{id}/executions/{executionID}/rebuild`           | re-run with the same commit |
 
+`POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes; such executions are `source: snapshot` and cannot be rebuilt.
+
 ## Artifacts
 
 | Method | Path                                                                  | Description              |
@@ -89,7 +91,20 @@ pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 pici-cli logs demo 42 --follow
 ```
 
-Events are labeled by source (`setup` or the step name); a final `done` event carries the execution status.
+Log events are labeled by source (`setup` or the step name). A `state` event carries the execution and per-step statuses as JSON whenever they change, and a final `done` event carries the terminal status.
+
+## Status badge
+
+A public SVG badge for a project, embeddable in a README. It does not require the
+API token.
+
+| Method | Path          | Description                                                                            |
+| ------ | ------------- | -------------------------------------------------------------------------------------- |
+| `GET`  | `/badge/{id}` | shields-style badge (`?workflow=` selects the workflow, `?label=` overrides the label) |
+
+```md
+![build](http://<your-host>:8080/badge/demo?workflow=build)
+```
 
 ## Other
 
@@ -112,6 +127,7 @@ An execution looks like:
   "commit_sha": "…",
   "status": "success",
   "trigger": "manual",
+  "source": "git",
   "steps": [
     {
       "name": "test",
@@ -129,4 +145,4 @@ An execution looks like:
 
 Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
-`status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`.
+`status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`. `source` is `git` or `snapshot`.

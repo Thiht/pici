@@ -39,6 +39,7 @@ func (h *Handler) Routes() http.Handler {
 
 	mux.HandleFunc("GET /health", h.system.Health)
 	mux.HandleFunc("GET /version", h.system.Version)
+	mux.HandleFunc("GET /badge/{id}", h.projects.Badge)
 
 	mux.HandleFunc("POST /api/projects", h.projects.Create)
 	mux.HandleFunc("GET /api/projects", h.projects.List)

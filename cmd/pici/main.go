@@ -104,6 +104,7 @@ func main() {
 	root := http.NewServeMux()
 	root.Handle("/", webHandler)
 	root.Handle("/api/", apiHandler)
+	root.Handle("/badge/", apiHandler)
 	root.Handle("/health", apiHandler)
 	root.Handle("/version", apiHandler)
 

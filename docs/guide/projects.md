@@ -35,7 +35,7 @@ SSH:
 pici-cli projects add --auth-type ssh --auth-secret '-----BEGIN OPENSSH PRIVATE KEY-----...' private git@github.com:acme/private.git
 ```
 
-The `auth_secret` (a GitHub/GitLab PAT) is also used to report GitHub check runs.
+The `auth_secret` (a GitHub/GitLab PAT) is also used to report GitHub check runs and GitLab commit statuses (the latter needs the `api` scope).
 
 ## List / inspect / update / delete
 

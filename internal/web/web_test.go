@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -267,6 +268,32 @@ func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Setup") || !strings.Contains(out, "10s") {
 		t.Fatalf("expected setup duration in page, got:\n%s", out)
+	}
+}
+
+func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
+	started := time.Now()
+	data := executionPage{
+		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Execution: stores.Execution{
+			ID: 42, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+			Workflow: "build", Ref: "main", Status: stores.StatusRunning,
+			CreatedAt: started, StartedAt: &started,
+		},
+		Steps: []stepView{
+			{LogSource: "compile", StepResult: stores.StepResult{Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started}},
+		},
+		Running: true,
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{`data-source="setup"`, `data-source="compile"`, `new EventSource(`, "/stream"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in running execution page, got:\n%s", want, out)
+		}
 	}
 }
 

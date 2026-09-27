@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -20,7 +22,8 @@ type artifact struct {
 }
 
 type stepView struct {
-	Index int
+	Index     int
+	LogSource string
 	stores.StepResult
 	Logs string
 }
@@ -99,9 +102,19 @@ func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executi
 		h.storeError(w, r, err)
 		return executionPage{}, err
 	}
+	running := execution.Status == stores.StatusRunning || execution.Status == stores.StatusPending
 	steps := make([]stepView, len(execution.Steps))
 	for i, sr := range execution.Steps {
-		steps[i] = stepView{Index: i, StepResult: sr, Logs: readFile(h.runner.StepLogPath(project.ID, id, i, sr.Name))}
+		path := h.runner.StepLogPath(project.ID, id, i, sr.Name)
+		sv := stepView{Index: i, LogSource: ci.LogSource(path), StepResult: sr}
+		if !running {
+			sv.Logs = readFile(path)
+		}
+		steps[i] = sv
+	}
+	var setupLog string
+	if !running {
+		setupLog = readFile(h.runner.SetupLogPath(project.ID, id))
 	}
 	return executionPage{
 		base:      h.base(w, r, "Execution #"+strconv.FormatInt(id, 10), "projects"),
@@ -109,8 +122,8 @@ func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executi
 		Project:   project,
 		Artifacts: h.listArtifacts(execution),
 		Steps:     steps,
-		SetupLog:  readFile(h.runner.SetupLogPath(project.ID, id)),
-		Running:   execution.Status == stores.StatusRunning || execution.Status == stores.StatusPending,
+		SetupLog:  setupLog,
+		Running:   running,
 	}, nil
 }
 
@@ -146,6 +159,32 @@ func (h *Handler) ExecutionLogs(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(w, f)
 		_ = f.Close()
 	}
+}
+
+func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		h.notFound(w, r)
+		return
+	}
+	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.serverError(w, r, errors.New("streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	h.runner.StreamLogs(r.Context(), project.ID, id, w, flusher.Flush)
 }
 
 func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {

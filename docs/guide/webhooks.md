@@ -31,7 +31,9 @@ Set the **Secret token** to the project's `webhook_secret`.
 Supported events:
 
 - **Push events** (`object_kind: push` / `tag_push`) — triggers workflows whose `paths`/`paths_ignore` match the changed files.
-- **Merge request events** (`open` / `reopen` / `update`) — triggers workflows on the source branch.
+- **Merge request events** (`open` / `reopen` / `update`) — triggers workflows on the source branch, filtered by the MR's changed files.
+
+On merge requests, pici posts a **commit status** (`pici/<workflow>`) using the project's `auth_secret` (a GitLab token with the `api` scope), so the result shows on the MR. Changed files are read from the MR's diffs, so `paths`/`paths_ignore` apply.
 
 GitLab authenticates webhooks via the `X-Gitlab-Token` header (unlike GitHub's HMAC signature).
 

@@ -44,6 +44,21 @@ pici-cli logs demo 42 --follow
 pici-cli executions demo --limit 10
 ```
 
+## Local runs
+
+Run a workflow on the current worktree — uncommitted and untracked (non-ignored)
+files included — without pushing:
+
+```sh
+pici-cli run demo build --local
+pici-cli run demo build --local --dir path/to/checkout
+```
+
+The CLI archives the worktree plus `.git/` (never `.git/config`, which may
+contain credentials) and the server extracts it instead of cloning. Snapshot
+executions are marked `local`, cannot be rebuilt, and do not post check
+runs/commit statuses. Uploads are capped by the server's `-max-snapshot-size`.
+
 ## Projects
 
 ```sh

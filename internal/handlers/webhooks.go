@@ -19,6 +19,7 @@ import (
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/github"
+	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -247,9 +248,18 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 			render.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		switch payload.ObjectAttributes.Action {
+		attrs := payload.ObjectAttributes
+		switch attrs.Action {
 		case "open", "reopen", "update":
-			h.trigger(r.Context(), w, project, payload.ObjectAttributes.SourceBranch, payload.ObjectAttributes.LastCommit.ID, nil, false)
+			var changed []string
+			if project.AuthSecret != "" {
+				if base, path, ok := gitlab.ParseRepo(project.RepoURL); ok {
+					if files, err := gitlab.MergeRequestDiffs(r.Context(), base, path, project.AuthSecret, attrs.IID); err == nil {
+						changed = files
+					}
+				}
+			}
+			h.trigger(r.Context(), w, project, attrs.SourceBranch, attrs.LastCommit.ID, changed, false)
 		default:
 			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		}

@@ -12,8 +12,8 @@ info:
     The API token is required (set via `-api-token` or `PICI_API_TOKEN`).
     Send it either as `Authorization: Bearer <token>` or `X-API-Token: <token>`.
 
-    `/health` and `/api/webhooks/*` are exempt (webhooks use their own
-    signature/token).
+    `/health`, `/api/webhooks/*` and `/badge/*` are exempt (webhooks use their
+    own signature/token, badges are meant to be embedded publicly).
 
     ## Path parameters
 
@@ -46,6 +46,7 @@ tags:
   - name: Artifacts
   - name: Cache
   - name: System
+  - name: Badge
   - name: Webhooks
 
 paths:
@@ -95,6 +96,42 @@ paths:
                 $ref: "#/components/schemas/Version"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /badge/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Badge]
+      summary: Status badge
+      description: |
+        A public shields.io-style SVG status badge for a project, embeddable in
+        a README. No API token is required. `workflow` selects the workflow
+        (newest execution of any workflow otherwise); `label` overrides the text
+        shown on the left.
+      security: []
+      operationId: getBadge
+      parameters:
+        - name: workflow
+          in: query
+          required: false
+          description: Workflow whose newest execution is shown.
+          schema:
+            type: string
+        - name: label
+          in: query
+          required: false
+          description: Left-hand label text (defaults to the workflow or project name).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SVG badge
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/projects:
     post:
@@ -406,7 +443,13 @@ paths:
     post:
       tags: [Executions]
       summary: Trigger a run
-      description: Enqueues a workflow execution. `ref` defaults to the project's default branch.
+      description: |
+        Enqueues a workflow execution. `ref` defaults to the project's default
+        branch. Send `application/json` to run the repo as cloned, or
+        `multipart/form-data` to run an uploaded worktree snapshot (a `.tar.gz`
+        of the repo, `.git/` included but without `.git/config`). Snapshot
+        executions are marked `source: snapshot`, cannot be rebuilt, and do not
+        post check runs/commit statuses.
       operationId: createExecution
       requestBody:
         required: true
@@ -414,6 +457,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ExecutionRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SnapshotExecutionRequest"
       responses:
         "202":
           description: Execution enqueued
@@ -425,6 +471,12 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "413":
+          description: Uploaded snapshot exceeds the maximum size (`-max-snapshot-size`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -500,8 +552,9 @@ paths:
       summary: Stream logs (SSE)
       description: |
         Streams logs as a `text/event-stream`. Events are labeled by source
-        (`setup` or the step name); a final `done` event carries the execution
-        status.
+        (`setup` or the step name). A `state` event carries the execution and
+        per-step statuses as JSON whenever they change, and a final `done` event
+        carries the terminal status.
       operationId: streamExecutionLogs
       responses:
         "200":
@@ -836,6 +889,11 @@ components:
       type: string
       enum: [manual, webhook, cron, rebuild]
 
+    Source:
+      type: string
+      enum: [git, snapshot]
+      description: Whether the code was cloned (`git`) or uploaded (`snapshot`).
+
     StepStatus:
       type: string
       enum: [pending, running, success, failed, skipped, canceled]
@@ -985,11 +1043,26 @@ components:
           type: integer
         error:
           type: string
+        env:
+          type: array
+          items:
+            type: string
+          description: Environment variables the step ran with (secrets masked).
 
     Execution:
       type: object
       required:
-        [id, project_id, workflow, ref, commit_sha, status, trigger, created_at]
+        [
+          id,
+          project_id,
+          workflow,
+          ref,
+          commit_sha,
+          status,
+          trigger,
+          source,
+          created_at,
+        ]
       properties:
         id:
           type: integer
@@ -1009,6 +1082,8 @@ components:
           $ref: "#/components/schemas/Status"
         trigger:
           $ref: "#/components/schemas/Trigger"
+        source:
+          $ref: "#/components/schemas/Source"
         steps:
           type: array
           items:
@@ -1040,6 +1115,20 @@ components:
         ref:
           type: string
           description: Branch/tag/SHA. Defaults to the project's default branch.
+
+    SnapshotExecutionRequest:
+      type: object
+      required: [workflow, snapshot]
+      properties:
+        workflow:
+          type: string
+        ref:
+          type: string
+          description: Branch/tag/SHA the worktree is based on. Defaults to the project's default branch.
+        snapshot:
+          type: string
+          format: binary
+          description: A `.tar.gz` archive of the worktree (`.git/` included, `.git/config` excluded).
 
     Artifact:
       type: object

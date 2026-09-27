@@ -31,10 +31,12 @@ func Auth(token string, next http.Handler) http.Handler {
 }
 
 // isExempt lists the only paths reachable without a token: health checks,
-// incoming webhooks, the login form, and the static assets it needs.
+// incoming webhooks, status badges, the login form, and the static assets it
+// needs.
 func isExempt(path string) bool {
 	return path == "/health" ||
 		path == "/login" ||
+		strings.HasPrefix(path, "/badge/") ||
 		strings.HasPrefix(path, "/api/webhooks/") ||
 		strings.HasPrefix(path, "/static/")
 }
