@@ -304,6 +304,17 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		env = append(env, k+"="+v)
 	}
 
+	// Persist the planned step order up front so the UI can name steps (and
+	// their artifacts) while the execution is still running.
+	if order, err := orderSteps(cfg.Steps); err == nil {
+		planned := make(stores.Steps, len(order))
+		for i, name := range order {
+			planned[i] = stores.StepResult{Name: name, Status: stores.StepStatusPending}
+		}
+		exec.Steps = planned
+		_ = r.Store.UpdateExecution(ctx, exec)
+	}
+
 	exec.SetupFinishedAt = new(time.Now())
 	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds)
 	exec.Steps = steps
