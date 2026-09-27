@@ -34,6 +34,10 @@ func New() (*Engine, error) {
 
 func (e *Engine) Close() error { return e.cli.Close() }
 
+// Host returns the daemon endpoint (DOCKER_HOST) the engine talks to, e.g.
+// unix:///var/run/docker.sock or tcp://dind:2375.
+func (e *Engine) Host() string { return e.cli.DaemonHost() }
+
 func (e *Engine) Ping(ctx context.Context) error {
 	_, err := e.cli.Ping(ctx)
 	return err

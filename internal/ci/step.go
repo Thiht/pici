@@ -163,6 +163,9 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	}
 
 	stepEnv := append([]string{}, baseEnv...)
+	if step.Docker {
+		stepEnv = append(stepEnv, "DOCKER_HOST="+r.Engine.Host())
+	}
 	for k, v := range step.Env {
 		stepEnv = append(stepEnv, k+"="+v)
 	}
@@ -177,6 +180,11 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	}
 
 	binds := append([]string{repoDir + ":" + r.MountPath}, cacheBinds...)
+	if step.Docker {
+		if path, ok := strings.CutPrefix(r.Engine.Host(), "unix://"); ok {
+			binds = append(binds, path+":"+path)
+		}
+	}
 
 	code, err := r.Engine.Run(ctx, docker.RunOptions{
 		Image:      image,

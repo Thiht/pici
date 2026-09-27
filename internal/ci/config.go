@@ -30,6 +30,7 @@ type Step struct {
 	Env       map[string]string `yaml:"env"`
 	Retry     int               `yaml:"retry"`
 	Artifacts []string          `yaml:"artifacts"`
+	Docker    bool              `yaml:"docker"`
 }
 
 type Duration time.Duration

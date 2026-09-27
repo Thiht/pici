@@ -4,6 +4,19 @@ tags:
   - "v*.*.*"
 
 steps:
-  - name: release
-    script: release.sh
+  - name: build
+    run: task release VERSION="$PICI_VERSION"
+    timeout: 20m
+    artifacts:
+      - dist/**
+
+  - name: build-docker
+    script: build-docker.sh
+    docker: true
+    timeout: 20m
+
+  - name: publish
+    script: publish.sh
+    docker: true
+    depends_on: [build, build-docker]
     timeout: 20m

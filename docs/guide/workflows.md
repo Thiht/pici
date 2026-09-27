@@ -62,6 +62,10 @@ steps:
       - dist/**
     env:
       FOO: bar
+
+  - name: image
+    run: docker build -t myapp .
+    docker: true # optional: give the step access to the Docker daemon
 ```
 
 ### Steps
@@ -73,6 +77,7 @@ steps:
 - `retry` is the number of additional attempts after the first failure.
 - `depends_on` controls ordering. Independent steps run **in parallel**. A failed step skips its dependents.
 - `artifacts` collects matching files after a successful step; download them via the [API](/guide/api#artifacts).
+- `docker: true` gives the step access to the same Docker daemon pici uses: it sets `DOCKER_HOST` and, when the daemon is a unix socket, bind-mounts that socket into the step. Images built by a step are visible to the other steps of the run (and to pici's cache). Use it for steps that run `docker build`/`docker push`. With a `tcp://` daemon the step must be able to reach it over the network.
 
 ### Cache
 

@@ -33,6 +33,27 @@ steps:
 	}
 }
 
+func TestParseStepDocker(t *testing.T) {
+	data := []byte(`
+steps:
+  - name: build
+    run: go build ./...
+  - name: image
+    run: docker build -t app .
+    docker: true
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Steps[0].Docker {
+		t.Error("first step should not have docker enabled")
+	}
+	if !cfg.Steps[1].Docker {
+		t.Error("second step should have docker enabled")
+	}
+}
+
 func TestParseNoSteps(t *testing.T) {
 	if _, err := Parse([]byte("name: build\nsteps: []\n")); err == nil {
 		t.Fatal("expected error for empty steps")

@@ -6,7 +6,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/pici ./cmd/pici
+ARG LDFLAGS=""
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w ${LDFLAGS}" \
+    -o /out/pici ./cmd/pici
 
 FROM docker:dind
 
