@@ -18,14 +18,11 @@ if [ -z "$PICI_REPO_SLUG" ]; then
 fi
 
 echo "building version $version..."
-mkdir -p dist
-go build -trimpath -ldflags "-s -w -X main.buildVersion=${version}" -o dist/pici-linux-amd64 ./cmd/pici
-go build -trimpath -ldflags "-s -w -X main.buildVersion=${version}" -o dist/pici-cli-linux-amd64 ./cmd/pici-cli
+task release VERSION="$version"
 
 echo "creating release $version on $PICI_REPO_SLUG..."
 gh release create "$version" \
   --repo "$PICI_REPO_SLUG" \
   --title "$version" \
   --generate-notes \
-  dist/pici-linux-amd64 \
-  dist/pici-cli-linux-amd64
+  dist/*

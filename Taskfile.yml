@@ -3,6 +3,7 @@ version: "3"
 vars:
   PKG: ./...
   GCL_VERSION: v2.14.0
+  TARGETS: linux/amd64 darwin/arm64
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
   GOBIN:
@@ -24,6 +25,21 @@ tasks:
       - go build {{.PKG}}
       - go build -ldflags "-X main.buildVersion={{.VERSION}}" -o dist/pici ./cmd/pici
       - go build -ldflags "-X main.buildVersion={{.VERSION}}" -o dist/pici-cli ./cmd/pici-cli
+
+  release:
+    desc: Cross-compile release binaries (TARGETS defaults to linux/amd64 darwin/arm64)
+    cmds:
+      - mkdir -p dist
+      - |
+        for target in {{.TARGETS}}; do
+          os=${target%%/*}
+          arch=${target##*/}
+          for cmd in pici pici-cli; do
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.buildVersion={{.VERSION}}" \
+              -o "dist/${cmd}-${os}-${arch}" "./cmd/${cmd}"
+          done
+        done
 
   test:
     desc: Run tests
@@ -64,7 +80,7 @@ tasks:
     status:
       - test -x {{.PRETTIER}}
     cmds:
-      - npm install
+      - '{{if eq .CI "true"}}npm ci{{else}}npm install{{end}}'
 
   djlint:install:
     desc: Install djlint (Go html/template formatter)
@@ -114,7 +130,7 @@ tasks:
     desc: Install the UI build dependencies (Tailwind, daisyUI, htmx)
     dir: internal/web
     cmds:
-      - npm install
+      - '{{if eq .CI "true"}}npm ci{{else}}npm install{{end}}'
 
   ui:build:
     desc: Build the embedded UI assets (app.css and htmx)
@@ -143,7 +159,7 @@ tasks:
     desc: Install docs dependencies
     dir: docs
     cmds:
-      - npm install
+      - '{{if eq .CI "true"}}npm ci{{else}}npm install{{end}}'
 
   docs:dev:
     desc: Serve docs locally

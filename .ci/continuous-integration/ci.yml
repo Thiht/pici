@@ -2,10 +2,7 @@ name: continuous-integration
 
 steps:
   - name: build
-    run: |
-      version="$PICI_VERSION"
-      go build -ldflags "-X main.buildVersion=$version" -o dist/pici ./cmd/pici
-      go build -ldflags "-X main.buildVersion=$version" -o dist/pici-cli ./cmd/pici-cli
+    run: task build VERSION="$PICI_VERSION"
     timeout: 10m
     artifacts:
       - dist/**
