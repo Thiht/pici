@@ -13,6 +13,13 @@ RUN CGO_ENABLED=0 go build -trimpath \
 
 FROM docker:dind
 
+ARG VERSION=""
+ARG REVISION=""
+
+LABEL org.opencontainers.image.source=https://github.com/Thiht/pici
+LABEL org.opencontainers.image.version=${VERSION}
+LABEL org.opencontainers.image.revision=${REVISION}
+
 ENV DOCKER_TLS_CERTDIR=""
 
 RUN mkdir -p /data
