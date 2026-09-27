@@ -113,6 +113,16 @@ func ListRefs(ctx context.Context, url string, a Auth) (Refs, error) {
 	return out, nil
 }
 
+// IsTag reports whether ref exists as a tag in the repository at dir.
+func IsTag(dir, ref string) bool {
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return false
+	}
+	_, err = repo.Reference(plumbing.NewTagReferenceName(ref), false)
+	return err == nil
+}
+
 func cloneRef(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, ref string) error {
 	opts := *base
 	opts.ReferenceName = plumbing.NewBranchReferenceName(ref)
@@ -134,6 +144,7 @@ func cloneRef(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, ref 
 
 func cloneAndCheckout(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, hash plumbing.Hash, shallow bool) error {
 	opts := *base
+	opts.SingleBranch = false
 	if !shallow {
 		opts.Depth = 0
 	}
