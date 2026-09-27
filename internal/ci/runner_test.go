@@ -67,6 +67,21 @@ func TestBuildEnvSnapshotSource(t *testing.T) {
 	}
 }
 
+func TestBuildEnvGitIdentity(t *testing.T) {
+	env := buildEnv(stores.Project{}, stores.Execution{}, "/workspace", "abcdef12345", "abcdef1")
+	for _, want := range []string{
+		"GIT_CONFIG_COUNT=3",
+		"GIT_CONFIG_KEY_1=user.name",
+		"GIT_CONFIG_VALUE_1=pici",
+		"GIT_CONFIG_KEY_2=user.email",
+		"GIT_CONFIG_VALUE_2=pici@localhost",
+	} {
+		if !slices.Contains(env, want) {
+			t.Errorf("missing %q in %v", want, env)
+		}
+	}
+}
+
 func TestMaterializeSnapshot(t *testing.T) {
 	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 	snapshotID := uuid.MustParse("66666666-6666-6666-6666-666666666666")

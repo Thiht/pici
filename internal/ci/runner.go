@@ -580,10 +580,15 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, ver
 		"PICI_REPO_DIR=" + mountPath,
 		"PICI_WORKFLOW_DIR=" + mountPath + "/.ci/" + exec.Workflow,
 		// Trust the mounted repo whatever its uid/gid, so git and go's VCS
-		// stamping work without any per-workflow setup.
-		"GIT_CONFIG_COUNT=1",
+		// stamping work without any per-workflow setup. The default identity
+		// lets steps commit without configuring user.name/user.email.
+		"GIT_CONFIG_COUNT=3",
 		"GIT_CONFIG_KEY_0=safe.directory",
 		"GIT_CONFIG_VALUE_0=*",
+		"GIT_CONFIG_KEY_1=user.name",
+		"GIT_CONFIG_VALUE_1=pici",
+		"GIT_CONFIG_KEY_2=user.email",
+		"GIT_CONFIG_VALUE_2=pici@localhost",
 	}
 }
 

@@ -126,7 +126,7 @@ Filtering applies to webhook-triggered runs only; `pici-cli run`, schedules and 
 | `PICI_REPO_DIR`     | mount path of the repo (default `/workspace`)                |
 | `PICI_WORKFLOW_DIR` | mount path of the workflow folder                            |
 
-Git is pre-configured to trust the mounted repo (`safe.directory`), so `git` commands and Go's VCS stamping work out of the box regardless of uid/gid. No `git config` setup is needed in your steps.
+Git is pre-configured to trust the mounted repo (`safe.directory`) and to commit with a default identity (`user.name=pici`, `user.email=pici@localhost`), so `git` commands, commits and Go's VCS stamping work out of the box regardless of uid/gid. Override the identity with `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` if needed.
 
 ## Validate a ci.yml
 
