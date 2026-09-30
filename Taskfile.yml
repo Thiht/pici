@@ -98,6 +98,13 @@ tasks:
       - python3 -m venv .venv-djlint
       - .venv-djlint/bin/pip install --quiet --upgrade djlint
 
+  hooks:install:
+    desc: Install git hooks into .git/hooks
+    status:
+      - diff -q scripts/hooks/pre-push .git/hooks/pre-push >/dev/null 2>&1
+    cmds:
+      - cp scripts/hooks/pre-push .git/hooks/pre-push
+
   check:
     desc: Format check, lint and test
     deps: [fmt:check, lint, test]
