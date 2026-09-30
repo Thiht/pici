@@ -9,7 +9,7 @@ import (
 // handling https, ssh and scp-like (git@host:owner/repo) syntaxes.
 func ParseRemote(repoURL string) (host, path string, ok bool) {
 	s := strings.TrimSuffix(repoURL, ".git")
-	if i := strings.Index(s, "://"); i >= 0 {
+	if found := strings.Contains(s, "://"); found {
 		u, err := url.Parse(s)
 		if err != nil {
 			return "", "", false

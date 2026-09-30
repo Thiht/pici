@@ -25,8 +25,8 @@ func ParseRepo(repoURL string) (base, path string, ok bool) {
 		return "", "", false
 	}
 	scheme := "https"
-	if i := strings.Index(repoURL, "://"); i >= 0 {
-		scheme = repoURL[:i]
+	if before, _, ok := strings.Cut(repoURL, "://"); ok {
+		scheme = before
 	}
 	return scheme + "://" + host, path, true
 }

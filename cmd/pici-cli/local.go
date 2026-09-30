@@ -40,7 +40,7 @@ func buildSnapshot(dir string, w io.Writer) error {
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 
-	for _, rel := range strings.Split(out, "\x00") {
+	for rel := range strings.SplitSeq(out, "\x00") {
 		if rel == "" {
 			continue
 		}

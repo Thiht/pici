@@ -69,8 +69,7 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Request, project stores.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxSnapshotSize)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			render.Error(w, http.StatusRequestEntityTooLarge, errors.New("snapshot exceeds maximum size"))
 			return
 		}

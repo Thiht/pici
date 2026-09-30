@@ -226,14 +226,14 @@ func TestExecutionTemplateHidesZeroExitCode(t *testing.T) {
 	started := time.Now()
 	finished := started.Add(time.Second)
 	data := executionPage{
-		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
 			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
 			CreatedAt: started, StartedAt: &started, FinishedAt: &finished,
 		},
 		Steps: []stepView{
-			{StepResult: stores.StepResult{Name: "ok", Status: stores.StepStatusSuccess, ExitCode: 0, StartedAt: &started, FinishedAt: &finished}},
-			{StepResult: stores.StepResult{Name: "bad", Status: stores.StepStatusFailed, ExitCode: 2, Error: "exit code 2", StartedAt: &started, FinishedAt: &finished}},
+			{Name: "ok", Status: stores.StepStatusSuccess, ExitCode: 0, StartedAt: &started, FinishedAt: &finished},
+			{Name: "bad", Status: stores.StepStatusFailed, ExitCode: 2, Error: "exit code 2", StartedAt: &started, FinishedAt: &finished},
 		},
 	}
 	var buf strings.Builder
@@ -254,7 +254,7 @@ func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	setupFinished := started.Add(10 * time.Second)
 	finished := started.Add(30 * time.Second)
 	data := executionPage{
-		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
 			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
 			CreatedAt: started, StartedAt: &started, SetupFinishedAt: &setupFinished, FinishedAt: &finished,
@@ -274,14 +274,14 @@ func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 	started := time.Now()
 	data := executionPage{
-		base: base{Title: "Execution", Active: "projects", Version: "dev"},
+		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
 			ID: 42, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
 			Workflow: "build", Ref: "main", Status: stores.StatusRunning,
 			CreatedAt: started, StartedAt: &started,
 		},
 		Steps: []stepView{
-			{LogSource: "compile", StepResult: stores.StepResult{Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started}},
+			{LogSource: "compile", Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started},
 		},
 		Running: true,
 	}
@@ -670,7 +670,7 @@ func TestProjectCacheUnavailableWithoutDocker(t *testing.T) {
 
 func TestProjectCacheTemplateRenders(t *testing.T) {
 	data := projectCachePage{
-		base:        base{Title: "Cache", Active: "projects", Version: "dev"},
+		Title: "Cache", Active: "projects", Version: "dev",
 		Project:     stores.Project{Name: "demo"},
 		Images:      []cacheImage{{Tag: "pici/x-build", Size: 2048, Created: time.Now()}},
 		Volumes:     []cacheVolume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
