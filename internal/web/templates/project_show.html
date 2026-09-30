@@ -131,7 +131,8 @@
 
 {{define "refs"}}
   {{if or .Branches .Tags}}
-    <select class="select w-full truncate" name="ref"
+    <select class="select w-full truncate"
+            name="ref"
             hx-get="/projects/{{.ProjectID}}/configs"
             hx-include="this"
             hx-trigger="change"
@@ -151,7 +152,11 @@
 {{end}}
 </select>
 {{else}}
-<input class="input w-full" type="text" name="ref" value="{{.Default}}" placeholder="main"
+<input class="input w-full"
+       type="text"
+       name="ref"
+       value="{{.Default}}"
+       placeholder="main"
        hx-get="/projects/{{.ProjectID}}/configs"
        hx-include="this"
        hx-trigger="change"
