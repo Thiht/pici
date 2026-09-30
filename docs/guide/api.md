@@ -52,6 +52,7 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 | `GET`  | `/api/projects/{id}/executions/{executionID}/steps/{step}/logs` | a single step's logs        |
 | `POST` | `/api/projects/{id}/executions/{executionID}/cancel`            | cancel a running execution  |
 | `POST` | `/api/projects/{id}/executions/{executionID}/rebuild`           | re-run with the same commit |
+| `POST` | `/api/projects/{id}/executions/{executionID}/retry`            | retry failed steps          |
 
 `POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes; such executions are `source: snapshot` and cannot be rebuilt.
 
@@ -145,4 +146,8 @@ An execution looks like:
 
 Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
-`status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`. `source` is `git` or `snapshot`.
+`status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`, `retry`. `source` is `git` or `snapshot`.
+
+`POST .../retry` retries the failed steps of a git execution, reusing its
+workspace. It returns `409` when the execution is not retryable (not failed,
+a snapshot, or already running) and `410` when the workspace is gone.

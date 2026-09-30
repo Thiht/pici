@@ -97,6 +97,24 @@ Dependency caches are also **detected automatically** from files at the repo roo
 
 Explicit `env`/`cache` in `ci.yml` still work and take precedence (or add extra paths).
 
+### Re-running failed steps
+
+When a git run fails, you can re-run **only the steps that failed or were
+skipped**, without redoing the successful ones. pici reuses the failed run's
+workspace (repo, installed dependencies, build outputs) and records the attempt
+as a new execution linked to the original.
+
+From the web UI, use **Retry failed steps** on the failed execution. From the
+CLI:
+
+```sh
+pici-cli retry demo 42
+```
+
+A retry is possible while the workspace still exists — it is kept for `gc-keep`
+(default 24h) after the last linked execution finishes. Snapshot (`--local`)
+runs cannot be retried.
+
 ### Concurrency groups
 
 `concurrency` cancels any currently-running execution in the same group (same project) when a new one starts, so only the latest build of a branch/deployment keeps running.

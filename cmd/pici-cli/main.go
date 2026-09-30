@@ -55,6 +55,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		newCacheCmd(c),
 		newCancelCmd(c),
 		newRebuildCmd(c),
+		newRetryCmd(c),
 		newArtifactsCmd(c),
 		newValidateCmd(c),
 		newHealthCmd(c),
@@ -460,6 +461,30 @@ func newRebuildCmd(c *client.Client) *cobra.Command {
 				return err
 			}
 			exec, err := c.RebuildExecution(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			return output(exec)
+		},
+	}
+	cmd.ValidArgsFunction = noCompletions
+	return cmd
+}
+
+func newRetryCmd(c *client.Client) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retry <project> <execution-id>",
+		Short: "Retry the failed steps of an execution",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := applyFormat(cmd); err != nil {
+				return err
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			exec, err := c.RetryExecution(context.Background(), args[0], id)
 			if err != nil {
 				return err
 			}

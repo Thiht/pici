@@ -629,6 +629,30 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/projects/{id}/executions/{executionID}/retry:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExecutionId"
+    post:
+      tags: [Executions]
+      summary: Retry the failed steps, reusing the workspace
+      operationId: retryExecution
+      responses:
+        "202":
+          description: Execution enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Execution"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not retryable (not failed, snapshot, or already running)
+        "410":
+          description: Workspace no longer available
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/projects/{id}/executions/{executionID}/artifacts:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -880,7 +904,7 @@ components:
 
     Trigger:
       type: string
-      enum: [manual, webhook, cron, rebuild]
+      enum: [manual, webhook, cron, rebuild, retry]
 
     Source:
       type: string
@@ -1098,6 +1122,11 @@ components:
         created_at:
           type: string
           format: date-time
+        parent_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: The execution this one was derived from (rebuild or retry).
 
     ExecutionRequest:
       type: object

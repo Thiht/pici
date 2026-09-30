@@ -22,6 +22,10 @@ func (c *Client) RebuildExecution(ctx context.Context, project string, id int64)
 	return doJSON[Execution](c, ctx, http.MethodPost, fmt.Sprintf("/api/projects/%s/executions/%d/rebuild", project, id), nil)
 }
 
+func (c *Client) RetryExecution(ctx context.Context, project string, id int64) (Execution, error) {
+	return doJSON[Execution](c, ctx, http.MethodPost, fmt.Sprintf("/api/projects/%s/executions/%d/retry", project, id), nil)
+}
+
 func (c *Client) GetExecution(ctx context.Context, project string, id int64) (Execution, error) {
 	return getJSON[Execution](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d", project, id))
 }

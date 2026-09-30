@@ -30,6 +30,7 @@ const (
 	TriggerWebhook = stores.TriggerWebhook
 	TriggerCron    = stores.TriggerCron
 	TriggerRebuild = stores.TriggerRebuild
+	TriggerRetry   = stores.TriggerRetry
 
 	StepStatusPending  = stores.StepStatusPending
 	StepStatusRunning  = stores.StepStatusRunning

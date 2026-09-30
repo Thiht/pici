@@ -9,6 +9,7 @@
 /.agents/
 /.claude/
 /skills-lock.json
+/docs/superpowers/
 
 # UI build dependencies (the compiled app.css is committed)
 node_modules/

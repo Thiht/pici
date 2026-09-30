@@ -95,6 +95,7 @@ pici-cli vars rm NPM_TOKEN --project demo
 # cancel or re-run an execution
 pici-cli cancel demo 42
 pici-cli rebuild demo 42
+pici-cli retry demo 42   # retry the failed steps, reusing the workspace
 ```
 
 ## Artifacts
