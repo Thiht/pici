@@ -126,6 +126,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/steps/{step}/logs", h.StepLogs)
 	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/cancel", h.ExecutionCancel)
 	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/rebuild", h.ExecutionRebuild)
+	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/retry", h.ExecutionRetry)
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.ArtifactDownload)
 
 	return middlewares.Log(middlewares.Auth(h.apiToken, mux))

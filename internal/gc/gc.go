@@ -82,7 +82,12 @@ func (c *Collector) cleanupWorkspaces(ctx context.Context) {
 				continue
 			}
 			id, err := strconv.ParseInt(e.Name(), 10, 64)
-			if err != nil || c.expired(ctx, projectID, id, cutoff) {
+			if err != nil {
+				_ = os.RemoveAll(filepath.Join(projPath, e.Name()))
+				continue
+			}
+			retained, err := c.Store.WorkspaceRetained(ctx, projectID, id, cutoff)
+			if err != nil || !retained {
 				_ = os.RemoveAll(filepath.Join(projPath, e.Name()))
 			}
 		}

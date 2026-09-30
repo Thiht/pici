@@ -287,6 +287,9 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.Source == "" {
 		e.Source = SourceGit
 	}
+	if e.WorkspaceID == nil {
+		e.WorkspaceID = &e.ID
+	}
 	var startedMs, setupFinishedMs, finishedMs any
 	if e.StartedAt != nil {
 		startedMs = e.StartedAt.UnixMilli()
@@ -310,9 +313,9 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 		snapshotID = e.SnapshotID.String()
 	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID); err != nil {
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -344,10 +347,10 @@ func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id 
 	var startedMs, setupFinishedMs, finishedMs *int64
 	var createdMs int64
 	err := s.db.QueryRowContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
         FROM executions
         WHERE project_id = ? AND id = ?
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID)
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -386,7 +389,7 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
         FROM executions
         WHERE project_id = ?
         ORDER BY id DESC
@@ -404,7 +407,7 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		var snapshotID *string
 		var startedMs, setupFinishedMs, finishedMs *int64
 		var createdMs int64
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID); err != nil {
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
@@ -516,8 +519,27 @@ func (s *sqliteStore) CancelRunningInGroup(ctx context.Context, projectID uuid.U
         UPDATE executions
         SET cancel_requested = 1
         WHERE project_id = ? AND concurrency_group = ? AND status = ? AND id != ?
-    `, projectID.String(), group, StatusRunning, excludeID)
+	`, projectID.String(), group, StatusRunning, excludeID)
 	return err
+}
+
+func (s *sqliteStore) WorkspaceBusy(ctx context.Context, projectID uuid.UUID, workspaceID int64) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM executions
+        WHERE project_id = ? AND workspace_id = ? AND status IN (?, ?)
+    `, projectID.String(), workspaceID, StatusPending, StatusRunning).Scan(&n)
+	return n > 0, err
+}
+
+func (s *sqliteStore) WorkspaceRetained(ctx context.Context, projectID uuid.UUID, workspaceID int64, cutoff time.Time) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM executions
+        WHERE project_id = ? AND workspace_id = ?
+          AND (status IN (?, ?) OR finished_at IS NULL OR finished_at >= ?)
+    `, projectID.String(), workspaceID, StatusPending, StatusRunning, cutoff.UnixMilli()).Scan(&n)
+	return n > 0, err
 }
 
 func (s *sqliteStore) UpsertSchedule(ctx context.Context, sch Schedule) error {

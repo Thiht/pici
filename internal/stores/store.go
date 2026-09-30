@@ -49,6 +49,9 @@ type Store interface {
 	CountPendingExecutions(ctx context.Context) (int, error)
 	CancelRunningInGroup(ctx context.Context, projectID uuid.UUID, group string, excludeID int64) error
 
+	WorkspaceBusy(ctx context.Context, projectID uuid.UUID, workspaceID int64) (bool, error)
+	WorkspaceRetained(ctx context.Context, projectID uuid.UUID, workspaceID int64, cutoff time.Time) (bool, error)
+
 	UpsertSchedule(ctx context.Context, s Schedule) error
 	DeleteSchedule(ctx context.Context, projectID uuid.UUID, workflow string) error
 	ListSchedules(ctx context.Context) ([]Schedule, error)

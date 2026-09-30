@@ -272,13 +272,49 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 		return
 	}
-	execution, err := h.runner.Enqueue(r.Context(), project, previous.Workflow, previous.Ref, previous.CommitSHA, stores.TriggerRebuild)
+	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	setFlash(w, "success", "Rebuild queued.")
 	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ID, 10))
+}
+
+func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
+	if !h.validCSRF(r) {
+		h.csrfError(w, r)
+		return
+	}
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		h.notFound(w, r)
+		return
+	}
+	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+
+	_, err = h.runner.EnqueueRetry(r.Context(), project, previous)
+	switch {
+	case errors.Is(err, ci.ErrWorkspaceGone):
+		setFlash(w, "error", "The workspace is no longer available.")
+	case errors.Is(err, ci.ErrNotRetryable):
+		setFlash(w, "error", "This execution cannot be retried.")
+	case err != nil:
+		h.serverError(w, r, err)
+		return
+	default:
+		setFlash(w, "success", "Retry queued.")
+	}
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {

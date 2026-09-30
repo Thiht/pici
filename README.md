@@ -173,12 +173,16 @@ GET   /api/projects/{id}/executions                        list executions
 GET   /api/projects/{id}/executions/{executionID}          get an execution
 GET   /api/projects/{id}/executions/{executionID}/logs     stream logs
 POST  /api/projects/{id}/executions/{executionID}/cancel   cancel a running execution
+POST  /api/projects/{id}/executions/{executionID}/rebuild  re-run with the same commit
+POST  /api/projects/{id}/executions/{executionID}/retry   retry failed steps (reuses the workspace)
 ```
 
 ```sh
 pici-cli run demo build
 
 pici-cli logs demo 42
+
+pici-cli retry demo 42
 ```
 
 ### Cache
@@ -226,6 +230,7 @@ GET    /badge/{id}?workflow=build&label=build
 - Parallel steps, retries, per-step logs, tag/branch filters, path filters, workflow-level `env`.
 - GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
+- Partial re-run of failed steps, reusing the failed run's workspace.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
 - Streaming logs (SSE) in the UI and on the API, public README status badges, graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
@@ -246,7 +251,7 @@ Check the running build with `pici-cli version` (local) or `pici-cli version --s
 
 An embedded management UI is served at `/` by the same binary (server-rendered Go
 templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
-projects, variables & secrets, triggering/cancelling/rebuilding executions, per-step
+projects, variables & secrets, triggering/cancelling/rebuilding/retrying executions, per-step
 and full logs, artifacts, and per-project Docker cache (images and cache volumes).
 
 When `PICI_API_TOKEN` is set, the UI asks for it once and stores it in an `HttpOnly`

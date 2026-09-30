@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -171,5 +173,86 @@ func writeSnapshot(t *testing.T, path string, files map[string]string) {
 	}
 	if err := gz.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEnqueueRetry(t *testing.T) {
+	ctx := context.Background()
+	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	projectID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	project := stores.Project{ID: projectID, Name: "demo", RepoURL: "https://example.com/acme/demo.git", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if _, err := store.CreateProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := t.TempDir()
+	r := &Runner{Store: store, WorkspaceDir: ws}
+
+	previous := stores.Execution{
+		ProjectID: projectID, Workflow: "build", Ref: "main", CommitSHA: "abc",
+		Status: stores.StatusFailed, Source: stores.SourceGit, CreatedAt: time.Now(),
+		Steps: stores.Steps{
+			{Name: "install", Status: stores.StepStatusSuccess},
+			{Name: "test", Status: stores.StepStatusFailed},
+			{Name: "deploy", Status: stores.StepStatusSkipped},
+		},
+	}
+	if err := store.CreateExecution(ctx, &previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(ws, projectID.String(), strconv.FormatInt(previous.ID, 10)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	exec, err := r.EnqueueRetry(ctx, project, previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exec.Trigger != stores.TriggerRetry || exec.ParentID == nil || *exec.ParentID != previous.ID {
+		t.Fatalf("unexpected retry: %+v", exec)
+	}
+	if exec.WorkspaceID == nil || *exec.WorkspaceID != previous.ID {
+		t.Fatalf("workspace should point to parent: %+v", exec.WorkspaceID)
+	}
+
+	if _, err := r.EnqueueRetry(ctx, project, previous); !errors.Is(err, ErrNotRetryable) {
+		t.Fatalf("second retry should be rejected while busy, got %v", err)
+	}
+
+	noWorkspace := stores.Execution{
+		ProjectID: projectID, Workflow: "build", Status: stores.StatusFailed, Source: stores.SourceGit,
+		Steps: stores.Steps{{Name: "test", Status: stores.StepStatusFailed}}, CreatedAt: time.Now(),
+	}
+	if err := store.CreateExecution(ctx, &noWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.EnqueueRetry(ctx, project, noWorkspace); !errors.Is(err, ErrWorkspaceGone) {
+		t.Fatalf("missing workspace should be rejected, got %v", err)
+	}
+}
+
+func TestCarryOverSteps(t *testing.T) {
+	carry := carryOverSteps(stores.Steps{
+		{Name: "install", Status: stores.StepStatusSuccess},
+		{Name: "test", Status: stores.StepStatusFailed},
+		{Name: "deploy", Status: stores.StepStatusSkipped},
+	})
+	if len(carry) != 1 {
+		t.Fatalf("expected only successful steps to carry, got %v", carry)
+	}
+	if _, ok := carry["install"]; !ok {
+		t.Fatalf("install should carry")
+	}
+}
+
+func TestStepIndexByName(t *testing.T) {
+	steps := stores.Steps{{Name: "a"}, {Name: "b"}}
+	if got := stepIndexByName(steps, "b"); got != 1 {
+		t.Fatalf("stepIndexByName = %d, want 1", got)
 	}
 }

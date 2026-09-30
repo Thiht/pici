@@ -17,7 +17,7 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string, onUpdate func(stores.Steps)) (stores.Steps, bool, bool) {
+func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string, carryOver map[string]stores.StepResult, onUpdate func(stores.Steps)) (stores.Steps, bool, bool) {
 	steps := cfg.Steps
 	order, err := orderSteps(steps)
 	if err != nil {
@@ -53,6 +53,21 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 
 	results := make([]stores.StepResult, len(steps))
 	statuses := make([]stores.StepStatus, len(steps))
+
+	for i, n := range order {
+		res, ok := carryOver[n]
+		if !ok {
+			continue
+		}
+		res.Name = n
+		if res.Status == "" {
+			res.Status = stores.StepStatusSuccess
+		}
+		results[i] = res
+		statuses[i] = res.Status
+		progress[i] = res
+	}
+	notify(slices.Clone(progress))
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -127,7 +142,17 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	}
 
 	for _, s := range steps {
-		if len(s.DependsOn) == 0 {
+		if _, carried := carryOver[s.Name]; carried {
+			continue
+		}
+		ready := true
+		for _, d := range s.DependsOn {
+			if statuses[pos[d]] == "" {
+				ready = false
+				break
+			}
+		}
+		if ready {
 			launch(s.Name)
 		}
 	}
@@ -331,4 +356,13 @@ func findStep(steps []Step, name string) Step {
 		}
 	}
 	return Step{}
+}
+
+func stepIndexByName(steps stores.Steps, name string) int {
+	for i, s := range steps {
+		if s.Name == name {
+			return i
+		}
+	}
+	return 0
 }

@@ -15,7 +15,7 @@ type AuthType string
 type Status string
 
 // Trigger is what caused an execution to run.
-// ENUM(manual, webhook, cron, rebuild)
+// ENUM(manual, webhook, cron, rebuild, retry)
 type Trigger string
 
 // StepStatus is the lifecycle status of a single step.

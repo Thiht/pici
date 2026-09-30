@@ -52,7 +52,7 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 | `GET`  | `/api/projects/{id}/executions/{executionID}/steps/{step}/logs` | a single step's logs        |
 | `POST` | `/api/projects/{id}/executions/{executionID}/cancel`            | cancel a running execution  |
 | `POST` | `/api/projects/{id}/executions/{executionID}/rebuild`           | re-run with the same commit |
-| `POST` | `/api/projects/{id}/executions/{executionID}/retry`            | retry failed steps          |
+| `POST` | `/api/projects/{id}/executions/{executionID}/retry`             | retry failed steps          |
 
 `POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes; such executions are `source: snapshot` and cannot be rebuilt.
 

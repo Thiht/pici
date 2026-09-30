@@ -28,6 +28,11 @@ import (
 
 const maxParallelSteps = 8
 
+var (
+	ErrNotRetryable  = errors.New("execution is not retryable")
+	ErrWorkspaceGone = errors.New("workspace no longer available")
+)
+
 type execKey struct {
 	projectID uuid.UUID
 	id        int64
@@ -177,6 +182,72 @@ func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, wo
 	})
 }
 
+func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, previous stores.Execution) (stores.Execution, error) {
+	parentID := previous.ID
+	return r.enqueue(ctx, stores.Execution{
+		ProjectID: project.ID,
+		Project:   project.Name,
+		Workflow:  previous.Workflow,
+		Ref:       previous.Ref,
+		CommitSHA: previous.CommitSHA,
+		Trigger:   stores.TriggerRebuild,
+		Source:    stores.SourceGit,
+		ParentID:  &parentID,
+		CreatedAt: time.Now(),
+	})
+}
+
+func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previous stores.Execution) (stores.Execution, error) {
+	if previous.Source != stores.SourceGit {
+		return stores.Execution{}, fmt.Errorf("%w: snapshot executions cannot be retried", ErrNotRetryable)
+	}
+	if previous.Status != stores.StatusFailed {
+		return stores.Execution{}, fmt.Errorf("%w: only failed executions can be retried", ErrNotRetryable)
+	}
+	if !hasRetryableSteps(previous.Steps) {
+		return stores.Execution{}, fmt.Errorf("%w: execution has no failed or skipped steps", ErrNotRetryable)
+	}
+
+	workspaceID := previous.ID
+	if previous.WorkspaceID != nil {
+		workspaceID = *previous.WorkspaceID
+	}
+	dir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(workspaceID, 10))
+	if _, err := os.Stat(dir); err != nil {
+		return stores.Execution{}, fmt.Errorf("%w: %s", ErrWorkspaceGone, dir)
+	}
+	busy, err := r.Store.WorkspaceBusy(ctx, project.ID, workspaceID)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	if busy {
+		return stores.Execution{}, fmt.Errorf("%w: another attempt is already running", ErrNotRetryable)
+	}
+
+	parentID := previous.ID
+	return r.enqueue(ctx, stores.Execution{
+		ProjectID:   project.ID,
+		Project:     project.Name,
+		Workflow:    previous.Workflow,
+		Ref:         previous.Ref,
+		CommitSHA:   previous.CommitSHA,
+		Trigger:     stores.TriggerRetry,
+		Source:      stores.SourceGit,
+		ParentID:    &parentID,
+		WorkspaceID: &workspaceID,
+		CreatedAt:   time.Now(),
+	})
+}
+
+func hasRetryableSteps(steps stores.Steps) bool {
+	for _, s := range steps {
+		if s.Status == stores.StepStatusFailed || s.Status == stores.StepStatusSkipped {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) enqueue(ctx context.Context, exec stores.Execution) (stores.Execution, error) {
 	if exec.Status == "" {
 		exec.Status = stores.StatusPending
@@ -223,8 +294,19 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 
 	fmt.Fprintf(setupLog, "pici: starting workflow %q on %s\n", exec.Workflow, exec.Ref)
 
-	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(exec.ID, 10))
-	if err := r.materializeSource(ctx, project, exec, repoDir); err != nil {
+	workspaceID := exec.ID
+	if exec.WorkspaceID != nil {
+		workspaceID = *exec.WorkspaceID
+	}
+	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(workspaceID, 10))
+	isRetry := exec.Trigger == stores.TriggerRetry
+	if isRetry {
+		if _, err := os.Stat(repoDir); err != nil {
+			fmt.Fprintf(setupLog, "workspace unavailable: %v\n", err)
+			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
+			return
+		}
+	} else if err := r.materializeSource(ctx, project, exec, repoDir); err != nil {
 		fmt.Fprintf(setupLog, "prepare source failed: %v\n", err)
 		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
 		return
@@ -258,16 +340,43 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		}
 	}
 
+	var parent stores.Execution
+	var carry map[string]stores.StepResult
+	if isRetry && exec.ParentID != nil {
+		if loaded, err := r.Store.GetExecution(ctx, project.ID, *exec.ParentID); err == nil {
+			parent = loaded
+			carry = carryOverSteps(loaded.Steps)
+		}
+	}
+
 	// Persist the planned step order up front so the UI can name steps (and
 	// their artifacts) as soon as the workflow is parsed, before the runner
-	// image is built.
+	// image is built. On a retry, successful steps carry their parent result.
 	if order, err := orderSteps(cfg.Steps); err == nil {
 		planned := make(stores.Steps, len(order))
 		for i, name := range order {
-			planned[i] = stores.StepResult{Name: name, Status: stores.StepStatusPending}
+			if res, ok := carry[name]; ok {
+				planned[i] = res
+			} else {
+				planned[i] = stores.StepResult{Name: name, Status: stores.StepStatusPending}
+			}
 		}
 		exec.Steps = planned
 		_ = r.Store.UpdateExecution(ctx, exec)
+
+		if isRetry && exec.ParentID != nil {
+			for i, name := range order {
+				if _, ok := carry[name]; !ok {
+					continue
+				}
+				src := r.StepLogPath(project.ID, *exec.ParentID, stepIndexByName(parent.Steps, name), name)
+				dst := r.StepLogPath(project.ID, exec.ID, i, name)
+				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err == nil {
+					_ = copyFile(src, dst)
+				}
+				r.collectArtifacts(project.ID, exec.ID, i, findStep(cfg.Steps, name).Artifacts, repoDir)
+			}
+		}
 	}
 
 	if exec.Source != stores.SourceSnapshot {
@@ -339,7 +448,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		defer cancel()
 		_ = r.Store.UpdateExecution(updateCtx, e)
 	}
-	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds, onStepUpdate)
+	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds, carry, onStepUpdate)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
 	exec.FinishedAt = new(time.Now())
@@ -468,6 +577,16 @@ func collectSecrets(vars []stores.Variable, project stores.Project) []string {
 	}
 	if project.WebhookSecret != "" {
 		out = append(out, project.WebhookSecret)
+	}
+	return out
+}
+
+func carryOverSteps(steps stores.Steps) map[string]stores.StepResult {
+	out := make(map[string]stores.StepResult)
+	for _, s := range steps {
+		if s.Status == stores.StepStatusSuccess {
+			out[s.Name] = s
+		}
 	}
 	return out
 }

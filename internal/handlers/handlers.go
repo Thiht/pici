@@ -67,6 +67,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/steps/{step}/logs", h.executions.StepLogs)
 	mux.HandleFunc("POST /api/projects/{id}/executions/{executionID}/cancel", h.executions.Cancel)
 	mux.HandleFunc("POST /api/projects/{id}/executions/{executionID}/rebuild", h.executions.Rebuild)
+	mux.HandleFunc("POST /api/projects/{id}/executions/{executionID}/retry", h.executions.Retry)
 	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/artifacts", h.artifacts.List)
 	mux.HandleFunc("GET /api/projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.artifacts.Download)
 

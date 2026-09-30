@@ -22,6 +22,12 @@
             <button class="btn btn-error btn-sm" type="submit">Cancel</button>
           </form>
         {{end}}
+        {{if and (eq (printf "%s" .Execution.Status) "failed") (ne (printf "%s" .Execution.Source) "snapshot")}}
+          <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/retry">
+            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+            <button class="btn btn-primary btn-sm" type="submit">Retry failed steps</button>
+          </form>
+        {{end}}
         {{if ne (printf "%s" .Execution.Source) "snapshot"}}
           <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild">
             <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
@@ -49,6 +55,15 @@
           {{.Execution.Trigger}}
         </dd>
       </div>
+      {{if .Execution.ParentID}}
+        <div class="flex items-baseline gap-2">
+          <dt class="opacity-60">{{if eq (printf "%s" .Execution.Trigger) "retry"}}Retry of{{else}}Rebuild of{{end}}</dt>
+          <dd>
+            <a class="link link-primary"
+               href="/projects/{{.Project.ID}}/executions/{{.Execution.ParentID}}">#{{.Execution.ParentID}}</a>
+          </dd>
+        </div>
+      {{end}}
     </dl>
 
     <div class="mt-6" aria-label="Execution timeline">

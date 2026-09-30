@@ -155,8 +155,40 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	execution, err := h.runner.Enqueue(r.Context(), project, previous.Workflow, previous.Ref, previous.CommitSHA, stores.TriggerRebuild)
+	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous)
 	if err != nil {
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	render.JSON(w, http.StatusAccepted, execution)
+}
+
+func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		render.Error(w, http.StatusNotFound, err)
+		return
+	}
+	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+
+	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous)
+	switch {
+	case errors.Is(err, ci.ErrWorkspaceGone):
+		render.Error(w, http.StatusGone, err)
+		return
+	case errors.Is(err, ci.ErrNotRetryable):
+		render.Error(w, http.StatusConflict, err)
+		return
+	case err != nil:
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}

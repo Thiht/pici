@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"io/fs"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -65,8 +68,22 @@ func TestMigrations(t *testing.T) {
 	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatalf("goose version table: %v", err)
 	}
-	if version != 4 {
-		t.Fatalf("expected migration version 4, got %d", version)
+
+	// Expect the newest embedded migration, so adding one does not require
+	// editing this test.
+	var expected int64
+	names, err := fs.Glob(migrationsFS, "migrations/sqlite/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		prefix, _, _ := strings.Cut(strings.TrimPrefix(name, "migrations/sqlite/"), "_")
+		if n, err := strconv.ParseInt(prefix, 10, 64); err == nil && n > expected {
+			expected = n
+		}
+	}
+	if version != expected {
+		t.Fatalf("expected migration version %d, got %d", expected, version)
 	}
 }
 
@@ -354,5 +371,80 @@ func TestSecretEncryptionAtRest(t *testing.T) {
 	}
 	if stored == "hunter2" || stored == "" {
 		t.Fatalf("secret stored in plaintext: %q", stored)
+	}
+}
+
+func TestExecutionRetryFields(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	id := mustUUID("11111111-1111-1111-1111-111111111111")
+	if _, err := store.CreateProject(ctx, Project{ID: id, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := Execution{ProjectID: id, Workflow: "build", Status: StatusFailed, CreatedAt: time.Now()}
+	if err := store.CreateExecution(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceID == nil || *first.WorkspaceID != first.ID {
+		t.Fatalf("workspace id should default to self, got %v", first.WorkspaceID)
+	}
+
+	parentID, workspaceID := first.ID, first.ID
+	retried := Execution{ProjectID: id, Workflow: "build", Status: StatusPending, Trigger: TriggerRetry, ParentID: &parentID, WorkspaceID: &workspaceID, CreatedAt: time.Now()}
+	if err := store.CreateExecution(ctx, &retried); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetExecution(ctx, id, retried.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Trigger != TriggerRetry || got.ParentID == nil || *got.ParentID != first.ID {
+		t.Fatalf("unexpected retried execution: %+v", got)
+	}
+	if got.WorkspaceID == nil || *got.WorkspaceID != first.ID {
+		t.Fatalf("workspace id should point to parent, got %v", got.WorkspaceID)
+	}
+}
+
+func TestWorkspaceBusyAndRetained(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	id := mustUUID("22222222-2222-2222-2222-222222222222")
+	if _, err := store.CreateProject(ctx, Project{ID: id, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	owner := Execution{ProjectID: id, Workflow: "build", Status: StatusFailed, FinishedAt: new(time.Now().Add(-time.Hour)), CreatedAt: time.Now()}
+	if err := store.CreateExecution(ctx, &owner); err != nil {
+		t.Fatal(err)
+	}
+
+	busy, err := store.WorkspaceBusy(ctx, id, owner.ID)
+	if err != nil || busy {
+		t.Fatalf("terminal workspace should not be busy (busy=%v err=%v)", busy, err)
+	}
+	retained, err := store.WorkspaceRetained(ctx, id, owner.ID, time.Now().Add(-2*time.Hour))
+	if err != nil || !retained {
+		t.Fatalf("workspace should be retained within cutoff (retained=%v err=%v)", retained, err)
+	}
+	retained, err = store.WorkspaceRetained(ctx, id, owner.ID, time.Now())
+	if err != nil || retained {
+		t.Fatalf("workspace should be expired after cutoff (retained=%v err=%v)", retained, err)
+	}
+
+	parentID, workspaceID := owner.ID, owner.ID
+	child := Execution{ProjectID: id, Workflow: "build", Status: StatusPending, ParentID: &parentID, WorkspaceID: &workspaceID, CreatedAt: time.Now()}
+	if err := store.CreateExecution(ctx, &child); err != nil {
+		t.Fatal(err)
+	}
+	busy, err = store.WorkspaceBusy(ctx, id, owner.ID)
+	if err != nil || !busy {
+		t.Fatalf("workspace should be busy while a child is pending (busy=%v err=%v)", busy, err)
+	}
+	retained, err = store.WorkspaceRetained(ctx, id, owner.ID, time.Now())
+	if err != nil || !retained {
+		t.Fatalf("workspace should be retained while a child is pending (retained=%v err=%v)", retained, err)
 	}
 }

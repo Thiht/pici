@@ -602,6 +602,8 @@ const (
 	TriggerCron Trigger = "cron"
 	// TriggerRebuild is a Trigger of type rebuild.
 	TriggerRebuild Trigger = "rebuild"
+	// TriggerRetry is a Trigger of type retry.
+	TriggerRetry Trigger = "retry"
 )
 
 var ErrInvalidTrigger = fmt.Errorf("not a valid Trigger, try [%s]", strings.Join(_TriggerNames, ", "))
@@ -611,6 +613,7 @@ var _TriggerNames = []string{
 	string(TriggerWebhook),
 	string(TriggerCron),
 	string(TriggerRebuild),
+	string(TriggerRetry),
 }
 
 // TriggerNames returns a list of possible string values of Trigger.
@@ -637,6 +640,7 @@ var _TriggerValue = map[string]Trigger{
 	"webhook": TriggerWebhook,
 	"cron":    TriggerCron,
 	"rebuild": TriggerRebuild,
+	"retry":   TriggerRetry,
 }
 
 // ParseTrigger attempts to convert a string to a Trigger.

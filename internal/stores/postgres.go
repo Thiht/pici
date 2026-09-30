@@ -269,6 +269,9 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if e.Source == "" {
 		e.Source = SourceGit
 	}
+	if e.WorkspaceID == nil {
+		e.WorkspaceID = &e.ID
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -282,9 +285,9 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 		snapshotID = e.SnapshotID.String()
 	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup, e.Source, snapshotID); err != nil {
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -304,10 +307,10 @@ func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, i
 	var projectIDStr string
 	var snapshotID *string
 	err := s.db.QueryRowContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
         FROM executions
         WHERE project_id = $1 AND id = $2
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID)
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -333,7 +336,7 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id
+        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
         FROM executions
         WHERE project_id = $1
         ORDER BY id DESC
@@ -349,7 +352,7 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 		var e Execution
 		var projectIDStr string
 		var snapshotID *string
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID); err != nil {
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
@@ -449,8 +452,27 @@ func (s *postgresStore) CancelRunningInGroup(ctx context.Context, projectID uuid
         UPDATE executions
         SET cancel_requested = true
         WHERE project_id = $1 AND concurrency_group = $2 AND status = $3 AND id != $4
-    `, projectID.String(), group, StatusRunning, excludeID)
+	`, projectID.String(), group, StatusRunning, excludeID)
 	return err
+}
+
+func (s *postgresStore) WorkspaceBusy(ctx context.Context, projectID uuid.UUID, workspaceID int64) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM executions
+        WHERE project_id = $1 AND workspace_id = $2 AND status IN ($3, $4)
+    `, projectID.String(), workspaceID, StatusPending, StatusRunning).Scan(&n)
+	return n > 0, err
+}
+
+func (s *postgresStore) WorkspaceRetained(ctx context.Context, projectID uuid.UUID, workspaceID int64, cutoff time.Time) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM executions
+        WHERE project_id = $1 AND workspace_id = $2
+          AND (status IN ($3, $4) OR finished_at IS NULL OR finished_at >= $5)
+    `, projectID.String(), workspaceID, StatusPending, StatusRunning, cutoff).Scan(&n)
+	return n > 0, err
 }
 
 func (s *postgresStore) UpsertSchedule(ctx context.Context, sch Schedule) error {

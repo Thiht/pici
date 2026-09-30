@@ -92,6 +92,8 @@ type Execution struct {
 	ClaimedBy        string     `json:"-"`
 	CancelRequested  bool       `json:"-"`
 	ConcurrencyGroup string     `json:"-"`
+	ParentID         *int64     `json:"parent_id,omitempty"`
+	WorkspaceID      *int64     `json:"-"`
 	SnapshotID       *uuid.UUID `json:"-"`
 }
 
