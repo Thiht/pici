@@ -66,9 +66,10 @@ tasks:
       - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GCL_VERSION}}
 
   fmt:
-    desc: Format code (gofmt, goimports, gofumpt, prettier, djlint)
+    desc: Format code (go fix, gofmt, goimports, gofumpt, prettier, djlint)
     deps: [prettier:install, djlint:install, gcl:install]
     cmds:
+      - "go fix {{.PKG}}"
       - "{{.GCL}} fmt"
       - '{{.PRETTIER}} --write "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
       - "{{.DJLINT}} --reformat internal/web/templates"
@@ -77,6 +78,7 @@ tasks:
     desc: Check formatting without modifying files
     deps: [prettier:install, djlint:install, gcl:install]
     cmds:
+      - "go fix -diff {{.PKG}}"
       - "{{.GCL}} fmt --diff"
       - '{{.PRETTIER}} --check "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
       - "{{.DJLINT}} --check internal/web/templates"
