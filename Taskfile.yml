@@ -3,6 +3,8 @@ version: "3"
 vars:
   PKG: ./...
   GCL_VERSION: v2.14.0
+  REFLEX_VERSION: v0.3.2
+  SHFMT_VERSION: v3.14.1
   TARGETS: linux/amd64 darwin/arm64
   IMAGE: pici:dev
   VERSION:
@@ -17,6 +19,8 @@ vars:
       if [ -n "$(go env GOBIN)" ]; then echo "$(go env GOBIN)"; else echo "$(go env GOPATH)/bin"; fi
   REFLEX: "{{.GOBIN}}/reflex"
   GCL: "{{.GOBIN}}/golangci-lint"
+  SHFMT: "{{.GOBIN}}/shfmt"
+  SHELLCHECK: shellcheck
   PRETTIER: node_modules/.bin/prettier
   DJLINT: .venv-djlint/bin/djlint
 
@@ -53,10 +57,17 @@ tasks:
       - go test {{.PKG}}
 
   lint:
-    desc: Run golangci-lint
+    desc: Run golangci-lint and shellcheck
     deps: [gcl:install]
     cmds:
       - "{{.GCL}} run"
+      - |
+        if command -v {{.SHELLCHECK}} >/dev/null 2>&1; then
+          files=$(git ls-files "*.sh")
+          [ -z "$files" ] || {{.SHELLCHECK}} -s sh $files
+        else
+          echo "{{.SHELLCHECK}} not installed, skipping"
+        fi
 
   gcl:install:
     desc: Install golangci-lint
@@ -65,23 +76,36 @@ tasks:
     cmds:
       - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GCL_VERSION}}
 
+  shfmt:install:
+    desc: Install shfmt
+    status:
+      - test -x {{.SHFMT}}
+    cmds:
+      - go install mvdan.cc/sh/v3/cmd/shfmt@{{.SHFMT_VERSION}}
+
   fmt:
-    desc: Format code (go fix, gofmt, goimports, gofumpt, prettier, djlint)
-    deps: [prettier:install, djlint:install, gcl:install]
+    desc: Format code (go fix, gofmt, goimports, gofumpt, prettier, djlint, shfmt)
+    deps: [prettier:install, djlint:install, gcl:install, shfmt:install]
     cmds:
       - "go fix {{.PKG}}"
       - "{{.GCL}} fmt"
       - '{{.PRETTIER}} --write "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
       - "{{.DJLINT}} --reformat internal/web/templates"
+      - |
+        files=$(git ls-files "*.sh")
+        [ -z "$files" ] || {{.SHFMT}} -w -i 2 -ci $files
 
   fmt:check:
     desc: Check formatting without modifying files
-    deps: [prettier:install, djlint:install, gcl:install]
+    deps: [prettier:install, djlint:install, gcl:install, shfmt:install]
     cmds:
       - "go fix -diff {{.PKG}}"
       - "{{.GCL}} fmt --diff"
       - '{{.PRETTIER}} --check "**/*.{md,yml,yaml,json,css,js,mjs,vue}"'
       - "{{.DJLINT}} --check internal/web/templates"
+      - |
+        files=$(git ls-files "*.sh")
+        [ -z "$files" ] || {{.SHFMT}} -d -i 2 -ci $files
 
   prettier:install:
     desc: Install prettier
@@ -92,18 +116,20 @@ tasks:
 
   djlint:install:
     desc: Install djlint (Go html/template formatter)
-    status:
-      - test -x {{.DJLINT}}
+    sources:
+      - requirements.txt
+    generates:
+      - .venv-djlint/bin/djlint
     cmds:
       - python3 -m venv .venv-djlint
-      - .venv-djlint/bin/pip install --quiet --upgrade djlint
+      - .venv-djlint/bin/pip install --quiet -r requirements.txt
 
   hooks:install:
     desc: Install git hooks into .git/hooks
     status:
-      - diff -q scripts/hooks/pre-push .git/hooks/pre-push >/dev/null 2>&1
+      - diff -q scripts/hooks/pre-push.sh .git/hooks/pre-push >/dev/null 2>&1
     cmds:
-      - cp scripts/hooks/pre-push .git/hooks/pre-push
+      - cp scripts/hooks/pre-push.sh .git/hooks/pre-push
 
   check:
     desc: Format check, lint and test
@@ -134,7 +160,7 @@ tasks:
     status:
       - test -x {{ .REFLEX }}
     cmds:
-      - go install github.com/cespare/reflex@latest
+      - go install github.com/cespare/reflex@{{.REFLEX_VERSION}}
 
   cli:
     desc: Run the CLI client

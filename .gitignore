@@ -2,6 +2,7 @@
 /pici
 /pici-cli
 /dist/
+/.task/
 *.db
 *.log
 

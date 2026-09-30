@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w ${LDFLAGS}" \
     -o /out/pici ./cmd/pici
 
-FROM docker:dind
+FROM docker:28.5.2-dind
 
 ARG VERSION=""
 ARG REVISION=""

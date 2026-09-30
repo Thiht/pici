@@ -9,7 +9,10 @@ fi
 repo="$PICI_REPO_SLUG"
 case "$PICI_VERSION" in
   v[0-9]*.[0-9]*.[0-9]*) ;;
-  *) echo "ref '$PICI_VERSION' is not a release tag (vX.Y.Z), skipping"; exit 0 ;;
+  *)
+    echo "ref '$PICI_VERSION' is not a release tag (vX.Y.Z), skipping"
+    exit 0
+    ;;
 esac
 
 if [ -z "$repo" ]; then

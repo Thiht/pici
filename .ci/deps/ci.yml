@@ -7,4 +7,4 @@ on:
 steps:
   - name: update
     script: update.sh
-    timeout: 15m
+    timeout: 30m
