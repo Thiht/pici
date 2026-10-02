@@ -56,6 +56,14 @@ tasks:
     cmds:
       - go test {{.PKG}}
 
+  test:cover:
+    desc: Run tests with coverage, writing a report to dist/
+    cmds:
+      - mkdir -p dist
+      - go test -covermode=atomic -coverprofile=dist/coverage.out {{.PKG}}
+      - go tool cover -html=dist/coverage.out -o dist/coverage.html
+      - go tool cover -func=dist/coverage.out | tail -1
+
   test:postgres:
     desc: Run the store tests against a throwaway Postgres
     cmds:

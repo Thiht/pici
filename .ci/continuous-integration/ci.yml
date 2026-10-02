@@ -26,12 +26,16 @@ steps:
     timeout: 10m
 
   - name: test
-    run: task test
+    run: task test:cover
     depends_on: [build]
     timeout: 10m
+    artifacts:
+      - dist/coverage.*
 
   - name: test-postgres
     run: task test:postgres
     docker: true
     depends_on: [build]
     timeout: 10m
+    artifacts:
+      - dist/cover-postgres.out

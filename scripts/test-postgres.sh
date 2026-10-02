@@ -27,4 +27,6 @@ if [ -f /.dockerenv ]; then
   export PGHOST
 fi
 
-go test -tags=postgres ./internal/stores/...
+mkdir -p dist
+go test -tags=postgres -covermode=atomic -coverprofile=dist/cover-postgres.out ./internal/stores/...
+go tool cover -func=dist/cover-postgres.out | tail -1
