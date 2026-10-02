@@ -36,13 +36,15 @@ func NewWebhooksHandler(store stores.Store, runner *ci.Runner, workspaceDir stri
 }
 
 type pushPayload struct {
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	HeadCommit *struct {
-		Added    []string `json:"added"`
-		Removed  []string `json:"removed"`
-		Modified []string `json:"modified"`
-	} `json:"head_commit"`
+	Ref     string       `json:"ref"`
+	After   string       `json:"after"`
+	Commits []pushCommit `json:"commits"`
+}
+
+type pushCommit struct {
+	Added    []string `json:"added"`
+	Removed  []string `json:"removed"`
+	Modified []string `json:"modified"`
 }
 
 type pullRequestPayload struct {
@@ -97,11 +99,13 @@ func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter,
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
+	// Every commit of the push counts for path filters: head_commit alone only
+	// describes the last one.
 	var changed []string
-	if payload.HeadCommit != nil {
-		changed = append(changed, payload.HeadCommit.Added...)
-		changed = append(changed, payload.HeadCommit.Modified...)
-		changed = append(changed, payload.HeadCommit.Removed...)
+	for _, c := range payload.Commits {
+		changed = append(changed, c.Added...)
+		changed = append(changed, c.Modified...)
+		changed = append(changed, c.Removed...)
 	}
 	isTag := strings.HasPrefix(payload.Ref, "refs/tags/")
 	h.trigger(ctx, w, project, "push", normalizeRef(payload.Ref), payload.After, "", changed, isTag)

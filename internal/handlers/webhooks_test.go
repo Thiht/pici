@@ -151,10 +151,8 @@ func TestWebhookPushAllWorkflows(t *testing.T) {
 	payload := map[string]any{
 		"ref":   "refs/heads/main",
 		"after": sha,
-		"head_commit": map[string]any{
-			"added":    []string{"src/main.go"},
-			"modified": []string{},
-			"removed":  []string{},
+		"commits": []map[string]any{
+			{"added": []string{"src/main.go"}},
 		},
 	}
 	rr := sendWebhook(t, s, "demo", "push", "", payload)
@@ -178,10 +176,8 @@ func TestWebhookPushPathFilter(t *testing.T) {
 	payload := map[string]any{
 		"ref":   "refs/heads/main",
 		"after": sha,
-		"head_commit": map[string]any{
-			"added":    []string{"src/foo.go"},
-			"modified": []string{},
-			"removed":  []string{},
+		"commits": []map[string]any{
+			{"added": []string{"src/foo.go"}},
 		},
 	}
 	rr := sendWebhook(t, s, "demo", "push", "", payload)
@@ -192,6 +188,34 @@ func TestWebhookPushPathFilter(t *testing.T) {
 	got := enqueuedWorkflows(t, store, testProjectID)
 	if len(got) != 1 || got[0] != "build" {
 		t.Fatalf("expected only build workflow, got %v", got)
+	}
+}
+
+// GitHub's head_commit only describes the last commit of a push, so a workflow
+// whose paths match an earlier commit of the push must still run.
+func TestWebhookPushPathFilterAllCommits(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "paths:\n  - src/**\nsteps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"ref":         "refs/heads/main",
+		"after":       sha,
+		"head_commit": map[string]any{"added": []string{"docs/readme.md"}},
+		"commits": []map[string]any{
+			{"added": []string{"src/foo.go"}},
+			{"added": []string{"docs/readme.md"}},
+		},
+	}
+	rr := sendWebhook(t, s, "demo", "push", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	got := enqueuedWorkflows(t, store, testProjectID)
+	if len(got) != 1 || got[0] != "build" {
+		t.Fatalf("expected the build workflow, got %v", got)
 	}
 }
 
