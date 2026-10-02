@@ -46,8 +46,7 @@ written under `<workspace>/uploads` by the API and read back by the worker.
 
 Snapshots work with both SQLite and Postgres (they share the same execution
 code path). The store tests run against both: `task test:postgres` starts a
-throwaway Postgres (or uses `PICI_TEST_POSTGRES_DSN` if it is set) and runs the
-suite with one database per test.
+throwaway Postgres and runs the suite with one database per test.
 
 ### ci.yml format
 

@@ -23,7 +23,8 @@ func mustUUID(s string) uuid.UUID {
 }
 
 // testDriver is the driver the store tests run against: Postgres when
-// PICI_TEST_POSTGRES_DSN is set (see the test:postgres task), SQLite otherwise.
+// PICI_TEST_POSTGRES_DSN is set, which the test:postgres task takes care of,
+// SQLite otherwise.
 func testDriver() string {
 	if os.Getenv("PICI_TEST_POSTGRES_DSN") != "" {
 		return "postgres"

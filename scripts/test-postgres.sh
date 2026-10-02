@@ -1,17 +1,9 @@
 #!/bin/sh
 # Runs the store tests against a throwaway Postgres.
-#
-# An existing PICI_TEST_POSTGRES_DSN is used as-is. Otherwise the script starts a
-# disposable postgres container, waits for it, runs the tests and removes it.
 set -e
 
-if [ -n "$PICI_TEST_POSTGRES_DSN" ]; then
-  echo "test-postgres: using PICI_TEST_POSTGRES_DSN"
-  exec go test ./internal/stores/...
-fi
-
 if ! command -v docker >/dev/null 2>&1; then
-  echo "test-postgres: docker is required, or set PICI_TEST_POSTGRES_DSN" >&2
+  echo "test-postgres: docker is required" >&2
   exit 1
 fi
 
