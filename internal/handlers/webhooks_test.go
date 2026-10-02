@@ -219,6 +219,27 @@ func TestWebhookPushPathFilterAllCommits(t *testing.T) {
 	}
 }
 
+func TestWebhookPushDeletedRef(t *testing.T) {
+	dir, _ := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "steps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"ref":     "refs/heads/main",
+		"after":   zeroSHA,
+		"deleted": true,
+		"commits": []map[string]any{},
+	}
+	rr := sendWebhook(t, s, "demo", "push", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 0 {
+		t.Fatalf("expected no workflow for a deleted ref, got %v", got)
+	}
+}
+
 func TestWebhookPullRequest(t *testing.T) {
 	dir, sha := makeRepo(t, map[string]string{
 		".ci/build/ci.yml": "steps:\n  - name: a\n    run: echo build\n",
@@ -353,6 +374,28 @@ func TestWebhookGitLabPush(t *testing.T) {
 	}
 	if execs[0].CommitSHA != sha || execs[0].Trigger != stores.TriggerWebhook {
 		t.Fatalf("unexpected execution: %+v", execs[0])
+	}
+}
+
+func TestWebhookGitLabPushDeletedRef(t *testing.T) {
+	dir, _ := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "steps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"object_kind":  "push",
+		"ref":          "refs/heads/main",
+		"after":        zeroSHA,
+		"checkout_sha": nil,
+		"commits":      []map[string]any{},
+	}
+	rr := sendGitLabWebhook(t, s, "demo", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 0 {
+		t.Fatalf("expected no workflow for a deleted ref, got %v", got)
 	}
 }
 

@@ -35,9 +35,13 @@ func NewWebhooksHandler(store stores.Store, runner *ci.Runner, workspaceDir stri
 	return &WebhooksHandler{store: store, runner: runner, workspaceDir: workspaceDir}
 }
 
+// zeroSHA is the "after" SHA GitHub and GitLab send when a push deletes a ref.
+const zeroSHA = "0000000000000000000000000000000000000000"
+
 type pushPayload struct {
 	Ref     string       `json:"ref"`
 	After   string       `json:"after"`
+	Deleted bool         `json:"deleted"`
 	Commits []pushCommit `json:"commits"`
 }
 
@@ -97,6 +101,11 @@ func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter,
 	var payload pushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	// A deleted branch or tag has no SHA to check out.
+	if payload.Deleted || payload.After == zeroSHA {
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		return
 	}
 	// Every commit of the push counts for path filters: head_commit alone only
@@ -257,6 +266,11 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 		var payload gitlabPush
 		if err := json.Unmarshal(body, &payload); err != nil {
 			render.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		// A deleted branch or tag has no SHA to check out.
+		if payload.After == zeroSHA {
+			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 			return
 		}
 		var changed []string
