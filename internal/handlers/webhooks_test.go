@@ -248,8 +248,8 @@ func TestWebhookPullRequest(t *testing.T) {
 
 	payload := map[string]any{
 		"action": "opened",
+		"number": 42,
 		"pull_request": map[string]any{
-			"number": 42,
 			"head": map[string]any{
 				"ref":  "feature",
 				"sha":  sha,
@@ -308,8 +308,8 @@ func TestWebhookPullRequestBaseBranch(t *testing.T) {
 
 	payload := map[string]any{
 		"action": "opened",
+		"number": 42,
 		"pull_request": map[string]any{
-			"number": 42,
 			"head": map[string]any{
 				"ref":  "feature",
 				"sha":  sha,
@@ -356,9 +356,9 @@ func TestWebhookPullRequestFromFork(t *testing.T) {
 	} {
 		payload := map[string]any{
 			"action": "opened",
+			"number": 42,
 			"pull_request": map[string]any{
-				"number": 42,
-				"head":   head,
+				"head": head,
 				"base": map[string]any{
 					"ref":  "main",
 					"repo": map[string]any{"full_name": "Thiht/pici"},
@@ -386,6 +386,8 @@ func TestWebhookUnsupportedEvent(t *testing.T) {
 	}
 }
 
+// sendGitLabWebhook posts a GitLab webhook. The X-Gitlab-Event header is
+// derived from the payload's object_kind, like GitLab does.
 func sendGitLabWebhook(t *testing.T, s *Handler, project, token string, payload any) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(payload)
@@ -395,6 +397,16 @@ func sendGitLabWebhook(t *testing.T, s *Handler, project, token string, payload 
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/gitlab/"+project, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gitlab-Token", token)
+	if m, ok := payload.(map[string]any); ok {
+		switch m["object_kind"] {
+		case "push":
+			req.Header.Set("X-Gitlab-Event", "Push Hook")
+		case "tag_push":
+			req.Header.Set("X-Gitlab-Event", "Tag Push Hook")
+		case "merge_request":
+			req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+		}
+	}
 	rr := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rr, req)
 	return rr
@@ -425,6 +437,31 @@ func TestWebhookGitLabPush(t *testing.T) {
 	}
 	if execs[0].CommitSHA != sha || execs[0].Trigger != stores.TriggerWebhook {
 		t.Fatalf("unexpected execution: %+v", execs[0])
+	}
+}
+
+func TestWebhookGitLabTagPush(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/release/ci.yml": "on:\n  push:\n    tags: [\"v*\"]\nsteps:\n  - name: a\n    run: echo release\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"object_kind": "tag_push",
+		"ref":         "refs/tags/v1.0.0",
+		"after":       sha,
+		"commits": []map[string]any{
+			{"added": []string{"src/main.go"}},
+		},
+	}
+	rr := sendGitLabWebhook(t, s, "demo", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	got := enqueuedWorkflows(t, store, testProjectID)
+	if len(got) != 1 || got[0] != "release" {
+		t.Fatalf("expected the release workflow, got %v", got)
 	}
 }
 

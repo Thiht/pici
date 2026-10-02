@@ -2,11 +2,7 @@ package handlers
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -17,6 +13,7 @@ import (
 	"strings"
 
 	gh "github.com/google/go-github/v92/github"
+	gl "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/git"
@@ -39,39 +36,6 @@ func NewWebhooksHandler(store stores.Store, runner *ci.Runner, workspaceDir stri
 // zeroSHA is the "after" SHA GitHub and GitLab send when a push deletes a ref.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-type pushPayload struct {
-	Ref     string       `json:"ref"`
-	After   string       `json:"after"`
-	Deleted bool         `json:"deleted"`
-	Commits []pushCommit `json:"commits"`
-}
-
-type pushCommit struct {
-	Added    []string `json:"added"`
-	Removed  []string `json:"removed"`
-	Modified []string `json:"modified"`
-}
-
-type pullRequestPayload struct {
-	Action string `json:"action"`
-	PR     struct {
-		Number int `json:"number"`
-		Head   struct {
-			Ref  string `json:"ref"`
-			SHA  string `json:"sha"`
-			Repo struct {
-				FullName string `json:"full_name"`
-			} `json:"repo"`
-		} `json:"head"`
-		Base struct {
-			Ref  string `json:"ref"`
-			Repo struct {
-				FullName string `json:"full_name"`
-			} `json:"repo"`
-		} `json:"base"`
-	} `json:"pull_request"`
-}
-
 func (h *WebhooksHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -86,54 +50,60 @@ func (h *WebhooksHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if project.WebhookSecret != "" {
-		if !verifySignature(project.WebhookSecret, body, r.Header.Get("X-Hub-Signature-256")) {
+		signature := r.Header.Get(gh.SHA256SignatureHeader)
+		if err := gh.ValidateSignature(signature, body, []byte(project.WebhookSecret)); err != nil {
 			render.Error(w, http.StatusUnauthorized, errors.New("invalid signature"))
 			return
 		}
 	}
 
-	switch r.Header.Get("X-GitHub-Event") {
+	eventType := gh.WebHookType(r)
+	switch eventType {
 	case "ping":
 		render.JSON(w, http.StatusOK, map[string]string{"status": "pong"})
-	case "push":
-		h.handlePush(r.Context(), w, project, body)
-	case "pull_request":
-		h.handlePullRequest(r.Context(), w, project, body)
+		return
+	case "push", "pull_request":
 	default:
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
 	}
-}
 
-func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter, project stores.Project, body []byte) {
-	var payload pushPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
+	event, err := gh.ParseWebHook(eventType, body)
+	if err != nil {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
+
+	switch e := event.(type) {
+	case *gh.PushEvent:
+		h.handlePush(r.Context(), w, project, e)
+	case *gh.PullRequestEvent:
+		h.handlePullRequest(r.Context(), w, project, e)
+	}
+}
+
+func (h *WebhooksHandler) handlePush(ctx context.Context, w http.ResponseWriter, project stores.Project, payload *gh.PushEvent) {
 	// A deleted branch or tag has no SHA to check out.
-	if payload.Deleted || payload.After == zeroSHA {
+	if payload.GetDeleted() || payload.GetAfter() == zeroSHA {
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		return
 	}
 	// Every commit of the push counts for path filters: head_commit alone only
 	// describes the last one.
 	var changed []string
-	for _, c := range payload.Commits {
-		changed = append(changed, c.Added...)
-		changed = append(changed, c.Modified...)
-		changed = append(changed, c.Removed...)
+	for _, c := range payload.GetCommits() {
+		changed = append(changed, c.GetAdded()...)
+		changed = append(changed, c.GetModified()...)
+		changed = append(changed, c.GetRemoved()...)
 	}
-	isTag := strings.HasPrefix(payload.Ref, "refs/tags/")
-	h.trigger(ctx, w, project, "push", normalizeRef(payload.Ref), payload.After, "", changed, isTag)
+	ref := payload.GetRef()
+	h.trigger(ctx, w, project, "push", normalizeRef(ref), payload.GetAfter(), "", changed, strings.HasPrefix(ref, "refs/tags/"))
 }
 
-func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.ResponseWriter, project stores.Project, body []byte) {
-	var payload pullRequestPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		render.Error(w, http.StatusBadRequest, err)
-		return
-	}
-	if payload.Action != "opened" && payload.Action != "synchronize" && payload.Action != "reopened" {
+func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.ResponseWriter, project stores.Project, payload *gh.PullRequestEvent) {
+	switch payload.GetAction() {
+	case "opened", "synchronize", "reopened":
+	default:
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		return
 	}
@@ -141,15 +111,16 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 	// secrets, so it is never triggered automatically: the repository owner
 	// runs it by hand. An unknown head repository (a deleted fork) is treated
 	// as a fork as well.
-	if head := payload.PR.Head.Repo.FullName; head == "" || head != payload.PR.Base.Repo.FullName {
-		slog.InfoContext(ctx, "skipped pull request from a fork", "project", project.Name, "number", payload.PR.Number, "head_repo", head)
+	pullRequest := payload.GetPullRequest()
+	if head := pullRequest.GetHead().GetRepo().GetFullName(); head == "" || head != pullRequest.GetBase().GetRepo().GetFullName() {
+		slog.InfoContext(ctx, "skipped pull request from a fork", "project", project.Name, "number", payload.GetNumber(), "head_repo", head)
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "pull request from a fork"})
 		return
 	}
 
-	number := payload.PR.Number
+	number := payload.GetNumber()
 	ref := "refs/pull/" + strconv.Itoa(number) + "/head"
-	sha := payload.PR.Head.SHA
+	sha := pullRequest.GetHead().GetSHA()
 
 	var changed []string
 	if project.AuthSecret != "" {
@@ -164,7 +135,7 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 		}
 	}
 
-	h.trigger(ctx, w, project, "pull_request", ref, sha, payload.PR.Base.Ref, changed, false)
+	h.trigger(ctx, w, project, "pull_request", ref, sha, pullRequest.GetBase().GetRef(), changed, false)
 }
 
 func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, event, ref, sha, baseBranch string, changed []string, isTag bool) {
@@ -218,39 +189,6 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 	render.JSON(w, http.StatusOK, map[string]any{"status": "accepted", "workflows": enqueued})
 }
 
-func verifySignature(secret string, body []byte, signature string) bool {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
-}
-
-type gitlabPush struct {
-	ObjectKind string `json:"object_kind"`
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	Commits    []struct {
-		Added    []string `json:"added"`
-		Modified []string `json:"modified"`
-		Removed  []string `json:"removed"`
-	} `json:"commits"`
-}
-
-type gitlabMergeRequest struct {
-	ObjectKind       string `json:"object_kind"`
-	ObjectAttributes struct {
-		IID             int    `json:"iid"`
-		Action          string `json:"action"`
-		SourceProjectID int    `json:"source_project_id"`
-		TargetProjectID int    `json:"target_project_id"`
-		SourceBranch    string `json:"source_branch"`
-		TargetBranch    string `json:"target_branch"`
-		LastCommit      struct {
-			ID string `json:"id"`
-		} `json:"last_commit"`
-	} `json:"object_attributes"`
-}
-
 func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -265,72 +203,88 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if project.WebhookSecret != "" {
-		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Gitlab-Token")), []byte(project.WebhookSecret)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(gl.HookEventToken(r)), []byte(project.WebhookSecret)) != 1 {
 			render.Error(w, http.StatusUnauthorized, errors.New("invalid token"))
 			return
 		}
 	}
 
-	var kind struct {
-		ObjectKind string `json:"object_kind"`
+	eventType := gl.WebhookEventType(r)
+	switch eventType {
+	case gl.EventTypePush, gl.EventTypeTagPush, gl.EventTypeMergeRequest:
+	default:
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
 	}
-	if err := json.Unmarshal(body, &kind); err != nil {
+
+	event, err := gl.ParseWebhook(eventType, body)
+	if err != nil {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
 
-	switch kind.ObjectKind {
-	case "push", "tag_push":
-		var payload gitlabPush
-		if err := json.Unmarshal(body, &payload); err != nil {
-			render.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		// A deleted branch or tag has no SHA to check out.
-		if payload.After == zeroSHA {
-			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
-			return
-		}
+	switch e := event.(type) {
+	case *gl.PushEvent:
 		var changed []string
-		for _, c := range payload.Commits {
+		for _, c := range e.Commits {
 			changed = append(changed, c.Added...)
 			changed = append(changed, c.Modified...)
 			changed = append(changed, c.Removed...)
 		}
-		h.trigger(r.Context(), w, project, "push", normalizeRef(payload.Ref), payload.After, "", changed, kind.ObjectKind == "tag_push")
-	case "merge_request":
-		var payload gitlabMergeRequest
-		if err := json.Unmarshal(body, &payload); err != nil {
-			render.Error(w, http.StatusBadRequest, err)
-			return
+		h.triggerPush(r.Context(), w, project, e.Ref, e.After, changed, false)
+	case *gl.TagEvent:
+		var changed []string
+		for _, c := range e.Commits {
+			changed = append(changed, c.Added...)
+			changed = append(changed, c.Modified...)
+			changed = append(changed, c.Removed...)
 		}
-		attrs := payload.ObjectAttributes
-		switch attrs.Action {
-		case "open", "reopen", "update":
-			// A merge request from a fork runs untrusted code with the
-			// project's secrets, so it is never triggered automatically: the
-			// repository owner runs it by hand. Missing project ids are treated
-			// as a fork as well.
-			if attrs.SourceProjectID == 0 || attrs.SourceProjectID != attrs.TargetProjectID {
-				slog.InfoContext(r.Context(), "skipped merge request from a fork", "project", project.Name, "iid", attrs.IID, "source_project_id", attrs.SourceProjectID)
-				render.JSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "merge request from a fork"})
-				return
-			}
-			var changed []string
-			if project.AuthSecret != "" {
-				if base, path, ok := gitlab.ParseRepo(project.RepoURL); ok {
-					if files, err := gitlab.MergeRequestDiffs(r.Context(), base, path, project.AuthSecret, attrs.IID); err == nil {
-						changed = files
-					}
-				}
-			}
-			h.trigger(r.Context(), w, project, "pull_request", attrs.SourceBranch, attrs.LastCommit.ID, attrs.TargetBranch, changed, false)
-		default:
-			render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
-		}
+		h.triggerPush(r.Context(), w, project, e.Ref, e.After, changed, true)
+	case *gl.MergeEvent:
+		h.handleMergeRequest(r.Context(), w, project, e)
 	default:
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 	}
+}
+
+// triggerPush runs the workflows of a GitLab push or tag push. Every commit of
+// the push counts for path filters.
+func (h *WebhooksHandler) triggerPush(ctx context.Context, w http.ResponseWriter, project stores.Project, ref, after string, changed []string, isTag bool) {
+	// A deleted branch or tag has no SHA to check out.
+	if after == zeroSHA {
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	h.trigger(ctx, w, project, "push", normalizeRef(ref), after, "", changed, isTag)
+}
+
+func (h *WebhooksHandler) handleMergeRequest(ctx context.Context, w http.ResponseWriter, project stores.Project, payload *gl.MergeEvent) {
+	attrs := payload.ObjectAttributes
+	switch attrs.Action {
+	case "open", "reopen", "update":
+	default:
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	// A merge request from a fork runs untrusted code with the project's
+	// secrets, so it is never triggered automatically: the repository owner
+	// runs it by hand. Missing project ids are treated as a fork as well.
+	if attrs.SourceProjectID == 0 || attrs.SourceProjectID != attrs.TargetProjectID {
+		slog.InfoContext(ctx, "skipped merge request from a fork", "project", project.Name, "iid", attrs.IID, "source_project_id", attrs.SourceProjectID)
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "merge request from a fork"})
+		return
+	}
+
+	var changed []string
+	if project.AuthSecret != "" {
+		if base, path, ok := gitlab.ParseRepo(project.RepoURL); ok {
+			if files, err := gitlab.MergeRequestDiffs(ctx, base, path, project.AuthSecret, int(attrs.IID)); err == nil {
+				changed = files
+			}
+		}
+	}
+
+	h.trigger(ctx, w, project, "pull_request", attrs.SourceBranch, attrs.LastCommit.ID, attrs.TargetBranch, changed, false)
 }
 
 func normalizeRef(ref string) string {
