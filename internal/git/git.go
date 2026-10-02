@@ -31,7 +31,13 @@ type CloneConfig struct {
 	Auth Auth
 }
 
-var shaRe = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+var (
+	shaRe = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+	// Pull request refs (refs/pull/<n>/head on GitHub, refs/merge-requests/<n>/
+	// head on GitLab) live in the base repository and point at the
+	// contributor's commit, for forks included.
+	prRefRe = regexp.MustCompile(`^refs/(pull|merge-requests)/[0-9]+/(head|merge)$`)
+)
 
 func Clone(ctx context.Context, cfg CloneConfig) error {
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
@@ -60,6 +66,8 @@ func Clone(ctx context.Context, cfg CloneConfig) error {
 			return fmt.Errorf("clone %s: %w", cfg.URL, err)
 		}
 		return nil
+	case prRefRe.MatchString(cfg.Ref):
+		return clonePullRequestRef(ctx, cfg, base, cfg.Ref)
 	default:
 		return cloneRef(ctx, cfg, base, cfg.Ref)
 	}
@@ -138,6 +146,39 @@ func cloneRef(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, ref 
 	opts.Depth = 1
 	if _, err := git.PlainCloneContext(ctx, cfg.Dir, false, &opts); err != nil {
 		return fmt.Errorf("clone %s ref %s: %w (branch: %v)", cfg.URL, ref, err, branchErr)
+	}
+	return nil
+}
+
+// clonePullRequestRef checks out a pull or merge request ref. Those refs are
+// not reachable from the repository branches, so they are fetched explicitly.
+func clonePullRequestRef(ctx context.Context, cfg CloneConfig, base *git.CloneOptions, ref string) error {
+	opts := *base
+	opts.Depth = 1
+	repo, err := git.PlainCloneContext(ctx, cfg.Dir, false, &opts)
+	if err != nil {
+		return fmt.Errorf("clone %s: %w", cfg.URL, err)
+	}
+
+	dst := plumbing.NewRemoteReferenceName("pici", ref)
+	if err := repo.FetchContext(ctx, &git.FetchOptions{
+		Auth:     base.Auth,
+		Depth:    1,
+		RefSpecs: []config.RefSpec{config.RefSpec("+" + ref + ":" + dst.String())},
+	}); err != nil {
+		return fmt.Errorf("fetch %s from %s: %w", ref, cfg.URL, err)
+	}
+
+	fetched, err := repo.Reference(dst, true)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", dst, err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := wt.Checkout(&git.CheckoutOptions{Hash: fetched.Hash(), Force: true}); err != nil {
+		return fmt.Errorf("checkout %s: %w", ref, err)
 	}
 	return nil
 }
