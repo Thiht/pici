@@ -468,6 +468,8 @@ func TestRefsTemplateRendersSelect(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
+	// djlint reflows the templates, so match attributes across line breaks.
+	out = strings.Join(strings.Fields(out), " ")
 	if !strings.Contains(out, `<optgroup label="Branches">`) || !strings.Contains(out, `<optgroup label="Tags">`) {
 		t.Fatalf("expected branch and tag optgroups, got:\n%s", out)
 	}
@@ -491,6 +493,8 @@ func TestRefsTemplateFallsBackToInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
+	// djlint reflows the templates, so match attributes across line breaks.
+	out = strings.Join(strings.Fields(out), " ")
 	if !strings.Contains(out, `type="text" name="ref"`) || !strings.Contains(out, "boom") {
 		t.Fatalf("expected text input fallback with error, got:\n%s", out)
 	}
