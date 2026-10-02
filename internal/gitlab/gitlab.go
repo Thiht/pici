@@ -4,13 +4,11 @@ package gitlab
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
+
+	gl "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/Thiht/pici/internal/github"
 )
@@ -34,30 +32,31 @@ func ParseRepo(repoURL string) (base, path string, ok bool) {
 // SetCommitStatus posts a commit status so it shows up on merge requests. The
 // state is one of pending, running, success, failed, canceled.
 func SetCommitStatus(ctx context.Context, base, path, token, sha, state, name, targetURL, description string) error {
-	form := url.Values{"state": {state}, "name": {name}}
+	client, err := newClient(base, token)
+	if err != nil {
+		return err
+	}
+	opt := &gl.SetCommitStatusOptions{State: gl.BuildStateValue(state), Name: &name}
 	if targetURL != "" {
-		form.Set("target_url", targetURL)
+		opt.TargetURL = &targetURL
 	}
 	if description != "" {
-		form.Set("description", description)
+		opt.Description = &description
 	}
-	endpoint := fmt.Sprintf("%s/%s/projects/%s/statuses/%s", strings.TrimRight(base, "/"), apiVersion, url.PathEscape(path), url.PathEscape(sha))
-	_, err := post(ctx, endpoint, token, form)
+	_, _, err = client.Commits.SetCommitStatus(path, sha, opt, gl.WithContext(ctx))
 	return err
 }
 
 // MergeRequestDiffs returns the paths changed by a merge request.
 func MergeRequestDiffs(ctx context.Context, base, path, token string, iid int) ([]string, error) {
-	endpoint := fmt.Sprintf("%s/%s/projects/%s/merge_requests/%d/diffs?per_page=100", strings.TrimRight(base, "/"), apiVersion, url.PathEscape(path), iid)
-	body, err := get(ctx, endpoint, token)
+	client, err := newClient(base, token)
 	if err != nil {
 		return nil, err
 	}
-	var diffs []struct {
-		OldPath string `json:"old_path"`
-		NewPath string `json:"new_path"`
-	}
-	if err := json.Unmarshal(body, &diffs); err != nil {
+	diffs, _, err := client.MergeRequests.ListMergeRequestDiffs(path, int64(iid), &gl.ListMergeRequestDiffsOptions{
+		PerPage: 100,
+	}, gl.WithContext(ctx))
+	if err != nil {
 		return nil, err
 	}
 	paths := make([]string, 0, len(diffs))
@@ -71,38 +70,13 @@ func MergeRequestDiffs(ctx context.Context, base, path, token string, iid int) (
 	return paths, nil
 }
 
-func post(ctx context.Context, endpoint, token string, form url.Values) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("PRIVATE-TOKEN", token)
-	return do(req)
-}
-
-func get(ctx context.Context, endpoint, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("PRIVATE-TOKEN", token)
-	return do(req)
-}
-
-func do(req *http.Request) ([]byte, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("gitlab %s %s: %d %s", req.Method, req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return body, nil
+// newClient talks to the instance hosting the project. Requests are not
+// retried: these calls report the state of an execution, where a delayed retry
+// is worse than a failed report.
+func newClient(base, token string) (*gl.Client, error) {
+	return gl.NewClient(token,
+		gl.WithBaseURL(strings.TrimRight(base, "/")+"/"+apiVersion),
+		gl.WithCustomRetryMax(0),
+		gl.WithHTTPClient(&http.Client{Timeout: 10 * time.Second}),
+	)
 }

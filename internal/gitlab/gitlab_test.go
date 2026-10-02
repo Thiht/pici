@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,16 +29,24 @@ func TestParseRepo(t *testing.T) {
 }
 
 func TestSetCommitStatus(t *testing.T) {
-	var gotPath, gotToken, gotState, gotName string
+	var gotPath, gotToken string
+	var gotBody struct {
+		State     string `json:"state"`
+		Name      string `json:"name"`
+		TargetURL string `json:"target_url"`
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.EscapedPath()
 		gotToken = r.Header.Get("PRIVATE-TOKEN")
-		if err := r.ParseForm(); err != nil {
-			t.Errorf("parse form: %v", err)
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("unexpected content type %q", ct)
 		}
-		gotState = r.FormValue("state")
-		gotName = r.FormValue("name")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":1,"status":"success"}`))
 	}))
 	defer srv.Close()
 
@@ -48,8 +57,11 @@ func TestSetCommitStatus(t *testing.T) {
 	if gotPath != "/api/v4/projects/acme%2Fdemo/statuses/abc123" {
 		t.Errorf("unexpected path %q", gotPath)
 	}
-	if gotToken != "tok" || gotState != "success" || gotName != "pici/build" {
-		t.Errorf("unexpected request: token=%q state=%q name=%q", gotToken, gotState, gotName)
+	if gotToken != "tok" || gotBody.State != "success" || gotBody.Name != "pici/build" {
+		t.Errorf("unexpected request: token=%q state=%q name=%q", gotToken, gotBody.State, gotBody.Name)
+	}
+	if gotBody.TargetURL != srv.URL+"/details" {
+		t.Errorf("unexpected target_url %q", gotBody.TargetURL)
 	}
 }
 
