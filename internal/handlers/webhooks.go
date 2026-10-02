@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,11 +57,17 @@ type pullRequestPayload struct {
 	PR     struct {
 		Number int `json:"number"`
 		Head   struct {
-			Ref string `json:"ref"`
-			SHA string `json:"sha"`
+			Ref  string `json:"ref"`
+			SHA  string `json:"sha"`
+			Repo struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"head"`
 		Base struct {
-			Ref string `json:"ref"`
+			Ref  string `json:"ref"`
+			Repo struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"base"`
 	} `json:"pull_request"`
 }
@@ -128,6 +135,15 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 	}
 	if payload.Action != "opened" && payload.Action != "synchronize" && payload.Action != "reopened" {
 		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	// A pull request from a fork runs untrusted code with the project's
+	// secrets, so it is never triggered automatically: the repository owner
+	// runs it by hand. An unknown head repository (a deleted fork) is treated
+	// as a fork as well.
+	if head := payload.PR.Head.Repo.FullName; head == "" || head != payload.PR.Base.Repo.FullName {
+		slog.InfoContext(ctx, "skipped pull request from a fork", "project", project.Name, "number", payload.PR.Number, "head_repo", head)
+		render.JSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "pull request from a fork"})
 		return
 	}
 
@@ -223,11 +239,13 @@ type gitlabPush struct {
 type gitlabMergeRequest struct {
 	ObjectKind       string `json:"object_kind"`
 	ObjectAttributes struct {
-		IID          int    `json:"iid"`
-		Action       string `json:"action"`
-		SourceBranch string `json:"source_branch"`
-		TargetBranch string `json:"target_branch"`
-		LastCommit   struct {
+		IID             int    `json:"iid"`
+		Action          string `json:"action"`
+		SourceProjectID int    `json:"source_project_id"`
+		TargetProjectID int    `json:"target_project_id"`
+		SourceBranch    string `json:"source_branch"`
+		TargetBranch    string `json:"target_branch"`
+		LastCommit      struct {
 			ID string `json:"id"`
 		} `json:"last_commit"`
 	} `json:"object_attributes"`
@@ -289,6 +307,15 @@ func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
 		attrs := payload.ObjectAttributes
 		switch attrs.Action {
 		case "open", "reopen", "update":
+			// A merge request from a fork runs untrusted code with the
+			// project's secrets, so it is never triggered automatically: the
+			// repository owner runs it by hand. Missing project ids are treated
+			// as a fork as well.
+			if attrs.SourceProjectID == 0 || attrs.SourceProjectID != attrs.TargetProjectID {
+				slog.InfoContext(r.Context(), "skipped merge request from a fork", "project", project.Name, "iid", attrs.IID, "source_project_id", attrs.SourceProjectID)
+				render.JSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "merge request from a fork"})
+				return
+			}
 			var changed []string
 			if project.AuthSecret != "" {
 				if base, path, ok := gitlab.ParseRepo(project.RepoURL); ok {

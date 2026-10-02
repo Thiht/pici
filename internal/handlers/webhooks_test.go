@@ -250,8 +250,15 @@ func TestWebhookPullRequest(t *testing.T) {
 		"action": "opened",
 		"pull_request": map[string]any{
 			"number": 42,
-			"head":   map[string]any{"ref": "feature", "sha": sha},
-			"base":   map[string]any{"ref": "main"},
+			"head": map[string]any{
+				"ref":  "feature",
+				"sha":  sha,
+				"repo": map[string]any{"full_name": "Thiht/pici"},
+			},
+			"base": map[string]any{
+				"ref":  "main",
+				"repo": map[string]any{"full_name": "Thiht/pici"},
+			},
 		},
 	}
 	rr := sendWebhook(t, s, "demo", "pull_request", "", payload)
@@ -303,8 +310,15 @@ func TestWebhookPullRequestBaseBranch(t *testing.T) {
 		"action": "opened",
 		"pull_request": map[string]any{
 			"number": 42,
-			"head":   map[string]any{"ref": "feature", "sha": sha},
-			"base":   map[string]any{"ref": "develop"},
+			"head": map[string]any{
+				"ref":  "feature",
+				"sha":  sha,
+				"repo": map[string]any{"full_name": "Thiht/pici"},
+			},
+			"base": map[string]any{
+				"ref":  "develop",
+				"repo": map[string]any{"full_name": "Thiht/pici"},
+			},
 		},
 	}
 	rr := sendWebhook(t, s, "demo", "pull_request", "", payload)
@@ -315,13 +329,50 @@ func TestWebhookPullRequestBaseBranch(t *testing.T) {
 		t.Fatalf("expected no workflow for PR to develop, got %v", got)
 	}
 
-	payload["pull_request"].(map[string]any)["base"] = map[string]any{"ref": "main"}
+	payload["pull_request"].(map[string]any)["base"] = map[string]any{
+		"ref":  "main",
+		"repo": map[string]any{"full_name": "Thiht/pici"},
+	}
 	rr = sendWebhook(t, s, "demo", "pull_request", "", payload)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 1 || got[0] != "build" {
 		t.Fatalf("expected build workflow for PR to main, got %v", got)
+	}
+}
+
+func TestWebhookPullRequestFromFork(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "steps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	// A pull request from a fork, then one whose head repository was deleted
+	// (GitHub sends no repo at all in that case).
+	for _, head := range []any{
+		map[string]any{"ref": "feature", "sha": sha, "repo": map[string]any{"full_name": "someone/pici"}},
+		map[string]any{"ref": "feature", "sha": sha},
+	} {
+		payload := map[string]any{
+			"action": "opened",
+			"pull_request": map[string]any{
+				"number": 42,
+				"head":   head,
+				"base": map[string]any{
+					"ref":  "main",
+					"repo": map[string]any{"full_name": "Thiht/pici"},
+				},
+			},
+		}
+		rr := sendWebhook(t, s, "demo", "pull_request", "", payload)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+	}
+
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 0 {
+		t.Fatalf("expected no workflow for a fork pull request, got %v", got)
 	}
 }
 
@@ -419,11 +470,13 @@ func TestWebhookGitLabMergeRequest(t *testing.T) {
 	payload := map[string]any{
 		"object_kind": "merge_request",
 		"object_attributes": map[string]any{
-			"iid":           7,
-			"action":        "open",
-			"source_branch": "feature",
-			"target_branch": "main",
-			"last_commit":   map[string]any{"id": sha},
+			"iid":               7,
+			"action":            "open",
+			"source_project_id": 1,
+			"target_project_id": 1,
+			"source_branch":     "feature",
+			"target_branch":     "main",
+			"last_commit":       map[string]any{"id": sha},
 		},
 	}
 	rr := sendGitLabWebhook(t, s, "demo", "", payload)
@@ -437,5 +490,32 @@ func TestWebhookGitLabMergeRequest(t *testing.T) {
 	}
 	if execs[0].Ref != "feature" || execs[0].CommitSHA != sha {
 		t.Fatalf("unexpected execution: ref=%q sha=%q", execs[0].Ref, execs[0].CommitSHA)
+	}
+}
+
+func TestWebhookGitLabMergeRequestFromFork(t *testing.T) {
+	dir, sha := makeRepo(t, map[string]string{
+		".ci/build/ci.yml": "steps:\n  - name: a\n    run: echo build\n",
+	})
+	s, store := newWebhookServer(t, dir, "")
+
+	payload := map[string]any{
+		"object_kind": "merge_request",
+		"object_attributes": map[string]any{
+			"iid":               7,
+			"action":            "open",
+			"source_project_id": 2,
+			"target_project_id": 1,
+			"source_branch":     "feature",
+			"target_branch":     "main",
+			"last_commit":       map[string]any{"id": sha},
+		},
+	}
+	rr := sendGitLabWebhook(t, s, "demo", "", payload)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := enqueuedWorkflows(t, store, testProjectID); len(got) != 0 {
+		t.Fatalf("expected no workflow for a fork merge request, got %v", got)
 	}
 }
