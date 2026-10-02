@@ -153,7 +153,8 @@ manual only, e.g. for a workflow triggered from the CLI or the UI.
   - if neither is set (`on: push` or `on: {push: {}}`), every branch and tag push runs.
 - `pull_request` — pull/merge requests. `branches` (globs) matches the **target**
   (base) branch, so `pull_request: {branches: [main]}` runs on PRs into `main`
-  only. `tags` is not allowed.
+  only. `tags` is not allowed. A pull request opened from a fork never triggers a
+  run; the owner starts it by hand (see [Webhooks](/guide/webhooks#pull-requests-from-forks)).
 - `manual` — optional filter for manual runs (see below). It accepts
   `branches`/`tags` like `push`, and only a mapping (not a scalar/list).
 - `schedule` — a single cron expression, run on the default branch. It is
@@ -173,6 +174,17 @@ on:
 Without `on.manual`, a manual run accepts any ref. The filter is enforced when
 the run starts (git and `--local`), and a run on a disallowed ref fails with a
 clear message. Rebuilds reuse the original ref and are not re-validated.
+
+A pull request ref (`refs/pull/<n>/head` on GitHub, `refs/merge-requests/<n>/head`
+on GitLab) is fetched explicitly from the project's repository, which is how a
+fork pull request is built by hand:
+
+```sh
+pici-cli run demo build --ref refs/pull/42/head
+```
+
+`on.manual.branches` also restricts those refs, so allow them explicitly (e.g.
+`branches: ["refs/pull/*"]`) if the workflow declares a manual filter.
 
 **Paths.** `paths`/`paths_ignore` are global and apply to `push` and
 `pull_request` after the ref match. They do not affect `schedule`, and setting

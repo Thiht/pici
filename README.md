@@ -228,7 +228,7 @@ GET    /badge/{id}?workflow=build&label=build
 - Projects (public/private, GitHub/GitLab/generic), variables & secrets.
 - Workflows from `.ci/` (Dockerfile runner, `ci.yml` orchestration).
 - Parallel steps, retries, per-step logs, tag/branch filters, path filters, workflow-level `env`.
-- GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules.
+- GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules; pull requests opened from a fork are never built automatically.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Partial re-run of failed steps, reusing the failed run's workspace.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
