@@ -32,3 +32,6 @@ task lint
 
 echo "pre-push: task fmt:check"
 task fmt:check
+
+echo "pre-push: task test"
+task test
