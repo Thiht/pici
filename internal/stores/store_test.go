@@ -3,6 +3,7 @@ package stores
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"slices"
 	"strconv"
@@ -127,6 +128,26 @@ func TestProjectCRUD(t *testing.T) {
 	list, err := s.ListProjects(ctx)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("expected 1 project, got %d (err=%v)", len(list), err)
+	}
+
+	byName, err := s.GetProjectByName(ctx, "demo")
+	if err != nil || byName.ID != id || byName.AuthSecret != "secret-token" {
+		t.Fatalf("unexpected project by name: %+v (err=%v)", byName, err)
+	}
+	if _, err := s.GetProjectByName(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+
+	p.Name = "renamed"
+	p.DefaultBranch = "main"
+	p.UpdatedAt = time.Now()
+	updated, err := s.UpdateProject(ctx, p)
+	if err != nil || updated.Name != "renamed" || updated.AuthSecret != "secret-token" {
+		t.Fatalf("unexpected updated project: %+v (err=%v)", updated, err)
+	}
+	got, err = s.GetProject(ctx, id)
+	if err != nil || got.Name != "renamed" || got.DefaultBranch != "main" || got.AuthSecret != "secret-token" {
+		t.Fatalf("update not persisted: %+v (err=%v)", got, err)
 	}
 
 	if err := s.DeleteProject(ctx, id); err != nil {
