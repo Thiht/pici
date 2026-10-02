@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"io/fs"
+	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,9 +22,29 @@ func mustUUID(s string) uuid.UUID {
 	return uuid.MustParse(s)
 }
 
+// testDriver is the driver the store tests run against: Postgres when
+// PICI_TEST_POSTGRES_DSN is set (see the test:postgres task), SQLite otherwise.
+func testDriver() string {
+	if os.Getenv("PICI_TEST_POSTGRES_DSN") != "" {
+		return "postgres"
+	}
+	return "sqlite"
+}
+
+// testDSN returns the DSN of a fresh, empty database: a temporary SQLite file,
+// or a throwaway Postgres database.
+func testDSN(t *testing.T, driver string) string {
+	t.Helper()
+	if driver == "postgres" {
+		return testPostgresDSN(t, os.Getenv("PICI_TEST_POSTGRES_DSN"))
+	}
+	return filepath.Join(t.TempDir(), "test.db")
+}
+
 func newTestStore(t *testing.T) Store {
 	t.Helper()
-	s, err := Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
+	driver := testDriver()
+	s, err := Open(driver, testDSN(t, driver), nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -30,60 +52,107 @@ func newTestStore(t *testing.T) Store {
 	return s
 }
 
-func TestMigrations(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test.db")
-	id := mustUUID("11111111-1111-1111-1111-111111111111")
+// testPostgresDSN creates an empty database on the server described by dsn, and
+// drops it when the test ends. dsn must be a postgres:// URL and must have the
+// CREATEDB privilege.
+func testPostgresDSN(t *testing.T, dsn string) string {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		t.Fatalf("PICI_TEST_POSTGRES_DSN must be a postgres:// URL, got %q", dsn)
+	}
 
-	first, err := Open("sqlite", path, nil)
+	name := "pici_test_" + strings.ReplaceAll(uuid.New().String(), "-", "")
+	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
-		t.Fatalf("open: %v", err)
+		t.Fatalf("connect to %s: %v", u.Redacted(), err)
 	}
-	if _, err := first.CreateProject(ctx, Project{ID: id, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
-		t.Fatal(err)
+	defer admin.Close()
+	if _, err := admin.ExecContext(context.Background(), `CREATE DATABASE "`+name+`"`); err != nil {
+		t.Fatalf("create test database: %v", err)
 	}
-	if err := first.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Reopening an existing database must not re-apply migrations nor lose data.
-	second, err := Open("sqlite", path, nil)
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	t.Cleanup(func() { _ = second.Close() })
-
-	p, err := second.GetProject(ctx, id)
-	if err != nil || p.Name != "demo" {
-		t.Fatalf("unexpected project: %+v (err=%v)", p, err)
-	}
-
-	raw, err := sql.Open("sqlite", sqliteDSN(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer raw.Close()
-
-	var version int64
-	if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
-		t.Fatalf("goose version table: %v", err)
-	}
-
-	// Expect the newest embedded migration, so adding one does not require
-	// editing this test.
-	var expected int64
-	names, err := fs.Glob(migrationsFS, "migrations/sqlite/*.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range names {
-		prefix, _, _ := strings.Cut(strings.TrimPrefix(name, "migrations/sqlite/"), "_")
-		if n, err := strconv.ParseInt(prefix, 10, 64); err == nil && n > expected {
-			expected = n
+	t.Cleanup(func() {
+		// The store is closed first (cleanups run last in, first out), so the
+		// database has no connection left when it is dropped.
+		conn, err := sql.Open("pgx", dsn)
+		if err != nil {
+			return
 		}
-	}
-	if version != expected {
-		t.Fatalf("expected migration version %d, got %d", expected, version)
+		defer conn.Close()
+		_, _ = conn.ExecContext(context.Background(), `DROP DATABASE IF EXISTS "`+name+`"`)
+	})
+
+	target := *u
+	target.Path = "/" + name
+	return target.String()
+}
+
+func TestMigrations(t *testing.T) {
+	for _, driver := range []string{"sqlite", "postgres"} {
+		if driver == "postgres" && os.Getenv("PICI_TEST_POSTGRES_DSN") == "" {
+			continue
+		}
+		t.Run(driver, func(t *testing.T) {
+			ctx := context.Background()
+			dsn := testDSN(t, driver)
+			id := mustUUID("11111111-1111-1111-1111-111111111111")
+
+			first, err := Open(driver, dsn, nil)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			if _, err := first.CreateProject(ctx, Project{ID: id, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+			if err := first.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			// Reopening an existing database must not re-apply migrations nor lose data.
+			second, err := Open(driver, dsn, nil)
+			if err != nil {
+				t.Fatalf("reopen: %v", err)
+			}
+			t.Cleanup(func() { _ = second.Close() })
+
+			p, err := second.GetProject(ctx, id)
+			if err != nil || p.Name != "demo" {
+				t.Fatalf("unexpected project: %+v (err=%v)", p, err)
+			}
+
+			rawDriver, rawDSN := "sqlite", sqliteDSN(dsn)
+			if driver == "postgres" {
+				rawDriver, rawDSN = "pgx", dsn
+			}
+			raw, err := sql.Open(rawDriver, rawDSN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Close()
+
+			var version int64
+			if err := raw.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
+				t.Fatalf("goose version table: %v", err)
+			}
+
+			// Expect the newest embedded migration, so adding one does not require
+			// editing this test.
+			var expected int64
+			dir := "migrations/" + driver + "/"
+			names, err := fs.Glob(migrationsFS, dir+"*.sql")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range names {
+				prefix, _, _ := strings.Cut(strings.TrimPrefix(name, dir), "_")
+				if n, err := strconv.ParseInt(prefix, 10, 64); err == nil && n > expected {
+					expected = n
+				}
+			}
+			if version != expected {
+				t.Fatalf("expected migration version %d, got %d", expected, version)
+			}
+		})
 	}
 }
 

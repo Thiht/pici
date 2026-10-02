@@ -56,6 +56,11 @@ tasks:
     cmds:
       - go test {{.PKG}}
 
+  test:postgres:
+    desc: Run the store tests against a throwaway Postgres (or PICI_TEST_POSTGRES_DSN)
+    cmds:
+      - ./scripts/test-postgres.sh
+
   lint:
     desc: Run golangci-lint and shellcheck
     deps: [gcl:install]
