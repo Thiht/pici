@@ -45,8 +45,9 @@ same workspace directory (single node, or a shared volume): the upload is
 written under `<workspace>/uploads` by the API and read back by the worker.
 
 Snapshots work with both SQLite and Postgres (they share the same execution
-code path). The store tests run against both: `task test:postgres` starts a
-throwaway Postgres and runs the suite with one database per test.
+code path). The store tests run against both: `go test -tags=postgres
+./internal/stores` expects a Postgres on `127.0.0.1:55432`, which
+`task test:postgres` starts for you (one database per test).
 
 ### ci.yml format
 

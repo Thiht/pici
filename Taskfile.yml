@@ -66,6 +66,7 @@ tasks:
     deps: [gcl:install]
     cmds:
       - "{{.GCL}} run"
+      - "{{.GCL}} run --build-tags=postgres"
       - |
         if command -v {{.SHELLCHECK}} >/dev/null 2>&1; then
           files=$(git ls-files "*.sh")

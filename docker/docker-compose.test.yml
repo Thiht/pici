@@ -3,13 +3,16 @@ name: pici-test
 services:
   postgres:
     image: postgres:16-alpine
+    # Serve on the port the tests expect, so the address is the same whether
+    # they reach it through the published port or through the container network.
+    command: ["-p", "55432"]
     environment:
       POSTGRES_PASSWORD: pici
       POSTGRES_DB: pici_test
     ports:
-      - "127.0.0.1::5432"
+      - "127.0.0.1:55432:55432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -p 55432"]
       interval: 1s
       timeout: 3s
       retries: 30
