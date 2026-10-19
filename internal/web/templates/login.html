@@ -18,7 +18,9 @@
           <div class="mt-2">
             <p class="text-xs font-medium opacity-60">Accounts</p>
             <ul class="mt-1 flex flex-wrap gap-2">
-              {{range .Users}}<li><code class="badge badge-soft">{{.}}</code></li>{{end}}
+              {{range .Users}}
+                <li><code class="badge badge-soft">{{.}}</code></li>
+              {{end}}
             </ul>
           </div>
         {{end}}
@@ -26,7 +28,9 @@
           <div class="mt-2">
             <p class="text-xs font-medium opacity-60">Teams</p>
             <ul class="mt-1 flex flex-wrap gap-2">
-              {{range .Teams}}<li><code class="badge badge-soft">{{.}}</code></li>{{end}}
+              {{range .Teams}}
+                <li><code class="badge badge-soft">{{.}}</code></li>
+              {{end}}
             </ul>
           </div>
         {{end}}

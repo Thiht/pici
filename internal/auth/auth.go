@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -457,12 +458,7 @@ func (s *Service) disable(ctx context.Context, user stores.User, reason string) 
 }
 
 func hasScope(scopes []string, want string) bool {
-	for _, scope := range scopes {
-		if scope == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(scopes, want)
 }
 
 func randomToken(prefix string) (string, error) {

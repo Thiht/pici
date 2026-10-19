@@ -31,15 +31,15 @@ scope is requested and no organization approval is needed.
 
 ## 2. Configure pici
 
-| Variable                    | Description                                               |
-| --------------------------- | --------------------------------------------------------- |
-| `PICI_PUBLIC_URL`           | public base URL, used to build the OAuth callback         |
-| `PICI_GITHUB_CLIENT_ID`     | OAuth App client id                                       |
-| `PICI_GITHUB_CLIENT_SECRET` | OAuth App client secret                                   |
-| `PICI_GITHUB_TEAMS`         | optional, teams allowed to sign in (`org/team`)           |
-| `PICI_GITHUB_USERS`         | optional, GitHub logins allowed to sign in                |
-| `PICI_SECRET_KEY`           | 32-byte key; also encrypts the stored OAuth token         |
-| `PICI_SESSION_TTL`          | optional browser session lifetime (default `720h`)        |
+| Variable                    | Description                                        |
+| --------------------------- | -------------------------------------------------- |
+| `PICI_PUBLIC_URL`           | public base URL, used to build the OAuth callback  |
+| `PICI_GITHUB_CLIENT_ID`     | OAuth App client id                                |
+| `PICI_GITHUB_CLIENT_SECRET` | OAuth App client secret                            |
+| `PICI_GITHUB_TEAMS`         | optional, teams allowed to sign in (`org/team`)    |
+| `PICI_GITHUB_USERS`         | optional, GitHub logins allowed to sign in         |
+| `PICI_SECRET_KEY`           | 32-byte key; also encrypts the stored OAuth token  |
+| `PICI_SESSION_TTL`          | optional browser session lifetime (default `720h`) |
 
 Team instance:
 

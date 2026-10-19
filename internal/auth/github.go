@@ -192,7 +192,7 @@ func parseScopes(raw string) []string {
 }
 
 func nextLink(header string) string {
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		sections := strings.Split(part, ";")
 		if len(sections) < 2 {
 			continue

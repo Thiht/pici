@@ -2,28 +2,28 @@
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
-| Flag                     | Env                        | Default               | Description                                                      |
-| ------------------------ | -------------------------- | --------------------- | ---------------------------------------------------------------- |
-| `-http-addr`             | `PICI_HTTP_ADDR`           | `:8080`               | HTTP listen address                                              |
-| `-db-driver`             | `PICI_DB_DRIVER`           | `sqlite`              | `sqlite` or `postgres`                                           |
-| `-db-dsn`                | `PICI_DB_DSN`              | `pici.db`             | SQLite path or Postgres DSN                                      |
-| `-workspace-dir`         | `PICI_WORKSPACE_DIR`       | `~/.pici/workspaces`  | clones and logs                                                  |
-| `-repo-mount-path`       | `PICI_REPO_MOUNT_PATH`     | `/workspace`          | in-container mount point (must not overlap `/pici/cache`)        |
-| `-concurrency`           | `PICI_CONCURRENCY`         | `4`                   | max concurrent executions                                        |
-| `-step-timeout`          | `PICI_STEP_TIMEOUT`        | `30m`                 | default step timeout                                             |
-| `-max-snapshot-size`     | `PICI_MAX_SNAPSHOT_SIZE`   | `536870912` (512 MiB) | maximum size of an uploaded local snapshot                       |
-| `-secret-key`            | `PICI_SECRET_KEY`          | —                     | **required** — 32-byte key (hex/base64) for encrypting secrets   |
-| `-public-url`            | `PICI_PUBLIC_URL`          | —                     | **required** — public base URL, e.g. `https://pici.example.com`  |
-| `-github-client-id`      | `PICI_GITHUB_CLIENT_ID`    | —                     | **required** — GitHub OAuth App client id                        |
-| `-github-client-secret`  | `PICI_GITHUB_CLIENT_SECRET`| —                     | **required** — GitHub OAuth App client secret                    |
-| `-github-teams`          | `PICI_GITHUB_TEAMS`        | —                     | comma-separated teams allowed to sign in (`org/team`)            |
-| `-github-users`          | `PICI_GITHUB_USERS`        | —                     | comma-separated GitHub logins allowed to sign in                 |
-| `-session-ttl`           | `PICI_SESSION_TTL`         | `720h`                | browser session lifetime (sliding)                               |
-| `-gc-interval`           | `PICI_GC_INTERVAL`         | `10m`                 | garbage collection interval                                      |
-| `-gc-keep`               | `PICI_GC_KEEP`             | `24h`                 | keep finished workspaces/logs for this long                      |
-| `-scheduler-interval`    | `PICI_SCHEDULER_INTERVAL`  | `1m`                  | scheduled build polling interval                                 |
-| `-shutdown-timeout`      | `PICI_SHUTDOWN_TIMEOUT`    | `30s`                 | grace period for in-flight steps on shutdown                     |
-| `-config`                | `PICI_CONFIG`              | —                     | path to a JSON config file                                       |
+| Flag                    | Env                         | Default               | Description                                                     |
+| ----------------------- | --------------------------- | --------------------- | --------------------------------------------------------------- |
+| `-http-addr`            | `PICI_HTTP_ADDR`            | `:8080`               | HTTP listen address                                             |
+| `-db-driver`            | `PICI_DB_DRIVER`            | `sqlite`              | `sqlite` or `postgres`                                          |
+| `-db-dsn`               | `PICI_DB_DSN`               | `pici.db`             | SQLite path or Postgres DSN                                     |
+| `-workspace-dir`        | `PICI_WORKSPACE_DIR`        | `~/.pici/workspaces`  | clones and logs                                                 |
+| `-repo-mount-path`      | `PICI_REPO_MOUNT_PATH`      | `/workspace`          | in-container mount point (must not overlap `/pici/cache`)       |
+| `-concurrency`          | `PICI_CONCURRENCY`          | `4`                   | max concurrent executions                                       |
+| `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                 | default step timeout                                            |
+| `-max-snapshot-size`    | `PICI_MAX_SNAPSHOT_SIZE`    | `536870912` (512 MiB) | maximum size of an uploaded local snapshot                      |
+| `-secret-key`           | `PICI_SECRET_KEY`           | —                     | **required** — 32-byte key (hex/base64) for encrypting secrets  |
+| `-public-url`           | `PICI_PUBLIC_URL`           | —                     | **required** — public base URL, e.g. `https://pici.example.com` |
+| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                     | **required** — GitHub OAuth App client id                       |
+| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                     | **required** — GitHub OAuth App client secret                   |
+| `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                     | comma-separated teams allowed to sign in (`org/team`)           |
+| `-github-users`         | `PICI_GITHUB_USERS`         | —                     | comma-separated GitHub logins allowed to sign in                |
+| `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`                | browser session lifetime (sliding)                              |
+| `-gc-interval`          | `PICI_GC_INTERVAL`          | `10m`                 | garbage collection interval                                     |
+| `-gc-keep`              | `PICI_GC_KEEP`              | `24h`                 | keep finished workspaces/logs for this long                     |
+| `-scheduler-interval`   | `PICI_SCHEDULER_INTERVAL`   | `1m`                  | scheduled build polling interval                                |
+| `-shutdown-timeout`     | `PICI_SHUTDOWN_TIMEOUT`     | `30s`                 | grace period for in-flight steps on shutdown                    |
+| `-config`               | `PICI_CONFIG`               | —                     | path to a JSON config file                                      |
 
 At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. See
 [Authentication](/guide/authentication) for the GitHub OAuth setup and personal
