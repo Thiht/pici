@@ -129,46 +129,36 @@ type Service struct {
 	store      stores.Store
 	provider   Provider
 	teams      map[string]struct{}
-	teamList   []string
 	users      map[string]struct{}
-	userList   []string
 	sessionTTL time.Duration
 	secure     bool
 	now        func() time.Time
 }
 
 func NewService(store stores.Store, provider Provider, teams, users []string, sessionTTL time.Duration, secure bool) *Service {
-	teamSet, teamList := normalizeAccessList(teams)
-	userSet, userList := normalizeAccessList(users)
 	return &Service{
 		store:      store,
 		provider:   provider,
-		teams:      teamSet,
-		teamList:   teamList,
-		users:      userSet,
-		userList:   userList,
+		teams:      normalizeAccessList(teams),
+		users:      normalizeAccessList(users),
 		sessionTTL: sessionTTL,
 		secure:     secure,
 		now:        time.Now,
 	}
 }
 
-func normalizeAccessList(values []string) (map[string]struct{}, []string) {
+func normalizeAccessList(values []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(values))
-	list := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
+		if value = strings.TrimSpace(value); value != "" {
+			set[strings.ToLower(value)] = struct{}{}
 		}
-		list = append(list, value)
-		set[strings.ToLower(value)] = struct{}{}
 	}
-	return set, list
+	return set
 }
 
-func (s *Service) Teams() []string           { return append([]string(nil), s.teamList...) }
-func (s *Service) Users() []string           { return append([]string(nil), s.userList...) }
+func (s *Service) HasTeams() bool            { return len(s.teams) > 0 }
+func (s *Service) HasUsers() bool            { return len(s.users) > 0 }
 func (s *Service) SessionTTL() time.Duration { return s.sessionTTL }
 func (s *Service) SecureCookies() bool       { return s.secure }
 func (s *Service) LoginURL(state, verifier string) string {

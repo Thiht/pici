@@ -327,9 +327,17 @@ func TestLoginPageShowsGitHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := body(t, resp)
-	for _, want := range []string{"Sign in with GitHub", "acme/pici"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("expected %q in login page, got:\n%s", want, out)
+	if !strings.Contains(out, "Sign in with GitHub") {
+		t.Errorf("expected the GitHub sign-in button, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Access is restricted") {
+		t.Errorf("expected the access restriction notice, got:\n%s", out)
+	}
+	// The login page is public: it must not disclose the configured teams or
+	// logins.
+	for _, unwanted := range []string{"acme/pici", "alice"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("login page leaks %q:\n%s", unwanted, out)
 		}
 	}
 }
@@ -345,7 +353,7 @@ func TestUsersOnlyLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := body(t, page)
-	if !strings.Contains(out, "alice") || strings.Contains(out, "acme/pici") {
+	if !strings.Contains(out, "Sign in with GitHub") || strings.Contains(out, "alice") {
 		t.Fatalf("expected the users-only login page, got:\n%s", out)
 	}
 

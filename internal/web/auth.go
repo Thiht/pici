@@ -15,10 +15,10 @@ const oauthCookieMaxAge = 10 * 60
 
 type loginPage struct {
 	base
-	Error string
-	Next  string
-	Teams []string
-	Users []string
+	Error    string
+	Next     string
+	HasTeams bool
+	HasUsers bool
 }
 
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -27,11 +27,11 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := loginPage{
-		base:  h.base(w, r, "Sign in", ""),
-		Next:  safeNext(r.URL.Query().Get("next")),
-		Error: loginError(r.URL.Query().Get("error")),
-		Teams: h.auth.Teams(),
-		Users: h.auth.Users(),
+		base:     h.base(w, r, "Sign in", ""),
+		Next:     safeNext(r.URL.Query().Get("next")),
+		Error:    loginError(r.URL.Query().Get("error")),
+		HasTeams: h.auth.HasTeams(),
+		HasUsers: h.auth.HasUsers(),
 	}
 	h.render(w, r, http.StatusOK, "login", data)
 }
@@ -253,7 +253,7 @@ func loginErrorURL(next, code string) string {
 func loginError(code string) string {
 	switch code {
 	case "not_member":
-		return "Your GitHub account is not authorized. Make sure you are a member of one of the teams above and granted the requested access."
+		return "Your GitHub account is not authorized for this pici instance."
 	case "denied":
 		return "GitHub sign-in was cancelled."
 	case "state":

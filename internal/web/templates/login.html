@@ -6,34 +6,14 @@
         <h1 class="card-title text-xl">Sign in to pici</h1>
         <p class="text-sm opacity-70">
           Use your GitHub account.
-          {{if and .Users .Teams}}
+          {{if and .HasUsers .HasTeams}}
             Access is restricted to authorized GitHub accounts or teams.
-          {{else if .Users}}
+          {{else if .HasUsers}}
             Access is restricted to specific GitHub accounts.
           {{else}}
             Access is restricted to members of an authorized team.
           {{end}}
         </p>
-        {{if .Users}}
-          <div class="mt-2">
-            <p class="text-xs font-medium opacity-60">Accounts</p>
-            <ul class="mt-1 flex flex-wrap gap-2">
-              {{range .Users}}
-                <li><code class="badge badge-soft">{{.}}</code></li>
-              {{end}}
-            </ul>
-          </div>
-        {{end}}
-        {{if .Teams}}
-          <div class="mt-2">
-            <p class="text-xs font-medium opacity-60">Teams</p>
-            <ul class="mt-1 flex flex-wrap gap-2">
-              {{range .Teams}}
-                <li><code class="badge badge-soft">{{.}}</code></li>
-              {{end}}
-            </ul>
-          </div>
-        {{end}}
         {{if .Error}}
           <div class="alert alert-soft alert-error mt-2" role="alert">{{.Error}}</div>
         {{end}}
