@@ -9,19 +9,32 @@ import (
 )
 
 // User is a human identity authenticated through an external provider.
-// OAuthToken is stored encrypted at rest and only used for membership checks.
+// The OAuth tokens are stored encrypted at rest and only used for membership
+// checks. Providers that issue non-expiring tokens leave OAuthRefreshToken
+// empty and OAuthExpiresAt nil.
 type User struct {
-	ID             uuid.UUID  `json:"id"`
-	Provider       string     `json:"provider"`
-	ProviderUserID string     `json:"-"`
-	Login          string     `json:"login"`
-	Name           string     `json:"name"`
-	AvatarURL      string     `json:"avatar_url"`
-	OAuthToken     string     `json:"-"`
-	CreatedAt      time.Time  `json:"created_at"`
-	LastLoginAt    time.Time  `json:"last_login_at"`
-	LastOrgCheckAt *time.Time `json:"last_org_check_at,omitempty"`
-	DisabledAt     *time.Time `json:"disabled_at,omitempty"`
+	ID                uuid.UUID  `json:"id"`
+	Provider          string     `json:"provider"`
+	ProviderUserID    string     `json:"-"`
+	Login             string     `json:"login"`
+	Name              string     `json:"name"`
+	AvatarURL         string     `json:"avatar_url"`
+	OAuthAccessToken  string     `json:"-"`
+	OAuthRefreshToken string     `json:"-"`
+	OAuthExpiresAt    *time.Time `json:"-"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LastLoginAt       time.Time  `json:"last_login_at"`
+	LastOrgCheckAt    *time.Time `json:"last_org_check_at,omitempty"`
+	DisabledAt        *time.Time `json:"disabled_at,omitempty"`
+}
+
+// WithoutOAuthTokens returns a copy without the provider credentials, which
+// handlers never need.
+func (u User) WithoutOAuthTokens() User {
+	u.OAuthAccessToken = ""
+	u.OAuthRefreshToken = ""
+	u.OAuthExpiresAt = nil
+	return u
 }
 
 // Session is a browser session. ID is the SHA-256 hash of the session cookie

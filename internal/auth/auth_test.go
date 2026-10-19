@@ -15,10 +15,15 @@ type fakeProvider struct {
 	identity     Identity
 	teams        []Team
 	exchangeErr  error
+	refreshErr   error
 	teamsErr     error
 	verifyErr    error
+	refreshed    Token
+	refreshCalls int
+	lastRefresh  string
 	teamsCalls   int
 	verifyCalls  int
+	lastToken    string
 	lastVerifier string
 }
 
@@ -36,16 +41,27 @@ func (p *fakeProvider) Exchange(_ context.Context, _, verifier string) (Identity
 	return p.identity, nil
 }
 
-func (p *fakeProvider) Teams(context.Context, string) ([]Team, error) {
+func (p *fakeProvider) Refresh(_ context.Context, refreshToken string) (Token, error) {
+	p.refreshCalls++
+	p.lastRefresh = refreshToken
+	if p.refreshErr != nil {
+		return Token{}, p.refreshErr
+	}
+	return p.refreshed, nil
+}
+
+func (p *fakeProvider) Teams(_ context.Context, accessToken string) ([]Team, error) {
 	p.teamsCalls++
+	p.lastToken = accessToken
 	if p.teamsErr != nil {
 		return nil, p.teamsErr
 	}
 	return p.teams, nil
 }
 
-func (p *fakeProvider) Verify(context.Context, string) error {
+func (p *fakeProvider) Verify(_ context.Context, accessToken string) error {
 	p.verifyCalls++
+	p.lastToken = accessToken
 	return p.verifyErr
 }
 
@@ -66,7 +82,7 @@ func newTestServiceWithAccess(t *testing.T, teams, users []string) (*Service, st
 			ProviderUserID: "1",
 			Login:          "alice",
 			Name:           "Alice",
-			AccessToken:    "oauth",
+			Token:          Token{AccessToken: "oauth"},
 			Scopes:         []string{"read:org"},
 		},
 		teams: []Team{{Org: "acme", Slug: "pici"}},
@@ -86,7 +102,7 @@ func TestLoginAndSession(t *testing.T) {
 	if provider.lastVerifier != "verifier" {
 		t.Fatalf("PKCE verifier not forwarded: %q", provider.lastVerifier)
 	}
-	if user.Login != "alice" || user.OAuthToken != "oauth" || user.DisabledAt != nil {
+	if user.Login != "alice" || user.OAuthAccessToken != "oauth" || user.DisabledAt != nil {
 		t.Fatalf("unexpected user: %+v", user)
 	}
 
@@ -112,6 +128,31 @@ func TestLoginAndSession(t *testing.T) {
 	}
 	if stored.ID != hashToken(raw) {
 		t.Fatalf("session id is not the token hash")
+	}
+}
+
+func TestLoginStoresExpiringToken(t *testing.T) {
+	svc, store, provider := newTestService(t)
+	expires := time.Now().Add(8 * time.Hour)
+	provider.identity.Token = Token{AccessToken: "gho_test", RefreshToken: "ghr_test", ExpiresAt: &expires}
+
+	user, err := svc.Login(context.Background(), "code", "verifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.OAuthAccessToken != "gho_test" || user.OAuthRefreshToken != "ghr_test" {
+		t.Fatalf("unexpected credentials: %+v", user)
+	}
+	if user.OAuthExpiresAt == nil || user.OAuthExpiresAt.Unix() != expires.Unix() {
+		t.Fatalf("unexpected expiry: %v", user.OAuthExpiresAt)
+	}
+
+	got, err := store.GetUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OAuthRefreshToken != "ghr_test" || got.OAuthExpiresAt == nil {
+		t.Fatalf("credentials not persisted: %+v", got)
 	}
 }
 
@@ -375,14 +416,14 @@ func TestRevalidateSkipsRecentlyCheckedUsers(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	user, err := store.UpsertUser(ctx, stores.User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "2",
-		Login:          "bob",
-		OAuthToken:     "oauth",
-		CreatedAt:      now,
-		LastLoginAt:    now,
-		LastOrgCheckAt: &now,
+		ID:               uuid.New(),
+		Provider:         "github",
+		ProviderUserID:   "2",
+		Login:            "bob",
+		OAuthAccessToken: "oauth",
+		CreatedAt:        now,
+		LastLoginAt:      now,
+		LastOrgCheckAt:   &now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -398,17 +439,168 @@ func TestRevalidateSkipsRecentlyCheckedUsers(t *testing.T) {
 	}
 }
 
+func TestRevalidateRefreshesExpiredToken(t *testing.T) {
+	svc, store, provider := newTestService(t)
+	ctx := context.Background()
+	expired := time.Now().Add(-time.Hour)
+	user, err := store.UpsertUser(ctx, stores.User{
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "2",
+		Login:             "bob",
+		OAuthAccessToken:  "expired",
+		OAuthRefreshToken: "refresh-1",
+		OAuthExpiresAt:    &expired,
+		CreatedAt:         expired,
+		LastLoginAt:       expired,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := time.Now().Add(8 * time.Hour)
+	provider.refreshed = Token{AccessToken: "fresh", RefreshToken: "refresh-2", ExpiresAt: &next}
+
+	svc.Revalidate(ctx)
+
+	if provider.refreshCalls != 1 || provider.lastRefresh != "refresh-1" {
+		t.Fatalf("expected one refresh of refresh-1, got %d calls with %q", provider.refreshCalls, provider.lastRefresh)
+	}
+	if provider.lastToken != "fresh" {
+		t.Fatalf("membership check used %q, want the refreshed token", provider.lastToken)
+	}
+	got, err := store.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OAuthAccessToken != "fresh" || got.OAuthRefreshToken != "refresh-2" {
+		t.Fatalf("refreshed token not persisted: %+v", got)
+	}
+	if got.OAuthExpiresAt == nil || got.OAuthExpiresAt.Unix() != next.Unix() {
+		t.Fatalf("unexpected stored expiry: %v", got.OAuthExpiresAt)
+	}
+	if got.DisabledAt != nil {
+		t.Fatal("refreshing must keep the user active")
+	}
+}
+
+func TestRevalidateKeepsTokenBeforeExpiry(t *testing.T) {
+	svc, store, provider := newTestService(t)
+	ctx := context.Background()
+	valid := time.Now().Add(8 * time.Hour)
+	user, err := store.UpsertUser(ctx, stores.User{
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "2",
+		Login:             "bob",
+		OAuthAccessToken:  "current",
+		OAuthRefreshToken: "refresh-1",
+		OAuthExpiresAt:    &valid,
+		CreatedAt:         time.Now(),
+		LastLoginAt:       time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.Revalidate(ctx)
+
+	if provider.refreshCalls != 0 {
+		t.Fatalf("expected no refresh before expiry, got %d", provider.refreshCalls)
+	}
+	if provider.lastToken != "current" {
+		t.Fatalf("membership check used %q, want the stored token", provider.lastToken)
+	}
+	got, err := store.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OAuthRefreshToken != "refresh-1" {
+		t.Fatalf("refresh token changed: %+v", got)
+	}
+}
+
+func TestRevalidateDisablesUserOnRejectedRefresh(t *testing.T) {
+	svc, store, provider := newTestService(t)
+	ctx := context.Background()
+	expired := time.Now().Add(-time.Hour)
+	user, err := store.UpsertUser(ctx, stores.User{
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "2",
+		Login:             "bob",
+		OAuthAccessToken:  "expired",
+		OAuthRefreshToken: "refresh-1",
+		OAuthExpiresAt:    &expired,
+		CreatedAt:         expired,
+		LastLoginAt:       expired,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.refreshErr = ErrTokenInvalid
+
+	svc.Revalidate(ctx)
+
+	got, err := store.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DisabledAt == nil {
+		t.Fatal("a rejected refresh token must disable the user")
+	}
+	if provider.teamsCalls != 0 {
+		t.Fatal("a failed refresh must not run a membership check with a dead token")
+	}
+}
+
+func TestRevalidateKeepsAccessOnRefreshFailure(t *testing.T) {
+	svc, store, provider := newTestService(t)
+	ctx := context.Background()
+	expired := time.Now().Add(-time.Hour)
+	user, err := store.UpsertUser(ctx, stores.User{
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "2",
+		Login:             "bob",
+		OAuthAccessToken:  "expired",
+		OAuthRefreshToken: "refresh-1",
+		OAuthExpiresAt:    &expired,
+		CreatedAt:         expired,
+		LastLoginAt:       expired,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.refreshErr = ErrProviderUnavailable
+
+	svc.Revalidate(ctx)
+
+	got, err := store.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DisabledAt != nil {
+		t.Fatal("a transient refresh failure must not disable the user")
+	}
+	if got.OAuthRefreshToken != "refresh-1" {
+		t.Fatalf("unexpected token change on failure: %+v", got)
+	}
+	if provider.teamsCalls != 0 {
+		t.Fatal("a failed refresh must not run a membership check with an expired token")
+	}
+}
+
 func seedUser(t *testing.T, store stores.Store) stores.User {
 	t.Helper()
 	now := time.Now()
 	user, err := store.UpsertUser(context.Background(), stores.User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "1",
-		Login:          "alice",
-		OAuthToken:     "oauth",
-		CreatedAt:      now,
-		LastLoginAt:    now,
+		ID:               uuid.New(),
+		Provider:         "github",
+		ProviderUserID:   "1",
+		Login:            "alice",
+		OAuthAccessToken: "oauth",
+		CreatedAt:        now,
+		LastLoginAt:      now,
 	})
 	if err != nil {
 		t.Fatal(err)

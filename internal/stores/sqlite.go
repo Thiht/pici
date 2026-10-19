@@ -646,8 +646,8 @@ func (s *sqliteStore) scanUser(row rowScanner) (User, error) {
 	var u User
 	var id string
 	var createdMs, lastLoginMs int64
-	var lastCheckMs, disabledMs *int64
-	if err := row.Scan(&id, &u.Provider, &u.ProviderUserID, &u.Login, &u.Name, &u.AvatarURL, &u.OAuthToken, &createdMs, &lastLoginMs, &lastCheckMs, &disabledMs); err != nil {
+	var lastCheckMs, expiresMs, disabledMs *int64
+	if err := row.Scan(&id, &u.Provider, &u.ProviderUserID, &u.Login, &u.Name, &u.AvatarURL, &u.OAuthAccessToken, &u.OAuthRefreshToken, &expiresMs, &createdMs, &lastLoginMs, &lastCheckMs, &disabledMs); err != nil {
 		return User{}, err
 	}
 	var err error
@@ -657,6 +657,10 @@ func (s *sqliteStore) scanUser(row rowScanner) (User, error) {
 	}
 	u.CreatedAt = time.UnixMilli(createdMs)
 	u.LastLoginAt = time.UnixMilli(lastLoginMs)
+	if expiresMs != nil {
+		t := time.UnixMilli(*expiresMs)
+		u.OAuthExpiresAt = &t
+	}
 	if lastCheckMs != nil {
 		t := time.UnixMilli(*lastCheckMs)
 		u.LastOrgCheckAt = &t
@@ -665,7 +669,8 @@ func (s *sqliteStore) scanUser(row rowScanner) (User, error) {
 		t := time.UnixMilli(*disabledMs)
 		u.DisabledAt = &t
 	}
-	u.OAuthToken = decrypt(s.cipher, u.OAuthToken)
+	u.OAuthAccessToken = decrypt(s.cipher, u.OAuthAccessToken)
+	u.OAuthRefreshToken = decrypt(s.cipher, u.OAuthRefreshToken)
 	return u, nil
 }
 
@@ -684,29 +689,35 @@ func (s *sqliteStore) UpsertUser(ctx context.Context, u User) (User, error) {
 	if lastLogin.IsZero() {
 		lastLogin = created
 	}
-	var lastCheck, disabled any
+	var expires, lastCheck, disabled any
+	if u.OAuthExpiresAt != nil {
+		expires = u.OAuthExpiresAt.UnixMilli()
+	}
 	if u.LastOrgCheckAt != nil {
 		lastCheck = u.LastOrgCheckAt.UnixMilli()
 	}
 	if u.DisabledAt != nil {
 		disabled = u.DisabledAt.UnixMilli()
 	}
-	token := encrypt(s.cipher, u.OAuthToken)
+	accessToken := encrypt(s.cipher, u.OAuthAccessToken)
+	refreshToken := encrypt(s.cipher, u.OAuthRefreshToken)
 
 	var id string
 	err := s.db.QueryRowContext(ctx, `
-        INSERT INTO users (id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (provider, provider_user_id) DO UPDATE SET
             login = excluded.login,
             name = excluded.name,
             avatar_url = excluded.avatar_url,
             oauth_token = excluded.oauth_token,
+            oauth_refresh_token = excluded.oauth_refresh_token,
+            oauth_token_expires_at = excluded.oauth_token_expires_at,
             last_login_at = excluded.last_login_at,
             last_org_check_at = excluded.last_org_check_at,
             disabled_at = NULL
         RETURNING id
-    `, u.ID.String(), u.Provider, u.ProviderUserID, u.Login, u.Name, u.AvatarURL, token, created.UnixMilli(), lastLogin.UnixMilli(), lastCheck, disabled).Scan(&id)
+    `, u.ID.String(), u.Provider, u.ProviderUserID, u.Login, u.Name, u.AvatarURL, accessToken, refreshToken, expires, created.UnixMilli(), lastLogin.UnixMilli(), lastCheck, disabled).Scan(&id)
 	if err != nil {
 		return User{}, err
 	}
@@ -719,7 +730,7 @@ func (s *sqliteStore) UpsertUser(ctx context.Context, u User) (User, error) {
 
 func (s *sqliteStore) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	u, err := s.scanUser(s.db.QueryRowContext(ctx, `
-        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at
         FROM users
         WHERE id = ?
     `, id.String()))
@@ -731,7 +742,7 @@ func (s *sqliteStore) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 
 func (s *sqliteStore) ListActiveUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at
         FROM users
         WHERE disabled_at IS NULL
         ORDER BY login
@@ -750,6 +761,17 @@ func (s *sqliteStore) ListActiveUsers(ctx context.Context) ([]User, error) {
 		users = append(users, u)
 	}
 	return users, rows.Err()
+}
+
+func (s *sqliteStore) UpdateUserOAuthToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt *time.Time) error {
+	var expires any
+	if expiresAt != nil {
+		expires = expiresAt.UnixMilli()
+	}
+	_, err := s.db.ExecContext(ctx, `
+        UPDATE users SET oauth_token = ?, oauth_refresh_token = ?, oauth_token_expires_at = ? WHERE id = ?
+    `, encrypt(s.cipher, accessToken), encrypt(s.cipher, refreshToken), expires, id.String())
+	return err
 }
 
 func (s *sqliteStore) SetUserOrgCheck(ctx context.Context, id uuid.UUID, at time.Time) error {

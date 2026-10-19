@@ -96,10 +96,6 @@ func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, loginErrorURL(next, "not_member"))
 		return
 	}
-	if errors.Is(err, auth.ErrExpiringTokens) {
-		redirect(w, r, loginErrorURL(next, "expiring_tokens"))
-		return
-	}
 	if err != nil {
 		slog.Error("github login failed", "error", err)
 		redirect(w, r, loginErrorURL(next, "provider"))
@@ -156,8 +152,7 @@ func (h *Handler) sessionAuth(next http.Handler) http.Handler {
 		// Refresh the browser-side expiry too, so an active session keeps
 		// sliding instead of dying 30 days after login.
 		h.setSessionCookie(w, cookie.Value)
-		user.OAuthToken = ""
-		principal := auth.Principal{User: user, Session: &session}
+		principal := auth.Principal{User: user.WithoutOAuthTokens(), Session: &session}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 	})
 }
@@ -265,8 +260,6 @@ func loginError(code string) string {
 		return "Your sign-in session expired. Please try again."
 	case "provider":
 		return "GitHub is unavailable right now. Please try again."
-	case "expiring_tokens":
-		return "This OAuth App uses expiring user tokens, which pici does not support yet. Disable that option in the GitHub OAuth App settings."
 	default:
 		return ""
 	}

@@ -60,6 +60,7 @@ type Store interface {
 	UpsertUser(ctx context.Context, u User) (User, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
+	UpdateUserOAuthToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt *time.Time) error
 	SetUserOrgCheck(ctx context.Context, id uuid.UUID, at time.Time) error
 	DisableUser(ctx context.Context, id uuid.UUID, at time.Time) error
 

@@ -38,7 +38,7 @@ scope is requested and no organization approval is needed.
 | `PICI_GITHUB_CLIENT_SECRET` | OAuth App client secret                            |
 | `PICI_GITHUB_TEAMS`         | optional, teams allowed to sign in (`org/team`)    |
 | `PICI_GITHUB_USERS`         | optional, GitHub logins allowed to sign in         |
-| `PICI_SECRET_KEY`           | 32-byte key; also encrypts the stored OAuth token  |
+| `PICI_SECRET_KEY`           | 32-byte key; also encrypts the stored OAuth tokens |
 | `PICI_SESSION_TTL`          | optional browser session lifetime (default `720h`) |
 
 Team instance:
@@ -156,9 +156,14 @@ validated for signature, issuer, audience and nonce.
 In the GitHub OAuth App settings, keep **wildcard matching disabled** so the
 callback URL must match exactly.
 
-The stored GitHub access token is long-lived. GitHub's opt-in **expiring user
-tokens** are not supported yet (pici does not refresh them); leave that option
-disabled for now.
+The stored GitHub access token is renewed with its refresh token before every
+access check. Both GitHub OAuth App modes are supported, so the opt-in
+**expiring user tokens** option can be left as you prefer: with it enabled,
+pici refreshes the credential every time it verifies the user's access; with it
+disabled, the access token never expires and no refresh happens. GitHub rotates
+refresh tokens on every use, and pici persists each new pair immediately. If a
+refresh is rejected (the user revoked the OAuth App, or the credential expired
+for good), the account is disabled and the user must sign in again.
 
 ## Limitations
 

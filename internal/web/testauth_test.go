@@ -21,6 +21,8 @@ type fakeProvider struct {
 	identity     auth.Identity
 	teams        []auth.Team
 	exchangeErr  error
+	refreshed    auth.Token
+	refreshErr   error
 	teamsErr     error
 	lastVerifier string
 }
@@ -40,6 +42,13 @@ func (p *fakeProvider) Exchange(_ context.Context, _, verifier string) (auth.Ide
 	return p.identity, nil
 }
 
+func (p *fakeProvider) Refresh(context.Context, string) (auth.Token, error) {
+	if p.refreshErr != nil {
+		return auth.Token{}, p.refreshErr
+	}
+	return p.refreshed, nil
+}
+
 func (p *fakeProvider) Teams(context.Context, string) ([]auth.Team, error) {
 	if p.teamsErr != nil {
 		return nil, p.teamsErr
@@ -54,7 +63,7 @@ func fakeIdentity() auth.Identity {
 		ProviderUserID: "1",
 		Login:          "alice",
 		Name:           "Alice",
-		AccessToken:    "oauth",
+		Token:          auth.Token{AccessToken: "oauth"},
 		Scopes:         []string{"read:org"},
 	}
 }
@@ -73,14 +82,14 @@ func newWebTestUser(t *testing.T, store stores.Store) stores.User {
 	t.Helper()
 	now := time.Now()
 	user, err := store.UpsertUser(context.Background(), stores.User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "1",
-		Login:          "alice",
-		Name:           "Alice",
-		OAuthToken:     "oauth",
-		CreatedAt:      now,
-		LastLoginAt:    now,
+		ID:               uuid.New(),
+		Provider:         "github",
+		ProviderUserID:   "1",
+		Login:            "alice",
+		Name:             "Alice",
+		OAuthAccessToken: "oauth",
+		CreatedAt:        now,
+		LastLoginAt:      now,
 	})
 	if err != nil {
 		t.Fatal(err)

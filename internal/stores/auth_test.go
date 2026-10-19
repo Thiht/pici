@@ -25,30 +25,36 @@ func TestUserUpsertAndEncryption(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	now := time.Now().Add(-time.Hour)
+	expires := now.Add(8 * time.Hour)
 	user, err := s.UpsertUser(ctx, User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "42",
-		Login:          "alice",
-		Name:           "Alice",
-		OAuthToken:     "oauth-secret",
-		CreatedAt:      now,
-		LastLoginAt:    now,
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "42",
+		Login:             "alice",
+		Name:              "Alice",
+		OAuthAccessToken:  "oauth-secret",
+		OAuthRefreshToken: "refresh-secret",
+		OAuthExpiresAt:    &expires,
+		CreatedAt:         now,
+		LastLoginAt:       now,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.OAuthToken != "oauth-secret" {
-		t.Fatalf("expected decrypted token, got %q", user.OAuthToken)
+	if user.OAuthAccessToken != "oauth-secret" || user.OAuthRefreshToken != "refresh-secret" || user.OAuthExpiresAt == nil {
+		t.Fatalf("expected decrypted credentials, got %+v", user)
 	}
 
 	raw := rawTestDB(t, dsn)
-	var stored string
-	if err := raw.QueryRowContext(ctx, `SELECT oauth_token FROM users WHERE provider_user_id = '42'`).Scan(&stored); err != nil {
+	var stored, storedRefresh string
+	if err := raw.QueryRowContext(ctx, `SELECT oauth_token, oauth_refresh_token FROM users WHERE provider_user_id = '42'`).Scan(&stored, &storedRefresh); err != nil {
 		t.Fatal(err)
 	}
 	if stored == "oauth-secret" || stored == "" {
 		t.Fatalf("OAuth token stored in plaintext: %q", stored)
+	}
+	if storedRefresh == "refresh-secret" || storedRefresh == "" {
+		t.Fatalf("OAuth refresh token stored in plaintext: %q", storedRefresh)
 	}
 
 	// A second login for the same provider id updates the profile, keeps the
@@ -58,19 +64,23 @@ func TestUserUpsertAndEncryption(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated, err := s.UpsertUser(ctx, User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "42",
-		Login:          "alice-renamed",
-		OAuthToken:     "new-secret",
-		CreatedAt:      later,
-		LastLoginAt:    later,
+		ID:                uuid.New(),
+		Provider:          "github",
+		ProviderUserID:    "42",
+		Login:             "alice-renamed",
+		OAuthAccessToken:  "new-secret",
+		OAuthRefreshToken: "new-refresh",
+		CreatedAt:         later,
+		LastLoginAt:       later,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.ID != user.ID || updated.Login != "alice-renamed" || updated.OAuthToken != "new-secret" {
+	if updated.ID != user.ID || updated.Login != "alice-renamed" || updated.OAuthAccessToken != "new-secret" {
 		t.Fatalf("unexpected updated user: %+v", updated)
+	}
+	if updated.OAuthRefreshToken != "new-refresh" || updated.OAuthExpiresAt != nil {
+		t.Fatalf("refresh token not rotated on login: %+v", updated)
 	}
 	if updated.DisabledAt != nil {
 		t.Fatal("login should reactivate a disabled user")
@@ -92,6 +102,56 @@ func TestUserUpsertAndEncryption(t *testing.T) {
 	}
 	if len(active) != 0 {
 		t.Fatalf("expected no active users, got %d", len(active))
+	}
+}
+
+func TestUpdateUserOAuthToken(t *testing.T) {
+	ctx := context.Background()
+	dsn := testDSN(t)
+	cipher, err := secrets.New(hex.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(testDriver(), dsn, cipher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	user := mustUser(t, s, "42", "alice")
+
+	expires := time.Now().Add(8 * time.Hour).Truncate(time.Millisecond)
+	if err := s.UpdateUserOAuthToken(ctx, user.ID, "fresh", "refresh-2", &expires); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OAuthAccessToken != "fresh" || got.OAuthRefreshToken != "refresh-2" {
+		t.Fatalf("unexpected credentials: %+v", got)
+	}
+	if got.OAuthExpiresAt == nil || !got.OAuthExpiresAt.Equal(expires) {
+		t.Fatalf("unexpected expiry: %v", got.OAuthExpiresAt)
+	}
+
+	var stored string
+	if err := rawTestDB(t, dsn).QueryRowContext(ctx, `SELECT oauth_refresh_token FROM users WHERE provider_user_id = '42'`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == "refresh-2" || stored == "" {
+		t.Fatalf("refresh token stored in plaintext: %q", stored)
+	}
+
+	// Providers that stop returning an expiry leave the column NULL.
+	if err := s.UpdateUserOAuthToken(ctx, user.ID, "fresh", "refresh-2", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OAuthExpiresAt != nil {
+		t.Fatalf("expected no expiry, got %v", got.OAuthExpiresAt)
 	}
 }
 

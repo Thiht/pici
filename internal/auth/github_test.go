@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGitHubProviderExchangeAndTeams(t *testing.T) {
@@ -62,8 +64,11 @@ func TestGitHubProviderExchangeAndTeams(t *testing.T) {
 		t.Fatal(err)
 	}
 	if identity.ProviderUserID != "42" || identity.Login != "alice" || identity.Name != "Alice" ||
-		identity.AvatarURL != "https://example.com/a.png" || identity.AccessToken != "gho_test" {
+		identity.AvatarURL != "https://example.com/a.png" || identity.Token.AccessToken != "gho_test" {
 		t.Fatalf("unexpected identity: %+v", identity)
+	}
+	if identity.Token.RefreshToken != "" || identity.Token.ExpiresAt != nil {
+		t.Fatalf("non-expiring token stored as expiring: %+v", identity.Token)
 	}
 	if !hasScope(identity.Scopes, "read:org") || !hasScope(identity.Scopes, "repo") {
 		t.Fatalf("unexpected scopes: %#v", identity.Scopes)
@@ -142,21 +147,88 @@ func TestGitHubAuthCodeURLWithoutTeams(t *testing.T) {
 	}
 }
 
-func TestGitHubProviderRejectsExpiringTokens(t *testing.T) {
+func TestGitHubProviderAcceptsExpiringTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/oauth/access_token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"gho_test","token_type":"bearer","expires_in":28800,"refresh_token":"ghr_test","scope":"read:org"}`))
+		case "/user":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"login":"alice","name":"Alice"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := newGitHubProvider("id", "secret", "", server.URL+"/auth", server.URL+"/login/oauth/access_token", server.URL, true)
+	identity, err := provider.Exchange(context.Background(), "code", "verifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Token.AccessToken != "gho_test" || identity.Token.RefreshToken != "ghr_test" {
+		t.Fatalf("unexpected token: %+v", identity.Token)
+	}
+	if identity.Token.ExpiresAt == nil || time.Until(*identity.Token.ExpiresAt) < 7*time.Hour {
+		t.Fatalf("unexpected expiry: %v", identity.Token.ExpiresAt)
+	}
+}
+
+func TestGitHubProviderRefresh(t *testing.T) {
+	var form url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/login/oauth/access_token" {
 			http.NotFound(w, r)
 			return
 		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse token form: %v", err)
+		}
+		form = r.PostForm
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"access_token":"gho_test","token_type":"bearer","expires_in":28800,"refresh_token":"ghr_test","scope":"read:org"}`))
+		_, _ = w.Write([]byte(`{"access_token":"gho_new","token_type":"bearer","expires_in":28800,"refresh_token":"ghr_new","scope":"read:org"}`))
 	}))
 	defer server.Close()
 
 	provider := newGitHubProvider("id", "secret", "", server.URL+"/auth", server.URL+"/login/oauth/access_token", server.URL, true)
-	_, err := provider.Exchange(context.Background(), "code", "verifier")
-	if !errors.Is(err, ErrExpiringTokens) {
-		t.Fatalf("expected ErrExpiringTokens, got %v", err)
+	token, err := provider.Refresh(context.Background(), "ghr_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "ghr_old" {
+		t.Fatalf("unexpected refresh request: %v", form)
+	}
+	if token.AccessToken != "gho_new" || token.RefreshToken != "ghr_new" || token.ExpiresAt == nil {
+		t.Fatalf("unexpected refreshed token: %+v", token)
+	}
+}
+
+func TestGitHubProviderRefreshErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr error
+	}{
+		{"rejected refresh token", http.StatusOK, `{"error":"invalid_grant","error_description":"The refresh token is invalid."}`, ErrTokenInvalid},
+		{"misconfigured app", http.StatusOK, `{"error":"unauthorized_client"}`, ErrProviderUnavailable},
+		{"provider error", http.StatusInternalServerError, `{"error":"server_error"}`, ErrProviderUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			provider := newGitHubProvider("id", "secret", "", server.URL+"/auth", server.URL+"/login/oauth/access_token", server.URL, true)
+			if _, err := provider.Refresh(context.Background(), "ghr_old"); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

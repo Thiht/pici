@@ -24,6 +24,10 @@ func (stubProvider) AuthCodeURL(string, string) string { return "" }
 func (stubProvider) Exchange(context.Context, string, string) (auth.Identity, error) {
 	return auth.Identity{}, errors.New("unused")
 }
+
+func (stubProvider) Refresh(context.Context, string) (auth.Token, error) {
+	return auth.Token{}, errors.New("unused")
+}
 func (stubProvider) Teams(context.Context, string) ([]auth.Team, error) { return nil, nil }
 func (stubProvider) Verify(context.Context, string) error               { return nil }
 
@@ -51,13 +55,13 @@ func newTestUser(t *testing.T, store stores.Store) stores.User {
 	t.Helper()
 	now := time.Now()
 	user, err := store.UpsertUser(context.Background(), stores.User{
-		ID:             uuid.New(),
-		Provider:       "github",
-		ProviderUserID: "1",
-		Login:          "tester",
-		OAuthToken:     "oauth",
-		CreatedAt:      now,
-		LastLoginAt:    now,
+		ID:               uuid.New(),
+		Provider:         "github",
+		ProviderUserID:   "1",
+		Login:            "tester",
+		OAuthAccessToken: "oauth",
+		CreatedAt:        now,
+		LastLoginAt:      now,
 	})
 	if err != nil {
 		t.Fatal(err)

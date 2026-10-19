@@ -570,7 +570,7 @@ func (s *postgresStore) ListDueSchedules(ctx context.Context, now time.Time) ([]
 func (s *postgresStore) scanUser(row rowScanner) (User, error) {
 	var u User
 	var id string
-	if err := row.Scan(&id, &u.Provider, &u.ProviderUserID, &u.Login, &u.Name, &u.AvatarURL, &u.OAuthToken, &u.CreatedAt, &u.LastLoginAt, &u.LastOrgCheckAt, &u.DisabledAt); err != nil {
+	if err := row.Scan(&id, &u.Provider, &u.ProviderUserID, &u.Login, &u.Name, &u.AvatarURL, &u.OAuthAccessToken, &u.OAuthRefreshToken, &u.OAuthExpiresAt, &u.CreatedAt, &u.LastLoginAt, &u.LastOrgCheckAt, &u.DisabledAt); err != nil {
 		return User{}, err
 	}
 	var err error
@@ -578,7 +578,8 @@ func (s *postgresStore) scanUser(row rowScanner) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	u.OAuthToken = decrypt(s.cipher, u.OAuthToken)
+	u.OAuthAccessToken = decrypt(s.cipher, u.OAuthAccessToken)
+	u.OAuthRefreshToken = decrypt(s.cipher, u.OAuthRefreshToken)
 	return u, nil
 }
 
@@ -597,22 +598,25 @@ func (s *postgresStore) UpsertUser(ctx context.Context, u User) (User, error) {
 	if lastLogin.IsZero() {
 		lastLogin = created
 	}
-	token := encrypt(s.cipher, u.OAuthToken)
+	accessToken := encrypt(s.cipher, u.OAuthAccessToken)
+	refreshToken := encrypt(s.cipher, u.OAuthRefreshToken)
 
 	var id string
 	err := s.db.QueryRowContext(ctx, `
-        INSERT INTO users (id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO users (id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (provider, provider_user_id) DO UPDATE SET
             login = excluded.login,
             name = excluded.name,
             avatar_url = excluded.avatar_url,
             oauth_token = excluded.oauth_token,
+            oauth_refresh_token = excluded.oauth_refresh_token,
+            oauth_token_expires_at = excluded.oauth_token_expires_at,
             last_login_at = excluded.last_login_at,
             last_org_check_at = excluded.last_org_check_at,
             disabled_at = NULL
         RETURNING id
-    `, u.ID.String(), u.Provider, u.ProviderUserID, u.Login, u.Name, u.AvatarURL, token, created, lastLogin, u.LastOrgCheckAt, u.DisabledAt).Scan(&id)
+    `, u.ID.String(), u.Provider, u.ProviderUserID, u.Login, u.Name, u.AvatarURL, accessToken, refreshToken, u.OAuthExpiresAt, created, lastLogin, u.LastOrgCheckAt, u.DisabledAt).Scan(&id)
 	if err != nil {
 		return User{}, err
 	}
@@ -625,7 +629,7 @@ func (s *postgresStore) UpsertUser(ctx context.Context, u User) (User, error) {
 
 func (s *postgresStore) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	u, err := s.scanUser(s.db.QueryRowContext(ctx, `
-        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at
         FROM users
         WHERE id = $1
     `, id.String()))
@@ -637,7 +641,7 @@ func (s *postgresStore) GetUser(ctx context.Context, id uuid.UUID) (User, error)
 
 func (s *postgresStore) ListActiveUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, oauth_refresh_token, oauth_token_expires_at, created_at, last_login_at, last_org_check_at, disabled_at
         FROM users
         WHERE disabled_at IS NULL
         ORDER BY login
@@ -656,6 +660,13 @@ func (s *postgresStore) ListActiveUsers(ctx context.Context) ([]User, error) {
 		users = append(users, u)
 	}
 	return users, rows.Err()
+}
+
+func (s *postgresStore) UpdateUserOAuthToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt *time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+        UPDATE users SET oauth_token = $1, oauth_refresh_token = $2, oauth_token_expires_at = $3 WHERE id = $4
+    `, encrypt(s.cipher, accessToken), encrypt(s.cipher, refreshToken), expiresAt, id.String())
+	return err
 }
 
 func (s *postgresStore) SetUserOrgCheck(ctx context.Context, id uuid.UUID, at time.Time) error {

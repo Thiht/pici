@@ -27,7 +27,7 @@ func API(svc *auth.Service, next http.Handler) http.Handler {
 			unauthorized(w, r)
 			return
 		}
-		user.OAuthToken = ""
+		user = user.WithoutOAuthTokens()
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{User: user})))
 	})
 }

@@ -468,28 +468,6 @@ func TestLoginRejectsMissingScope(t *testing.T) {
 	}
 }
 
-func TestLoginRejectsExpiringTokens(t *testing.T) {
-	env := newTestEnv(t, func(p *fakeProvider) { p.exchangeErr = auth.ErrExpiringTokens })
-	client := env.anonymousClient(t)
-
-	start, err := client.Get(env.srv.URL + "/auth/github")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer start.Body.Close()
-	location, _ := url.Parse(start.Header.Get("Location"))
-	state := location.Query().Get("state")
-
-	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer callback.Body.Close()
-	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/login?error=expiring_tokens" {
-		t.Fatalf("expected expiring_tokens redirect, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
-	}
-}
-
 func TestLoginRejectsBadState(t *testing.T) {
 	env := newTestEnv(t)
 	client := env.anonymousClient(t)

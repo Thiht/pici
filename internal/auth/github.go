@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -77,9 +78,6 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, verifier string) (I
 	if err != nil {
 		return Identity{}, err
 	}
-	if token.RefreshToken != "" || !token.Expiry.IsZero() {
-		return Identity{}, fmt.Errorf("%w: disable expiring user tokens in the GitHub OAuth App settings", ErrExpiringTokens)
-	}
 
 	var user struct {
 		ID        int64  `json:"id"`
@@ -95,14 +93,60 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, verifier string) (I
 	}
 
 	scope, _ := token.Extra("scope").(string)
+	var expiresAt *time.Time
+	if !token.Expiry.IsZero() {
+		expiry := token.Expiry
+		expiresAt = &expiry
+	}
 	return Identity{
 		ProviderUserID: strconv.FormatInt(user.ID, 10),
 		Login:          user.Login,
 		Name:           user.Name,
 		AvatarURL:      user.AvatarURL,
-		AccessToken:    token.AccessToken,
-		Scopes:         parseScopes(scope),
+		Token: Token{
+			AccessToken:  token.AccessToken,
+			RefreshToken: token.RefreshToken,
+			ExpiresAt:    expiresAt,
+		},
+		Scopes: parseScopes(scope),
 	}, nil
+}
+
+// Refresh renews an expiring user token. GitHub rotates refresh tokens: the
+// returned pair replaces the previous one, and the refresh token it replaces
+// is invalidated as soon as this call succeeds.
+func (p *GitHubProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	token, err := p.config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
+	if err != nil {
+		return Token{}, refreshError(err)
+	}
+	var expiresAt *time.Time
+	if !token.Expiry.IsZero() {
+		expiry := token.Expiry
+		expiresAt = &expiry
+	}
+	return Token{
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		ExpiresAt:    expiresAt,
+	}, nil
+}
+
+// refreshError maps a failed token refresh. Only a rejected refresh token
+// disables the user (they revoked the OAuth App, or the credential expired for
+// good); anything else, including a misconfigured OAuth App, is transient so an
+// outage does not disable every account.
+func refreshError(err error) error {
+	if retrieveErr, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
+		switch retrieveErr.ErrorCode {
+		case "invalid_grant", "bad_refresh_token":
+			return fmt.Errorf("%w: %s", ErrTokenInvalid, retrieveErr.ErrorCode)
+		}
+	}
+	return fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
 }
 
 func (p *GitHubProvider) Teams(ctx context.Context, accessToken string) ([]Team, error) {

@@ -48,10 +48,6 @@ var (
 	// ErrProviderUnavailable covers network errors, rate limits and 5xx
 	// responses. Access is kept when a revalidation hits it.
 	ErrProviderUnavailable = errors.New("provider unavailable")
-	// ErrExpiringTokens means the OAuth App is configured to issue expiring
-	// user tokens. pici does not implement refresh tokens yet, so it refuses
-	// to store a token that would silently expire.
-	ErrExpiringTokens = errors.New("expiring OAuth tokens are not supported")
 )
 
 // Team identifies a GitHub team by organization and slug.
@@ -60,13 +56,23 @@ type Team struct {
 	Slug string
 }
 
+// Token is an OAuth2 credential pair. Providers that issue expiring tokens also
+// return a refresh token, which pici uses to renew the credential before each
+// membership check; providers that issue non-expiring tokens leave both
+// RefreshToken and ExpiresAt empty.
+type Token struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    *time.Time
+}
+
 // Identity is what a provider returns after a successful login.
 type Identity struct {
 	ProviderUserID string
 	Login          string
 	Name           string
 	AvatarURL      string
-	AccessToken    string
+	Token          Token
 	Scopes         []string
 }
 
@@ -77,6 +83,10 @@ type Provider interface {
 	Name() string
 	AuthCodeURL(state, verifier string) string
 	Exchange(ctx context.Context, code, verifier string) (Identity, error)
+	// Refresh exchanges a refresh token for a new credential pair. Providers
+	// that rotate refresh tokens return a new RefreshToken, which the caller
+	// must persist immediately: the one it replaces is already invalid.
+	Refresh(ctx context.Context, refreshToken string) (Token, error)
 	// Teams returns the teams the user is a direct member of.
 	Teams(ctx context.Context, accessToken string) ([]Team, error)
 	// Verify checks that a stored access token is still valid. It is used for
@@ -176,7 +186,7 @@ func (s *Service) Login(ctx context.Context, code, verifier string) (stores.User
 	if len(s.teams) > 0 && !hasScope(identity.Scopes, "read:org") {
 		return stores.User{}, fmt.Errorf("%w: the read:org scope was not granted", ErrAccessDenied)
 	}
-	allowed, err := s.authorized(ctx, identity.Login, identity.AccessToken)
+	allowed, err := s.authorized(ctx, identity.Login, identity.Token.AccessToken)
 	if err != nil {
 		return stores.User{}, err
 	}
@@ -186,20 +196,49 @@ func (s *Service) Login(ctx context.Context, code, verifier string) (stores.User
 
 	now := s.now()
 	user, err := s.store.UpsertUser(ctx, stores.User{
-		Provider:       s.provider.Name(),
-		ProviderUserID: identity.ProviderUserID,
-		Login:          identity.Login,
-		Name:           identity.Name,
-		AvatarURL:      identity.AvatarURL,
-		OAuthToken:     identity.AccessToken,
-		CreatedAt:      now,
-		LastLoginAt:    now,
-		LastOrgCheckAt: &now,
+		Provider:          s.provider.Name(),
+		ProviderUserID:    identity.ProviderUserID,
+		Login:             identity.Login,
+		Name:              identity.Name,
+		AvatarURL:         identity.AvatarURL,
+		OAuthAccessToken:  identity.Token.AccessToken,
+		OAuthRefreshToken: identity.Token.RefreshToken,
+		OAuthExpiresAt:    identity.Token.ExpiresAt,
+		CreatedAt:         now,
+		LastLoginAt:       now,
+		LastOrgCheckAt:    &now,
 	})
 	if err != nil {
 		return stores.User{}, err
 	}
 	return user, nil
+}
+
+// refreshLeeway is how long before its expiry a stored token is renewed, so a
+// check never races the provider's clock.
+const refreshLeeway = 5 * time.Minute
+
+// accessToken returns a token usable for a membership check, renewing and
+// persisting it first when it expired. Providers that issue non-expiring
+// tokens (no refresh token) return the stored one unchanged.
+func (s *Service) accessToken(ctx context.Context, user stores.User) (string, error) {
+	if user.OAuthRefreshToken == "" || user.OAuthExpiresAt == nil {
+		return user.OAuthAccessToken, nil
+	}
+	if s.now().Before(user.OAuthExpiresAt.Add(-refreshLeeway)) {
+		return user.OAuthAccessToken, nil
+	}
+
+	token, err := s.provider.Refresh(ctx, user.OAuthRefreshToken)
+	if err != nil {
+		return "", fmt.Errorf("refresh oauth token: %w", err)
+	}
+	if err := s.store.UpdateUserOAuthToken(ctx, user.ID, token.AccessToken, token.RefreshToken, token.ExpiresAt); err != nil {
+		// GitHub rotates refresh tokens: the one just used is now invalid, so
+		// losing the new pair means the next check cannot renew either.
+		return "", fmt.Errorf("store refreshed oauth token: %w", err)
+	}
+	return token.AccessToken, nil
 }
 
 // authorized accepts a user who is explicitly allowlisted, or who belongs to
@@ -427,7 +466,18 @@ func (s *Service) Revalidate(ctx context.Context) {
 		if user.LastOrgCheckAt != nil && now.Sub(*user.LastOrgCheckAt) < membershipCheckInterval {
 			continue
 		}
-		allowed, err := s.authorized(ctx, user.Login, user.OAuthToken)
+		accessToken, err := s.accessToken(ctx, user)
+		if err != nil {
+			if errors.Is(err, ErrTokenInvalid) {
+				s.disable(ctx, user, "stored OAuth token is no longer valid")
+				continue
+			}
+			// The token could not be renewed, so checking it would wrongly
+			// report it as revoked. Keep access and retry at the next pass.
+			slog.Warn("renew user OAuth token failed; keeping access", "login", user.Login, "error", err)
+			continue
+		}
+		allowed, err := s.authorized(ctx, user.Login, accessToken)
 		switch {
 		case err == nil && allowed:
 			if err := s.store.SetUserOrgCheck(ctx, user.ID, now); err != nil {
