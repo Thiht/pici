@@ -8,6 +8,47 @@ import (
 	"uuid"
 )
 
+// User is a human identity authenticated through an external provider.
+// OAuthToken is stored encrypted at rest and only used for membership checks.
+type User struct {
+	ID             uuid.UUID  `json:"id"`
+	Provider       string     `json:"provider"`
+	ProviderUserID string     `json:"-"`
+	Login          string     `json:"login"`
+	Name           string     `json:"name"`
+	AvatarURL      string     `json:"avatar_url"`
+	OAuthToken     string     `json:"-"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastLoginAt    time.Time  `json:"last_login_at"`
+	LastOrgCheckAt *time.Time `json:"last_org_check_at,omitempty"`
+	DisabledAt     *time.Time `json:"disabled_at,omitempty"`
+}
+
+// Session is a browser session. ID is the SHA-256 hash of the session cookie
+// value; the raw token is never stored.
+type Session struct {
+	ID         string    `json:"-"`
+	UserID     uuid.UUID `json:"-"`
+	CSRFToken  string    `json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UserAgent  string    `json:"user_agent"`
+}
+
+// APIToken is a personal token used by the CLI and scripts. TokenHash is the
+// SHA-256 hash of the raw token; the raw value is only shown when created.
+type APIToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"-"`
+	Name       string     `json:"name"`
+	Prefix     string     `json:"prefix"`
+	TokenHash  string     `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+}
+
 type Project struct {
 	ID            uuid.UUID `json:"id"`
 	Name          string    `json:"name"`
@@ -95,6 +136,8 @@ type Execution struct {
 	ParentID         *int64     `json:"parent_id,omitempty"`
 	WorkspaceID      *int64     `json:"-"`
 	SnapshotID       *uuid.UUID `json:"-"`
+	CreatedBy        *uuid.UUID `json:"created_by,omitempty"`
+	CreatedByLogin   string     `json:"created_by_login,omitempty"`
 }
 
 type Schedule struct {

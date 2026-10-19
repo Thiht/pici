@@ -209,7 +209,7 @@ func TestEnqueueRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	exec, err := r.EnqueueRetry(ctx, project, previous)
+	exec, err := r.EnqueueRetry(ctx, project, previous, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestEnqueueRetry(t *testing.T) {
 		t.Fatalf("workspace should point to parent: %+v", exec.WorkspaceID)
 	}
 
-	if _, err := r.EnqueueRetry(ctx, project, previous); !errors.Is(err, ErrNotRetryable) {
+	if _, err := r.EnqueueRetry(ctx, project, previous, nil); !errors.Is(err, ErrNotRetryable) {
 		t.Fatalf("second retry should be rejected while busy, got %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestEnqueueRetry(t *testing.T) {
 	if err := store.CreateExecution(ctx, &noWorkspace); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.EnqueueRetry(ctx, project, noWorkspace); !errors.Is(err, ErrWorkspaceGone) {
+	if _, err := r.EnqueueRetry(ctx, project, noWorkspace, nil); !errors.Is(err, ErrWorkspaceGone) {
 		t.Fatalf("missing workspace should be rejected, got %v", err)
 	}
 }

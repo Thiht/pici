@@ -153,7 +153,7 @@ func (r *Runner) Cancel(projectID uuid.UUID, execID int64) {
 	}
 }
 
-func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger) (stores.Execution, error) {
+func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger, createdBy *uuid.UUID) (stores.Execution, error) {
 	return r.enqueue(ctx, stores.Execution{
 		ProjectID: project.ID,
 		Project:   project.Name,
@@ -163,12 +163,13 @@ func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, 
 		Trigger:   trigger,
 		Source:    stores.SourceGit,
 		CreatedAt: time.Now(),
+		CreatedBy: createdBy,
 	})
 }
 
 // EnqueueSnapshot queues an execution whose code comes from a locally uploaded
 // archive instead of a git clone.
-func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID) (stores.Execution, error) {
+func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID, createdBy *uuid.UUID) (stores.Execution, error) {
 	return r.enqueue(ctx, stores.Execution{
 		ProjectID:  project.ID,
 		Project:    project.Name,
@@ -179,10 +180,11 @@ func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, wo
 		Source:     stores.SourceSnapshot,
 		SnapshotID: &snapshotID,
 		CreatedAt:  time.Now(),
+		CreatedBy:  createdBy,
 	})
 }
 
-func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, previous stores.Execution) (stores.Execution, error) {
+func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error) {
 	parentID := previous.ID
 	return r.enqueue(ctx, stores.Execution{
 		ProjectID: project.ID,
@@ -194,10 +196,11 @@ func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, pre
 		Source:    stores.SourceGit,
 		ParentID:  &parentID,
 		CreatedAt: time.Now(),
+		CreatedBy: createdBy,
 	})
 }
 
-func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previous stores.Execution) (stores.Execution, error) {
+func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error) {
 	if previous.Source != stores.SourceGit {
 		return stores.Execution{}, fmt.Errorf("%w: snapshot executions cannot be retried", ErrNotRetryable)
 	}
@@ -236,6 +239,7 @@ func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previ
 		ParentID:    &parentID,
 		WorkspaceID: &workspaceID,
 		CreatedAt:   time.Now(),
+		CreatedBy:   createdBy,
 	})
 }
 

@@ -2,48 +2,116 @@ package web
 
 import (
 	"crypto/subtle"
+	"errors"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
-	"github.com/Thiht/pici/internal/handlers/middlewares"
+	"github.com/Thiht/pici/internal/auth"
 )
+
+const oauthCookieMaxAge = 10 * 60
 
 type loginPage struct {
 	base
 	Error string
 	Next  string
+	Teams []string
+	Users []string
 }
 
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	if h.apiToken == "" {
+	if h.alreadySignedIn(r) {
 		redirect(w, r, "/")
 		return
 	}
-	if c, err := r.Cookie(middlewares.SessionCookie); err == nil && subtle.ConstantTimeCompare([]byte(c.Value), []byte(h.apiToken)) == 1 {
-		redirect(w, r, "/")
-		return
+	data := loginPage{
+		base:  h.base(w, r, "Sign in", ""),
+		Next:  safeNext(r.URL.Query().Get("next")),
+		Error: loginError(r.URL.Query().Get("error")),
+		Teams: h.auth.Teams(),
+		Users: h.auth.Users(),
 	}
-	data := loginPage{base: h.base(w, r, "Sign in", ""), Next: safeNext(r.URL.Query().Get("next"))}
 	h.render(w, r, http.StatusOK, "login", data)
 }
 
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	next := safeNext(r.FormValue("next"))
-	if h.apiToken == "" {
+// LoginStart sets an OAuth state cookie and sends the user to GitHub.
+func (h *Handler) LoginStart(w http.ResponseWriter, r *http.Request) {
+	if h.alreadySignedIn(r) {
 		redirect(w, r, "/")
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(r.FormValue("token")), []byte(h.apiToken)) != 1 {
-		data := loginPage{base: h.base(w, r, "Sign in", ""), Error: "Invalid token.", Next: next}
-		h.render(w, r, http.StatusUnauthorized, "login", data)
+	state, err := auth.NewState()
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     middlewares.SessionCookie,
-		Value:    h.apiToken,
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		HttpOnly: true,
-	})
+	verifier, err := auth.NewVerifier()
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	next := safeNext(r.URL.Query().Get("next"))
+	h.setOAuthCookies(w, state, verifier, next)
+	http.Redirect(w, r, h.auth.LoginURL(state, verifier), http.StatusSeeOther)
+}
+
+// LoginCallback verifies the OAuth state, exchanges the code, and creates a
+// session for an authorized team member.
+func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
+	stateCookie, err := r.Cookie(auth.OAuthStateCookie)
+	if err != nil || stateCookie.Value == "" ||
+		subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(r.URL.Query().Get("state"))) != 1 {
+		h.clearOAuthCookies(w)
+		redirect(w, r, "/login?error=state")
+		return
+	}
+	next := ""
+	if cookie, err := r.Cookie(auth.OAuthNextCookie); err == nil {
+		next = safeNext(cookie.Value)
+	}
+	verifier := ""
+	if cookie, err := r.Cookie(auth.OAuthVerifierCookie); err == nil {
+		verifier = cookie.Value
+	}
+	h.clearOAuthCookies(w)
+	if verifier == "" {
+		redirect(w, r, loginErrorURL(next, "state"))
+		return
+	}
+
+	if r.URL.Query().Get("error") != "" {
+		redirect(w, r, loginErrorURL(next, "denied"))
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		redirect(w, r, loginErrorURL(next, "state"))
+		return
+	}
+
+	user, err := h.auth.Login(r.Context(), code, verifier)
+	if errors.Is(err, auth.ErrAccessDenied) {
+		redirect(w, r, loginErrorURL(next, "not_member"))
+		return
+	}
+	if errors.Is(err, auth.ErrExpiringTokens) {
+		redirect(w, r, loginErrorURL(next, "expiring_tokens"))
+		return
+	}
+	if err != nil {
+		slog.Error("github login failed", "error", err)
+		redirect(w, r, loginErrorURL(next, "provider"))
+		return
+	}
+
+	raw, _, err := h.auth.CreateSession(r.Context(), user.ID, r.UserAgent())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	h.setSessionCookie(w, raw)
 	if next == "" {
 		next = "/"
 	}
@@ -55,14 +123,166 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: middlewares.SessionCookie, Value: "", Path: "/", MaxAge: -1})
+	if principal, ok := auth.FromContext(r.Context()); ok && principal.Session != nil {
+		if err := h.auth.DeleteSessionForUser(r.Context(), principal.User.ID, principal.Session.ID); err != nil {
+			slog.Warn("delete session", "error", err)
+		}
+	}
+	h.clearSessionCookie(w)
 	redirect(w, r, "/login")
+}
+
+// sessionAuth protects every UI route except the login flow and static assets.
+func (h *Handler) sessionAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicWebPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie(auth.SessionCookie)
+		if err != nil {
+			h.redirectToLogin(w, r)
+			return
+		}
+		user, session, err := h.auth.AuthenticateSession(r.Context(), cookie.Value)
+		if err != nil {
+			if errors.Is(err, auth.ErrUnauthorized) {
+				h.redirectToLogin(w, r)
+				return
+			}
+			h.serverError(w, r, err)
+			return
+		}
+		// Refresh the browser-side expiry too, so an active session keeps
+		// sliding instead of dying 30 days after login.
+		h.setSessionCookie(w, cookie.Value)
+		user.OAuthToken = ""
+		principal := auth.Principal{User: user, Session: &session}
+		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+	})
+}
+
+func isPublicWebPath(path string) bool {
+	return path == "/login" ||
+		path == "/auth/github" ||
+		path == "/auth/github/callback" ||
+		strings.HasPrefix(path, "/static/")
+}
+
+func (h *Handler) redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/login")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	target := "/login"
+	if r.Method == http.MethodGet {
+		target += "?next=" + url.QueryEscape(r.URL.RequestURI())
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (h *Handler) alreadySignedIn(r *http.Request) bool {
+	cookie, err := r.Cookie(auth.SessionCookie)
+	if err != nil {
+		return false
+	}
+	_, _, err = h.auth.AuthenticateSession(r.Context(), cookie.Value)
+	return err == nil
+}
+
+func (h *Handler) setSessionCookie(w http.ResponseWriter, raw string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.SessionCookie,
+		Value:    raw,
+		Path:     "/",
+		MaxAge:   int(h.auth.SessionTTL().Seconds()),
+		HttpOnly: true,
+		Secure:   h.auth.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.SessionCookie,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.auth.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (h *Handler) setOAuthCookies(w http.ResponseWriter, state, verifier, next string) {
+	for name, value := range map[string]string{
+		auth.OAuthStateCookie:    state,
+		auth.OAuthVerifierCookie: verifier,
+		auth.OAuthNextCookie:     next,
+	} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    value,
+			Path:     "/",
+			MaxAge:   oauthCookieMaxAge,
+			HttpOnly: true,
+			Secure:   h.auth.SecureCookies(),
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+}
+
+func (h *Handler) clearOAuthCookies(w http.ResponseWriter) {
+	for _, name := range []string{auth.OAuthStateCookie, auth.OAuthVerifierCookie, auth.OAuthNextCookie} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   h.auth.SecureCookies(),
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+}
+
+func loginErrorURL(next, code string) string {
+	values := url.Values{"error": {code}}
+	if next != "" {
+		values.Set("next", next)
+	}
+	return "/login?" + values.Encode()
+}
+
+func loginError(code string) string {
+	switch code {
+	case "not_member":
+		return "Your GitHub account is not authorized. Make sure you are a member of one of the teams above and granted the requested access."
+	case "denied":
+		return "GitHub sign-in was cancelled."
+	case "state":
+		return "Your sign-in session expired. Please try again."
+	case "provider":
+		return "GitHub is unavailable right now. Please try again."
+	case "expiring_tokens":
+		return "This OAuth App uses expiring user tokens, which pici does not support yet. Disable that option in the GitHub OAuth App settings."
+	default:
+		return ""
+	}
 }
 
 // safeNext only allows local, absolute paths so a crafted ?next= cannot
 // redirect the user off-site after login.
 func safeNext(next string) string {
-	if next == "" || next[0] != '/' || len(next) > 1 && next[1] == '/' {
+	if next == "" || strings.ContainsRune(next, '\\') {
+		return ""
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.IsAbs() || u.Host != "" || u.Scheme != "" {
+		return ""
+	}
+	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
 		return ""
 	}
 	return next

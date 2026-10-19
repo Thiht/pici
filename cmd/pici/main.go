@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/config"
 	"github.com/Thiht/pici/internal/docker"
@@ -78,11 +80,26 @@ func main() {
 
 	runner.Start(cfg.Concurrency)
 
+	authSvc := auth.NewService(
+		store,
+		auth.NewGitHubProvider(
+			cfg.GitHubClientID,
+			cfg.GitHubClientSecret,
+			cfg.PublicBaseURL+"/auth/github/callback",
+			len(cfg.GitHubTeams) > 0,
+		),
+		cfg.GitHubTeams,
+		cfg.GitHubUsers,
+		cfg.SessionTTL,
+		strings.HasPrefix(strings.ToLower(cfg.PublicBaseURL), "https://"),
+	)
+	go authSvc.RunRevalidator(rootCtx, time.Hour)
+
 	sch := &scheduler.Scheduler{
 		Store:    store,
 		Interval: cfg.SchedulerInterval,
 		Trigger: func(ctx context.Context, p stores.Project, workflow, ref string, trigger stores.Trigger) error {
-			_, err := runner.Enqueue(ctx, p, workflow, ref, "", trigger)
+			_, err := runner.Enqueue(ctx, p, workflow, ref, "", trigger, nil)
 			return err
 		},
 	}
@@ -98,8 +115,8 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.MaxSnapshotSize, cfg.APIToken, buildVersion).Routes()
-	webHandler := web.New(store, runner, cfg.WorkspaceDir, cfg.APIToken, buildVersion).Routes()
+	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.MaxSnapshotSize, authSvc, buildVersion).Routes()
+	webHandler := web.New(store, runner, cfg.WorkspaceDir, authSvc, buildVersion).Routes()
 
 	root := http.NewServeMux()
 	root.Handle("/", webHandler)

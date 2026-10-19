@@ -6,13 +6,22 @@ For day-to-day operations, prefer the [CLI](/guide/cli) (`pici-cli`). This page 
 
 ## Authentication
 
-The API token is **required** (set via `-api-token` or `PICI_API_TOKEN`; the server refuses to start without it). Send it either as `Authorization: Bearer <token>` or `X-API-Token: <token>`:
+The API requires a **personal API token**, created from the Account page after
+signing in with GitHub. Send it either as `Authorization: Bearer <token>` or
+`X-API-Token: <token>`:
 
 ```sh
-curl -H 'Authorization: Bearer <token>' localhost:8080/api/projects
+curl -H 'Authorization: Bearer pici_pat_...' localhost:8080/api/projects
 ```
 
-`/health` and `/api/webhooks/*` are exempt (webhooks use their own signature/token). The [CLI](/guide/cli) reads `PICI_TOKEN`.
+Personal tokens inherit the full access of their owner and can be revoked at
+any time. The browser session cookie is **not** accepted by the JSON API.
+
+`/health`, `/badge/*` and `/api/webhooks/*` are exempt (webhooks use their own
+signature/token). The [CLI](/guide/cli) reads `PICI_TOKEN`.
+
+See [Authentication](/guide/authentication) for the OAuth setup and token
+management.
 
 The full API is also available as an [interactive OpenAPI reference](/guide/api-reference).
 
@@ -96,8 +105,8 @@ Log events are labeled by source (`setup` or the step name). A `state` event car
 
 ## Status badge
 
-A public SVG badge for a project, embeddable in a README. It does not require the
-API token.
+A public SVG badge for a project, embeddable in a README. It does not require a
+personal API token.
 
 | Method | Path          | Description                                                                            |
 | ------ | ------------- | -------------------------------------------------------------------------------------- |

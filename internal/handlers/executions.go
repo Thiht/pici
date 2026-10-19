@@ -11,6 +11,7 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -58,7 +59,7 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.Ref = project.DefaultBranch
 	}
 
-	execution, err := h.runner.Enqueue(r.Context(), project, req.Workflow, req.Ref, "", stores.TriggerManual)
+	execution, err := h.runner.Enqueue(r.Context(), project, req.Workflow, req.Ref, "", stores.TriggerManual, auth.UserID(r.Context()))
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
@@ -124,7 +125,7 @@ func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	execution, err := h.runner.EnqueueSnapshot(r.Context(), project, workflow, ref, r.FormValue("commit_sha"), snapshotID)
+	execution, err := h.runner.EnqueueSnapshot(r.Context(), project, workflow, ref, r.FormValue("commit_sha"), snapshotID, auth.UserID(r.Context()))
 	if err != nil {
 		_ = os.Remove(dst)
 		render.Error(w, http.StatusInternalServerError, err)
@@ -155,7 +156,7 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous)
+	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous, auth.UserID(r.Context()))
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
@@ -180,7 +181,7 @@ func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous)
+	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
 	switch {
 	case errors.Is(err, ci.ErrWorkspaceGone):
 		render.Error(w, http.StatusGone, err)

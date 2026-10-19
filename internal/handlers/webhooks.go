@@ -182,7 +182,7 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 		if !matches {
 			continue
 		}
-		if _, err := h.runner.Enqueue(ctx, project, wf, ref, sha, stores.TriggerWebhook); err == nil {
+		if _, err := h.runner.Enqueue(ctx, project, wf, ref, sha, stores.TriggerWebhook, nil); err == nil {
 			enqueued = append(enqueued, wf)
 		}
 	}

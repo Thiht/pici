@@ -312,10 +312,14 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.SnapshotID != nil {
 		snapshotID = e.SnapshotID.String()
 	}
+	var createdBy any
+	if e.CreatedBy != nil {
+		createdBy = e.CreatedBy.String()
+	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID); err != nil {
+        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID, createdBy); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -346,11 +350,13 @@ func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id 
 	var snapshotID *string
 	var startedMs, setupFinishedMs, finishedMs *int64
 	var createdMs int64
+	var createdBy, createdByLogin *string
 	err := s.db.QueryRowContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
-        FROM executions
-        WHERE project_id = ? AND id = ?
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID)
+        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = ? AND e.id = ?
+    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Execution{}, ErrNotFound
 	}
@@ -360,6 +366,16 @@ func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id 
 	e.ProjectID, err = uuid.Parse(projectIDStr)
 	if err != nil {
 		return Execution{}, err
+	}
+	if createdBy != nil {
+		parsed, err := uuid.Parse(*createdBy)
+		if err != nil {
+			return Execution{}, err
+		}
+		e.CreatedBy = &parsed
+	}
+	if createdByLogin != nil {
+		e.CreatedByLogin = *createdByLogin
 	}
 	if snapshotID != nil {
 		parsed, err := uuid.Parse(*snapshotID)
@@ -389,10 +405,11 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id
-        FROM executions
-        WHERE project_id = ?
-        ORDER BY id DESC
+        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = ?
+        ORDER BY e.id DESC
         LIMIT ?
     `, projectID.String(), limit)
 	if err != nil {
@@ -407,12 +424,23 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		var snapshotID *string
 		var startedMs, setupFinishedMs, finishedMs *int64
 		var createdMs int64
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID); err != nil {
+		var createdBy, createdByLogin *string
+		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin); err != nil {
 			return nil, err
 		}
 		e.ProjectID, err = uuid.Parse(projectIDStr)
 		if err != nil {
 			return nil, err
+		}
+		if createdBy != nil {
+			parsed, err := uuid.Parse(*createdBy)
+			if err != nil {
+				return nil, err
+			}
+			e.CreatedBy = &parsed
+		}
+		if createdByLogin != nil {
+			e.CreatedByLogin = *createdByLogin
 		}
 		if snapshotID != nil {
 			parsed, err := uuid.Parse(*snapshotID)
@@ -608,4 +636,309 @@ func (s *sqliteStore) ListDueSchedules(ctx context.Context, now time.Time) ([]Sc
 		schedules = append(schedules, sch)
 	}
 	return schedules, rows.Err()
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func (s *sqliteStore) scanUser(row rowScanner) (User, error) {
+	var u User
+	var id string
+	var createdMs, lastLoginMs int64
+	var lastCheckMs, disabledMs *int64
+	if err := row.Scan(&id, &u.Provider, &u.ProviderUserID, &u.Login, &u.Name, &u.AvatarURL, &u.OAuthToken, &createdMs, &lastLoginMs, &lastCheckMs, &disabledMs); err != nil {
+		return User{}, err
+	}
+	var err error
+	u.ID, err = uuid.Parse(id)
+	if err != nil {
+		return User{}, err
+	}
+	u.CreatedAt = time.UnixMilli(createdMs)
+	u.LastLoginAt = time.UnixMilli(lastLoginMs)
+	if lastCheckMs != nil {
+		t := time.UnixMilli(*lastCheckMs)
+		u.LastOrgCheckAt = &t
+	}
+	if disabledMs != nil {
+		t := time.UnixMilli(*disabledMs)
+		u.DisabledAt = &t
+	}
+	u.OAuthToken = decrypt(s.cipher, u.OAuthToken)
+	return u, nil
+}
+
+func (s *sqliteStore) UpsertUser(ctx context.Context, u User) (User, error) {
+	if u.ID == uuid.Nil() {
+		u.ID = uuid.New()
+	}
+	created := u.CreatedAt
+	if created.IsZero() {
+		created = u.LastLoginAt
+	}
+	if created.IsZero() {
+		created = time.Now()
+	}
+	lastLogin := u.LastLoginAt
+	if lastLogin.IsZero() {
+		lastLogin = created
+	}
+	var lastCheck, disabled any
+	if u.LastOrgCheckAt != nil {
+		lastCheck = u.LastOrgCheckAt.UnixMilli()
+	}
+	if u.DisabledAt != nil {
+		disabled = u.DisabledAt.UnixMilli()
+	}
+	token := encrypt(s.cipher, u.OAuthToken)
+
+	var id string
+	err := s.db.QueryRowContext(ctx, `
+        INSERT INTO users (id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (provider, provider_user_id) DO UPDATE SET
+            login = excluded.login,
+            name = excluded.name,
+            avatar_url = excluded.avatar_url,
+            oauth_token = excluded.oauth_token,
+            last_login_at = excluded.last_login_at,
+            last_org_check_at = excluded.last_org_check_at,
+            disabled_at = NULL
+        RETURNING id
+    `, u.ID.String(), u.Provider, u.ProviderUserID, u.Login, u.Name, u.AvatarURL, token, created.UnixMilli(), lastLogin.UnixMilli(), lastCheck, disabled).Scan(&id)
+	if err != nil {
+		return User{}, err
+	}
+	u.ID, err = uuid.Parse(id)
+	if err != nil {
+		return User{}, err
+	}
+	return s.GetUser(ctx, u.ID)
+}
+
+func (s *sqliteStore) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
+	u, err := s.scanUser(s.db.QueryRowContext(ctx, `
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        FROM users
+        WHERE id = ?
+    `, id.String()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	return u, err
+}
+
+func (s *sqliteStore) ListActiveUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT id, provider, provider_user_id, login, name, avatar_url, oauth_token, created_at, last_login_at, last_org_check_at, disabled_at
+        FROM users
+        WHERE disabled_at IS NULL
+        ORDER BY login
+    `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]User, 0)
+	for rows.Next() {
+		u, err := s.scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func (s *sqliteStore) SetUserOrgCheck(ctx context.Context, id uuid.UUID, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET last_org_check_at = ? WHERE id = ?`, at.UnixMilli(), id.String())
+	return err
+}
+
+func (s *sqliteStore) DisableUser(ctx context.Context, id uuid.UUID, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET disabled_at = ? WHERE id = ?`, at.UnixMilli(), id.String())
+	return err
+}
+
+func (s *sqliteStore) scanSession(row rowScanner) (Session, error) {
+	var sess Session
+	var id, userID string
+	var createdMs, seenMs, expiresMs int64
+	if err := row.Scan(&id, &userID, &sess.CSRFToken, &createdMs, &seenMs, &expiresMs, &sess.UserAgent); err != nil {
+		return Session{}, err
+	}
+	sess.ID = id
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return Session{}, err
+	}
+	sess.UserID = uid
+	sess.CreatedAt = time.UnixMilli(createdMs)
+	sess.LastSeenAt = time.UnixMilli(seenMs)
+	sess.ExpiresAt = time.UnixMilli(expiresMs)
+	return sess, nil
+}
+
+func (s *sqliteStore) CreateSession(ctx context.Context, sess Session) error {
+	_, err := s.db.ExecContext(ctx, `
+        INSERT INTO sessions (id, user_id, csrf_token, created_at, last_seen_at, expires_at, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, sess.ID, sess.UserID.String(), sess.CSRFToken, sess.CreatedAt.UnixMilli(), sess.LastSeenAt.UnixMilli(), sess.ExpiresAt.UnixMilli(), sess.UserAgent)
+	return err
+}
+
+func (s *sqliteStore) GetSession(ctx context.Context, id string) (Session, error) {
+	sess, err := s.scanSession(s.db.QueryRowContext(ctx, `
+        SELECT id, user_id, csrf_token, created_at, last_seen_at, expires_at, user_agent
+        FROM sessions
+        WHERE id = ?
+    `, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Session{}, ErrNotFound
+	}
+	return sess, err
+}
+
+func (s *sqliteStore) TouchSession(ctx context.Context, id string, seen, expires time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?`, seen.UnixMilli(), expires.UnixMilli(), id)
+	return err
+}
+
+func (s *sqliteStore) DeleteSession(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	return err
+}
+
+func (s *sqliteStore) DeleteUserSession(ctx context.Context, userID uuid.UUID, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND id = ?`, userID.String(), id)
+	return err
+}
+
+func (s *sqliteStore) DeleteUserSessions(ctx context.Context, userID uuid.UUID) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID.String())
+	return err
+}
+
+func (s *sqliteStore) DeleteExpiredSessions(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ?`, before.UnixMilli())
+	return err
+}
+
+func (s *sqliteStore) ListUserSessions(ctx context.Context, userID uuid.UUID) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT id, user_id, csrf_token, created_at, last_seen_at, expires_at, user_agent
+        FROM sessions
+        WHERE user_id = ?
+        ORDER BY last_seen_at DESC
+    `, userID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := make([]Session, 0)
+	for rows.Next() {
+		sess, err := s.scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, sess)
+	}
+	return sessions, rows.Err()
+}
+
+func (s *sqliteStore) scanAPIToken(row rowScanner) (APIToken, error) {
+	var t APIToken
+	var id, userID string
+	var createdMs int64
+	var lastUsedMs, expiresMs *int64
+	if err := row.Scan(&id, &userID, &t.Name, &t.Prefix, &t.TokenHash, &createdMs, &lastUsedMs, &expiresMs); err != nil {
+		return APIToken{}, err
+	}
+	var err error
+	t.ID, err = uuid.Parse(id)
+	if err != nil {
+		return APIToken{}, err
+	}
+	t.UserID, err = uuid.Parse(userID)
+	if err != nil {
+		return APIToken{}, err
+	}
+	t.CreatedAt = time.UnixMilli(createdMs)
+	if lastUsedMs != nil {
+		v := time.UnixMilli(*lastUsedMs)
+		t.LastUsedAt = &v
+	}
+	if expiresMs != nil {
+		v := time.UnixMilli(*expiresMs)
+		t.ExpiresAt = &v
+	}
+	return t, nil
+}
+
+func (s *sqliteStore) CreateAPIToken(ctx context.Context, t APIToken) error {
+	var lastUsed, expires any
+	if t.LastUsedAt != nil {
+		lastUsed = t.LastUsedAt.UnixMilli()
+	}
+	if t.ExpiresAt != nil {
+		expires = t.ExpiresAt.UnixMilli()
+	}
+	_, err := s.db.ExecContext(ctx, `
+        INSERT INTO api_tokens (id, user_id, name, prefix, token_hash, created_at, last_used_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, t.ID.String(), t.UserID.String(), t.Name, t.Prefix, t.TokenHash, t.CreatedAt.UnixMilli(), lastUsed, expires)
+	return err
+}
+
+func (s *sqliteStore) GetAPITokenByHash(ctx context.Context, hash string) (APIToken, error) {
+	t, err := s.scanAPIToken(s.db.QueryRowContext(ctx, `
+        SELECT id, user_id, name, prefix, token_hash, created_at, last_used_at, expires_at
+        FROM api_tokens
+        WHERE token_hash = ?
+    `, hash))
+	if errors.Is(err, sql.ErrNoRows) {
+		return APIToken{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (s *sqliteStore) ListAPITokens(ctx context.Context, userID uuid.UUID) ([]APIToken, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT id, user_id, name, prefix, token_hash, created_at, last_used_at, expires_at
+        FROM api_tokens
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    `, userID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tokens := make([]APIToken, 0)
+	for rows.Next() {
+		t, err := s.scanAPIToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+func (s *sqliteStore) RenameAPIToken(ctx context.Context, userID, id uuid.UUID, name string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET name = ? WHERE user_id = ? AND id = ?`, name, userID.String(), id.String())
+	return err
+}
+
+func (s *sqliteStore) DeleteAPIToken(ctx context.Context, userID, id uuid.UUID) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ? AND id = ?`, userID.String(), id.String())
+	return err
+}
+
+func (s *sqliteStore) TouchAPIToken(ctx context.Context, id uuid.UUID, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, at.UnixMilli(), id.String())
+	return err
 }

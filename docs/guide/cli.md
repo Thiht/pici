@@ -1,6 +1,6 @@
 # CLI
 
-A small client that talks to the server. Set `PICI_ADDR` to the server URL (default `http://localhost:8080`) and, if the server requires auth, `PICI_TOKEN`.
+A small client that talks to the server. Set `PICI_ADDR` to the server URL (default `http://localhost:8080`) and `PICI_TOKEN` to a personal API token created on the Account page (see [Authentication](/guide/authentication)).
 
 Build it:
 

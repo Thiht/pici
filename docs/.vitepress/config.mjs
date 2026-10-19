@@ -16,6 +16,7 @@ export default defineConfig({
         items: [
           { text: 'What is pici?', link: '/' },
           { text: 'Getting started', link: '/guide/getting-started' },
+          { text: 'Authentication', link: '/guide/authentication' },
         ],
       },
       {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
@@ -18,10 +19,10 @@ type Handler struct {
 	system     *SystemHandler
 	cache      *CacheHandler
 
-	apiToken string
+	auth *auth.Service
 }
 
-func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath string, maxSnapshotSize int64, apiToken, buildVersion string) *Handler {
+func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath string, maxSnapshotSize int64, authSvc *auth.Service, buildVersion string) *Handler {
 	return &Handler{
 		projects:   NewProjectsHandler(store, runner, workspaceDir),
 		variables:  NewVariablesHandler(store),
@@ -30,7 +31,7 @@ func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspace
 		artifacts:  NewArtifactsHandler(store, runner),
 		system:     NewSystemHandler(store, engine, buildVersion),
 		cache:      NewCacheHandler(store, engine),
-		apiToken:   apiToken,
+		auth:       authSvc,
 	}
 }
 
@@ -76,5 +77,5 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/webhooks/github/{id}", h.webhooks.GitHub)
 	mux.HandleFunc("POST /api/webhooks/gitlab/{id}", h.webhooks.GitLab)
 
-	return middlewares.Log(middlewares.Auth(h.apiToken, mux))
+	return middlewares.Log(middlewares.API(h.auth, mux))
 }

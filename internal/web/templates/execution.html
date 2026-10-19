@@ -53,6 +53,7 @@
         <dt class="opacity-60">Trigger</dt>
         <dd>
           {{.Execution.Trigger}}
+          {{if .Execution.CreatedByLogin}}by {{.Execution.CreatedByLogin}}{{end}}
         </dd>
       </div>
       {{if .Execution.ParentID}}

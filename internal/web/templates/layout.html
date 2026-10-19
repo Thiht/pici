@@ -27,6 +27,17 @@
         </ul>
       </div>
       <div class="navbar-end gap-3">
+        {{if .User}}
+          <a class="btn btn-ghost btn-sm gap-2" href="/account" title="Account">
+            {{if .User.AvatarURL}}
+              <img class="size-6 rounded-full"
+                   src="{{.User.AvatarURL}}"
+                   alt=""
+                   referrerpolicy="no-referrer">
+            {{end}}
+            <span class="hidden sm:inline">{{.User.Login}}</span>
+          </a>
+        {{end}}
         <button type="button"
                 class="btn btn-ghost btn-sm"
                 aria-label="Toggle dark mode"

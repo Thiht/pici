@@ -198,6 +198,8 @@ type Execution struct {
 	FinishedAt      *time.Time   `json:"finished_at,omitempty"`
 	CreatedAt       time.Time    `json:"created_at"`
 	ParentID        *int64       `json:"parent_id,omitempty"`
+	CreatedBy       *uuid.UUID   `json:"created_by,omitempty"`
+	CreatedByLogin  string       `json:"created_by_login,omitempty"`
 }
 
 type Artifact struct {

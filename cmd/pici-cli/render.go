@@ -162,6 +162,9 @@ func printExecution(e client.Execution) {
 	if e.Project != "" {
 		title = e.Project + "  " + title
 	}
+	if e.CreatedByLogin != "" {
+		title += "  by " + e.CreatedByLogin
+	}
 	fmt.Printf("%s  %s  %s\n",
 		paint(statusSymbol(status)+" "+status, statusColor(status)),
 		title,

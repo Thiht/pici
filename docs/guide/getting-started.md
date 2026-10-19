@@ -2,20 +2,37 @@
 
 ## Prerequisites
 
-- Go 1.27+
 - Docker (running, with the Engine API reachable)
 - SQLite (default) or Postgres
 
 ## Run the server
 
-Two settings are **required** (the server refuses to start without them): a secret key and an API token.
+pici signs people in with GitHub. You need a GitHub OAuth App, a secret key,
+and either a team whose members may use pici or a list of allowed GitHub
+logins. The server refuses to start without them.
 
 ```sh
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
-export PICI_API_TOKEN=$(openssl rand -hex 24)
+export PICI_PUBLIC_URL=http://localhost:8080
+export PICI_GITHUB_CLIENT_ID=Iv1.abc123
+export PICI_GITHUB_CLIENT_SECRET=ghs_...
+export PICI_GITHUB_TEAMS=acme/pici-users
 
 pici
 ```
+
+For a personal instance with no organization, replace the team with an
+allowlist:
+
+```sh
+export PICI_GITHUB_USERS=your-github-login
+```
+
+Create the OAuth App with callback URL
+`http://localhost:8080/auth/github/callback`, then open
+`http://localhost:8080` and sign in. See
+[Authentication](/guide/authentication) for the full setup, including
+organization approval in team mode.
 
 Configuration is flags-first. See [Configuration](/guide/configuration) for the full list.
 
@@ -23,12 +40,21 @@ Configuration is flags-first. See [Configuration](/guide/configuration) for the 
 pici -http-addr :8080 -db-driver sqlite -db-dsn pici.db
 ```
 
+## Create an API token
+
+Open the **Account** page and create a personal token. Copy it now: it is shown
+once. Then export it for the CLI:
+
+```sh
+export PICI_TOKEN=pici_pat_...
+```
+
 ## Add a project
 
 Register a repository (GitHub, GitLab, or any git URL):
 
 ```sh
-PICI_TOKEN=$PICI_API_TOKEN pici-cli projects add demo https://github.com/acme/demo.git
+pici-cli projects add demo https://github.com/acme/demo.git
 ```
 
 ## Write a workflow
@@ -66,11 +92,11 @@ steps:
 ## Trigger a run
 
 ```sh
-PICI_TOKEN=$PICI_API_TOKEN pici-cli run demo build
+pici-cli run demo build
 ```
 
 Then watch the logs:
 
 ```sh
-PICI_TOKEN=$PICI_API_TOKEN pici-cli logs <id> --follow
+pici-cli logs <id> --follow
 ```

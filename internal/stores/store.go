@@ -57,6 +57,28 @@ type Store interface {
 	ListSchedules(ctx context.Context) ([]Schedule, error)
 	ListDueSchedules(ctx context.Context, now time.Time) ([]Schedule, error)
 
+	UpsertUser(ctx context.Context, u User) (User, error)
+	GetUser(ctx context.Context, id uuid.UUID) (User, error)
+	ListActiveUsers(ctx context.Context) ([]User, error)
+	SetUserOrgCheck(ctx context.Context, id uuid.UUID, at time.Time) error
+	DisableUser(ctx context.Context, id uuid.UUID, at time.Time) error
+
+	CreateSession(ctx context.Context, s Session) error
+	GetSession(ctx context.Context, id string) (Session, error)
+	TouchSession(ctx context.Context, id string, seen, expires time.Time) error
+	DeleteSession(ctx context.Context, id string) error
+	DeleteUserSession(ctx context.Context, userID uuid.UUID, id string) error
+	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
+	DeleteExpiredSessions(ctx context.Context, before time.Time) error
+	ListUserSessions(ctx context.Context, userID uuid.UUID) ([]Session, error)
+
+	CreateAPIToken(ctx context.Context, t APIToken) error
+	GetAPITokenByHash(ctx context.Context, hash string) (APIToken, error)
+	ListAPITokens(ctx context.Context, userID uuid.UUID) ([]APIToken, error)
+	RenameAPIToken(ctx context.Context, userID, id uuid.UUID, name string) error
+	DeleteAPIToken(ctx context.Context, userID, id uuid.UUID) error
+	TouchAPIToken(ctx context.Context, id uuid.UUID, at time.Time) error
+
 	Close() error
 }
 

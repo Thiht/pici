@@ -9,8 +9,9 @@ info:
 
     ## Authentication
 
-    The API token is required (set via `-api-token` or `PICI_API_TOKEN`).
-    Send it either as `Authorization: Bearer <token>` or `X-API-Token: <token>`.
+    The API requires a personal API token, created from the Account page after
+    signing in with GitHub. Send it either as `Authorization: Bearer <token>` or
+    `X-API-Token: <token>`. Browser session cookies are not accepted.
 
     `/health`, `/api/webhooks/*` and `/badge/*` are exempt (webhooks use their
     own signature/token, badges are meant to be embedded publicly).
@@ -105,7 +106,7 @@ paths:
       summary: Status badge
       description: |
         A public shields.io-style SVG status badge for a project, embeddable in
-        a README. No API token is required. `workflow` selects the workflow
+        a README. No personal API token is required. `workflow` selects the workflow
         (newest execution of any workflow otherwise); `label` overrides the text
         shown on the left.
       security: []
@@ -819,12 +820,12 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: "Send the API token as `Authorization: Bearer <token>`."
+      description: "Send a personal API token as `Authorization: Bearer <token>`."
     ApiToken:
       type: apiKey
       in: header
       name: X-API-Token
-      description: Send the API token in the `X-API-Token` header.
+      description: Send a personal API token in the `X-API-Token` header.
 
   parameters:
     ProjectId:
@@ -865,7 +866,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Unauthorized:
-      description: Missing or invalid API token (or webhook signature)
+      description: Missing or invalid personal API token (or webhook signature)
       content:
         application/json:
           schema:

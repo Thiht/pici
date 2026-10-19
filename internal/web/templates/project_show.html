@@ -58,6 +58,7 @@
             <th scope="col">Workflow</th>
             <th scope="col">Ref</th>
             <th scope="col">Trigger</th>
+            <th scope="col">By</th>
             <th scope="col">Duration</th>
             <th scope="col">Created</th>
           </tr>
@@ -70,6 +71,7 @@
               <td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a>{{if eq (printf "%s" .Source) "snapshot"}} <span class="badge badge-soft badge-accent">local</span>{{end}}</td>
               <td class="font-mono text-xs">{{.Ref}}</td>
               <td>{{.Trigger}}</td>
+              <td class="text-xs">{{if .CreatedByLogin}}{{.CreatedByLogin}}{{else}}—{{end}}</td>
               <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>
               <td class="text-xs opacity-60">{{formatTime .CreatedAt}}</td>
             </tr>

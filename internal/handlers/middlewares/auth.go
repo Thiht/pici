@@ -1,44 +1,43 @@
 package middlewares
 
 import (
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/handlers/render"
 )
 
-// SessionCookie carries the API token for browser sessions. It is set by the
-// web UI login form so that native navigation and form submissions work.
-const SessionCookie = "pici_token"
-
-func Auth(token string, next http.Handler) http.Handler {
-	if token == "" {
-		return next
-	}
+// API authenticates JSON API requests with a personal API token. Browser
+// sessions are intentionally not accepted on the API: the web UI talks to the
+// store directly, and keeping cookies out of the API avoids CSRF there.
+func API(svc *auth.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isExempt(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if subtle.ConstantTimeCompare([]byte(credential(r)), []byte(token)) != 1 {
+		user, err := svc.AuthenticateToken(r.Context(), bearerToken(r))
+		if err != nil {
+			if !errors.Is(err, auth.ErrUnauthorized) {
+				render.Error(w, http.StatusInternalServerError, err)
+				return
+			}
 			unauthorized(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		user.OAuthToken = ""
+		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{User: user})))
 	})
 }
 
-// isExempt lists the only paths reachable without a token: health checks,
-// incoming webhooks, status badges, the login form, and the static assets it
-// needs.
+// isExempt lists the only API paths reachable without a token: health checks,
+// incoming webhooks, and public status badges.
 func isExempt(path string) bool {
 	return path == "/health" ||
-		path == "/login" ||
 		strings.HasPrefix(path, "/badge/") ||
-		strings.HasPrefix(path, "/api/webhooks/") ||
-		strings.HasPrefix(path, "/static/")
+		strings.HasPrefix(path, "/api/webhooks/")
 }
 
 func unauthorized(w http.ResponseWriter, r *http.Request) {
@@ -46,22 +45,7 @@ func unauthorized(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusUnauthorized, errors.New("invalid or missing API token"))
 		return
 	}
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/login")
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-func credential(r *http.Request) string {
-	if token := bearerToken(r); token != "" {
-		return token
-	}
-	if c, err := r.Cookie(SessionCookie); err == nil {
-		return c.Value
-	}
-	return ""
+	http.Error(w, "invalid or missing API token", http.StatusUnauthorized)
 }
 
 func bearerToken(r *http.Request) string {

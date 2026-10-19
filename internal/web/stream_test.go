@@ -1,7 +1,6 @@
 package web
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -50,11 +50,18 @@ func TestExecutionStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := New(store, runner, dir, "", "dev")
+	svc := newWebTestService(t, store, &fakeProvider{
+		identity: fakeIdentity(),
+		teams:    []auth.Team{{Org: "acme", Slug: "pici"}},
+	}, []string{"acme/pici"}, nil)
+	user := newWebTestUser(t, store)
+	session, _ := newWebTestSession(t, svc, user.ID)
+	h := New(store, runner, dir, svc, "dev")
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
 
-	resp, err := http.Get(srv.URL + "/projects/" + projectID.String() + "/executions/" + strconv.FormatInt(exec.ID, 10) + "/stream")
+	client := newCookieClient(t, srv.URL, session)
+	resp, err := client.Get(srv.URL + "/projects/" + projectID.String() + "/executions/" + strconv.FormatInt(exec.ID, 10) + "/stream")
 	if err != nil {
 		t.Fatal(err)
 	}

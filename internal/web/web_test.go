@@ -6,7 +6,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -19,38 +18,26 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/Thiht/pici/internal/ci"
-	"github.com/Thiht/pici/internal/handlers/middlewares"
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func newHandler(t *testing.T, token string) *Handler {
+func newTestServer(t *testing.T, _ string) (*httptest.Server, *http.Client) {
 	t.Helper()
-	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return New(store, &ci.Runner{Store: store}, t.TempDir(), token, "dev")
-}
-
-func newTestServer(t *testing.T, token string) (*httptest.Server, *http.Client) {
-	t.Helper()
-	srv := httptest.NewServer(newHandler(t, token).Routes())
-	t.Cleanup(srv.Close)
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{
-		Jar:           jar,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	return srv, client
+	env := newTestEnv(t)
+	return env.srv, env.client
 }
 
 func postForm(t *testing.T, client *http.Client, rawURL string, values url.Values) *http.Response {
 	t.Helper()
+	if values == nil {
+		values = url.Values{}
+	}
+	if values.Get("_csrf") == "" {
+		if token := lookupTestCSRF(rawURL); token != "" {
+			values.Set("_csrf", token)
+		}
+	}
 	resp, err := client.PostForm(rawURL, values)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +66,7 @@ func cookieValue(client *http.Client, rawURL, name string) string {
 }
 
 func TestTemplatesParse(t *testing.T) {
-	for _, name := range []string{"head", "nav", "foot", "flash", "login", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "project_show", "project_variables", "project_cache", "workflows", "refs", "variables_list", "execution_show", "error"} {
+	for _, name := range []string{"head", "nav", "foot", "flash", "login", "account", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "project_show", "project_variables", "project_cache", "workflows", "refs", "variables_list", "execution_show", "error"} {
 		if templates.Lookup(name) == nil {
 			t.Errorf("template %q not found", name)
 		}
@@ -297,40 +284,135 @@ func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 	}
 }
 
-func TestLoginRequired(t *testing.T) {
-	srv, client := newTestServer(t, "secret")
-	resp, err := client.Get(srv.URL + "/")
-	if err != nil {
-		t.Fatal(err)
+func TestSafeNext(t *testing.T) {
+	cases := map[string]string{
+		"":                    "",
+		"/":                   "/",
+		"/projects/demo":      "/projects/demo",
+		"/projects?status=ok": "/projects?status=ok",
+		"//evil.com":          "",
+		"/\\evil.com":         "",
+		"https://evil.com":    "",
+		"javascript:alert(1)": "",
+		"projects":            "",
 	}
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected redirect to login, got %d", resp.StatusCode)
-	}
-	if got := resp.Header.Get("Location"); got != "/login" {
-		t.Fatalf("expected /login, got %q", got)
+	for input, want := range cases {
+		if got := safeNext(input); got != want {
+			t.Errorf("safeNext(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
-func TestLoginSetsCookie(t *testing.T) {
-	srv, client := newTestServer(t, "secret")
-
-	page, err := client.Get(srv.URL + "/login")
+func TestLoginRequired(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.anonymousClient(t)
+	resp, err := client.Get(env.srv.URL + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 login page, got %d", page.StatusCode)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected redirect to login, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); !strings.HasPrefix(got, "/login?next=") {
+		t.Fatalf("expected /login?next=..., got %q", got)
+	}
+}
+
+func TestLoginPageShowsGitHub(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.anonymousClient(t)
+	resp, err := client.Get(env.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := body(t, resp)
+	for _, want := range []string{"Sign in with GitHub", "acme/pici"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in login page, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestUsersOnlyLogin(t *testing.T) {
+	env := newTestEnvWithAccess(t, nil, []string{"alice"}, func(p *fakeProvider) {
+		p.identity.Scopes = nil
+	})
+	client := env.anonymousClient(t)
+
+	page, err := client.Get(env.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := body(t, page)
+	if !strings.Contains(out, "alice") || strings.Contains(out, "acme/pici") {
+		t.Fatalf("expected the users-only login page, got:\n%s", out)
 	}
 
-	ok := postForm(t, client, srv.URL+"/login", url.Values{"token": {"secret"}})
-	if ok.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected 303 after login, got %d", ok.StatusCode)
+	start, err := client.Get(env.srv.URL + "/auth/github")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cookieValue(client, srv.URL, middlewares.SessionCookie) != "secret" {
+	defer start.Body.Close()
+	location, _ := url.Parse(start.Header.Get("Location"))
+	state := location.Query().Get("state")
+
+	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/" {
+		t.Fatalf("expected redirect to /, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
+	}
+	if env.provider.lastVerifier == "" {
+		t.Fatal("expected the PKCE verifier to be sent back")
+	}
+	if cookieValue(client, env.srv.URL, auth.SessionCookie) == "" {
+		t.Fatal("expected session cookie to be set")
+	}
+}
+
+func TestOAuthLoginCreatesSession(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.anonymousClient(t)
+
+	start, err := client.Get(env.srv.URL + "/auth/github?next=/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer start.Body.Close()
+	if start.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected redirect to GitHub, got %d", start.StatusCode)
+	}
+	location, err := url.Parse(start.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := location.Query().Get("state")
+	if state == "" {
+		t.Fatal("expected OAuth state")
+	}
+
+	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected redirect after callback, got %d: %s", callback.StatusCode, body(t, callback))
+	}
+	if got := callback.Header.Get("Location"); got != "/" {
+		t.Fatalf("expected redirect to /, got %q", got)
+	}
+	if env.provider.lastVerifier == "" {
+		t.Fatal("expected the PKCE verifier to be sent back")
+	}
+	if cookieValue(client, env.srv.URL, auth.SessionCookie) == "" {
 		t.Fatal("expected session cookie to be set")
 	}
 
-	home, err := client.Get(srv.URL + "/")
+	home, err := client.Get(env.srv.URL + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,37 +421,171 @@ func TestLoginSetsCookie(t *testing.T) {
 	}
 }
 
-func TestLoginWrongToken(t *testing.T) {
-	srv, client := newTestServer(t, "secret")
-	resp := postForm(t, client, srv.URL+"/login", url.Values{"token": {"nope"}})
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", resp.StatusCode)
+func TestLoginRejectsNonMember(t *testing.T) {
+	env := newTestEnv(t, func(p *fakeProvider) { p.teams = nil })
+	client := env.anonymousClient(t)
+
+	start, err := client.Get(env.srv.URL + "/auth/github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer start.Body.Close()
+	location, _ := url.Parse(start.Header.Get("Location"))
+	state := location.Query().Get("state")
+
+	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/login?error=not_member" {
+		t.Fatalf("expected not_member redirect, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
+	}
+	if cookieValue(client, env.srv.URL, auth.SessionCookie) != "" {
+		t.Fatal("session cookie must not be set for a non-member")
+	}
+}
+
+func TestLoginRejectsMissingScope(t *testing.T) {
+	env := newTestEnv(t, func(p *fakeProvider) { p.identity.Scopes = []string{"repo"} })
+	client := env.anonymousClient(t)
+
+	start, err := client.Get(env.srv.URL + "/auth/github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer start.Body.Close()
+	location, _ := url.Parse(start.Header.Get("Location"))
+	state := location.Query().Get("state")
+
+	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/login?error=not_member" {
+		t.Fatalf("expected not_member redirect, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
+	}
+}
+
+func TestLoginRejectsExpiringTokens(t *testing.T) {
+	env := newTestEnv(t, func(p *fakeProvider) { p.exchangeErr = auth.ErrExpiringTokens })
+	client := env.anonymousClient(t)
+
+	start, err := client.Get(env.srv.URL + "/auth/github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer start.Body.Close()
+	location, _ := url.Parse(start.Header.Get("Location"))
+	state := location.Query().Get("state")
+
+	callback, err := client.Get(env.srv.URL + "/auth/github/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/login?error=expiring_tokens" {
+		t.Fatalf("expected expiring_tokens redirect, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
+	}
+}
+
+func TestLoginRejectsBadState(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.anonymousClient(t)
+	resp, err := client.Get(env.srv.URL + "/auth/github/callback?state=wrong&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/login?error=state" {
+		t.Fatalf("expected state error, got %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+func TestAccountTokenLifecycle(t *testing.T) {
+	env := newTestEnv(t)
+
+	page, err := env.client.Get(env.srv.URL + "/account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := body(t, page); !strings.Contains(out, "Personal API tokens") {
+		t.Fatalf("expected account page, got:\n%s", out)
+	}
+
+	created := postForm(t, env.client, env.srv.URL+"/account/tokens", url.Values{
+		"name":    {"cli"},
+		"expires": {"90d"},
+	})
+	createdBody := body(t, created)
+	if created.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", created.StatusCode)
+	}
+	if !strings.Contains(createdBody, "pici_pat_") || !strings.Contains(createdBody, "Copy your new token now") {
+		t.Fatalf("expected the new token to be shown once, got:\n%s", createdBody)
+	}
+
+	tokens, err := env.store.ListAPITokens(context.Background(), env.user.ID)
+	if err != nil || len(tokens) != 1 || tokens[0].Name != "cli" {
+		t.Fatalf("unexpected tokens: %+v (err=%v)", tokens, err)
+	}
+
+	renamed := postForm(t, env.client, env.srv.URL+"/account/tokens/"+tokens[0].ID.String()+"/rename", url.Values{"name": {"renamed"}})
+	if renamed.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", renamed.StatusCode)
+	}
+	tokens, err = env.store.ListAPITokens(context.Background(), env.user.ID)
+	if err != nil || len(tokens) != 1 || tokens[0].Name != "renamed" {
+		t.Fatalf("token was not renamed: %+v (err=%v)", tokens, err)
+	}
+
+	revoked := postForm(t, env.client, env.srv.URL+"/account/tokens/"+tokens[0].ID.String()+"/delete", nil)
+	if revoked.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", revoked.StatusCode)
+	}
+	tokens, err = env.store.ListAPITokens(context.Background(), env.user.ID)
+	if err != nil || len(tokens) != 0 {
+		t.Fatalf("expected token to be revoked, got %+v (err=%v)", tokens, err)
+	}
+}
+
+func TestAccountSessionRevocation(t *testing.T) {
+	env := newTestEnv(t)
+
+	revoked := postForm(t, env.client, env.srv.URL+"/account/sessions/"+env.session.ID+"/delete", nil)
+	if revoked.StatusCode != http.StatusSeeOther || revoked.Header.Get("Location") != "/login" {
+		t.Fatalf("expected redirect to login, got %d %q", revoked.StatusCode, revoked.Header.Get("Location"))
+	}
+
+	home, err := env.client.Get(env.srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer home.Body.Close()
+	if home.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected session to be revoked, got %d", home.StatusCode)
 	}
 }
 
 func TestCSRFRequiredForMutations(t *testing.T) {
-	srv, client := newTestServer(t, "secret")
+	env := newTestEnv(t)
 
-	// Sign in, which also issues the CSRF cookie via the login page.
-	if _, err := client.Get(srv.URL + "/login"); err != nil {
+	missing, err := env.client.PostForm(env.srv.URL+"/projects", url.Values{
+		"name": {"demo"}, "repo_url": {"https://x/y.git"},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if ok := postForm(t, client, srv.URL+"/login", url.Values{"token": {"secret"}}); ok.StatusCode != http.StatusSeeOther {
-		t.Fatalf("login failed: %d", ok.StatusCode)
-	}
-	csrf := cookieValue(client, srv.URL, csrfCookie)
-	if csrf == "" {
-		t.Fatal("expected csrf cookie")
-	}
-
-	missing := postForm(t, client, srv.URL+"/projects", url.Values{"name": {"demo"}, "repo_url": {"https://x/y.git"}})
+	defer missing.Body.Close()
 	if missing.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 without csrf, got %d", missing.StatusCode)
 	}
 
-	valid := postForm(t, client, srv.URL+"/projects", url.Values{
-		"_csrf": {csrf}, "name": {"demo"}, "repo_url": {"https://x/y.git"},
+	valid := postForm(t, env.client, env.srv.URL+"/projects", url.Values{
+		"name": {"demo"}, "repo_url": {"https://x/y.git"},
 	})
+	defer valid.Body.Close()
 	if valid.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 with csrf, got %d", valid.StatusCode)
 	}
@@ -555,19 +771,13 @@ func TestDefaultAuthUser(t *testing.T) {
 }
 
 func TestProjectCreateWithKeyFile(t *testing.T) {
-	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	h := New(store, &ci.Runner{Store: store}, t.TempDir(), "", "dev")
-	srv := httptest.NewServer(h.Routes())
-	t.Cleanup(srv.Close)
+	env := newTestEnv(t)
+	store := env.store
 
 	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	for k, v := range map[string]string{"name": "demo", "repo_url": "https://example.com/x/y.git", "auth_type": "ssh"} {
+	for k, v := range map[string]string{"_csrf": env.session.CSRFToken, "name": "demo", "repo_url": "https://example.com/x/y.git", "auth_type": "ssh"} {
 		if err := mw.WriteField(k, v); err != nil {
 			t.Fatal(err)
 		}
@@ -583,18 +793,18 @@ func TestProjectCreateWithKeyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/projects", &buf)
+	req, err := http.NewRequest(http.MethodPost, env.srv.URL+"/projects", &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := env.client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = body(t, resp)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected final 200 after redirect, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 after create, got %d", resp.StatusCode)
 	}
 
 	projects, err := store.ListProjects(context.Background())
@@ -715,20 +925,17 @@ func TestProjectCacheDeleteRejectsForeignResource(t *testing.T) {
 }
 
 func TestProjectCacheDeleteRequiresCSRF(t *testing.T) {
-	srv, client := newTestServer(t, "secret")
-	if _, err := client.Get(srv.URL + "/login"); err != nil {
-		t.Fatal(err)
-	}
-	if ok := postForm(t, client, srv.URL+"/login", url.Values{"token": {"secret"}}); ok.StatusCode != http.StatusSeeOther {
-		t.Fatalf("login failed: %d", ok.StatusCode)
-	}
-	csrf := cookieValue(client, srv.URL, csrfCookie)
-	created := postForm(t, client, srv.URL+"/projects", url.Values{
-		"_csrf": {csrf}, "name": {"demo"}, "repo_url": {"https://github.com/acme/demo.git"}, "auth_type": {"none"},
+	env := newTestEnv(t)
+	created := postForm(t, env.client, env.srv.URL+"/projects", url.Values{
+		"name": {"demo"}, "repo_url": {"https://github.com/acme/demo.git"}, "auth_type": {"none"},
 	})
 	id := strings.TrimPrefix(created.Header.Get("Location"), "/projects/")
 
-	resp := postForm(t, client, srv.URL+"/projects/"+id+"/cache/images/delete", url.Values{"reference": {"pici/x-build"}})
+	resp, err := env.client.PostForm(env.srv.URL+"/projects/"+id+"/cache/images/delete", url.Values{"reference": {"pici/x-build"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 without csrf, got %d", resp.StatusCode)
 	}

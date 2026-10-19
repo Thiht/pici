@@ -18,11 +18,10 @@ import (
 
 func newExecServer(t *testing.T, maxSnapshotSize int64) (*Handler, stores.Store, string, uuid.UUID) {
 	t.Helper()
-	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := newTestStore(t)
+	svc := newTestAuthService(t, store)
+	user := newTestUser(t, store)
+	newTestAPIToken(t, store, user.ID, "secret")
 
 	projectID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
 	if _, err := store.CreateProject(t.Context(), stores.Project{
@@ -37,7 +36,7 @@ func newExecServer(t *testing.T, maxSnapshotSize int64) (*Handler, stores.Store,
 	}
 
 	ws := t.TempDir()
-	s := New(store, &ci.Runner{Store: store, WorkspaceDir: ws}, nil, ws, "/workspace", maxSnapshotSize, "", "dev")
+	s := New(store, &ci.Runner{Store: store, WorkspaceDir: ws}, nil, ws, "/workspace", maxSnapshotSize, svc, "dev")
 	return s, store, ws, projectID
 }
 
@@ -59,6 +58,7 @@ func snapshotRequest(t *testing.T, projectID uuid.UUID, content []byte) *http.Re
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/projects/"+projectID.String()+"/executions", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer secret")
 	return req
 }
 
@@ -104,8 +104,7 @@ func TestRebuildSnapshotRejected(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/projects/"+projectID.String()+"/executions/"+itoa(e.ID)+"/rebuild", nil)
-	rr := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rr, req)
+	rr := serveAuthed(t, s, req)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -133,8 +132,7 @@ func TestRetryExecution(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/projects/"+projectID.String()+"/executions/"+itoa(previous.ID)+"/retry", nil)
-	rr := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rr, req)
+	rr := serveAuthed(t, s, req)
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -167,8 +165,7 @@ func TestRetrySnapshotRejected(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/projects/"+projectID.String()+"/executions/"+itoa(e.ID)+"/retry", nil)
-	rr := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rr, req)
+	rr := serveAuthed(t, s, req)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}

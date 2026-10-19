@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -69,7 +70,7 @@ func (h *Handler) ExecutionCreate(w http.ResponseWriter, r *http.Request) {
 	if ref == "" {
 		ref = project.DefaultBranch
 	}
-	execution, err := h.runner.Enqueue(r.Context(), project, workflow, ref, "", stores.TriggerManual)
+	execution, err := h.runner.Enqueue(r.Context(), project, workflow, ref, "", stores.TriggerManual, auth.UserID(r.Context()))
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -272,7 +273,7 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 		return
 	}
-	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous)
+	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous, auth.UserID(r.Context()))
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -302,7 +303,7 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.runner.EnqueueRetry(r.Context(), project, previous)
+	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
 	switch {
 	case errors.Is(err, ci.ErrWorkspaceGone):
 		setFlash(w, "error", "The workspace is no longer available.")

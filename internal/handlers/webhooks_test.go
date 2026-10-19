@@ -47,7 +47,7 @@ func newWebhookServer(t *testing.T, repoURL, webhookSecret string) (*Handler, st
 	}
 
 	runner := &ci.Runner{Store: store}
-	s := New(store, runner, nil, t.TempDir(), "/workspace", 512<<20, "", "dev")
+	s := New(store, runner, nil, t.TempDir(), "/workspace", 512<<20, newTestAuthService(t, store), "dev")
 	return s, store
 }
 

@@ -4,7 +4,6 @@
 package web
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
@@ -18,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
 	"github.com/Thiht/pici/internal/stores"
@@ -29,10 +29,7 @@ var templatesFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-const (
-	csrfCookie  = "pici_csrf"
-	flashCookie = "pici_flash"
-)
+const flashCookie = "pici_flash"
 
 var funcs = template.FuncMap{
 	"statusClass":   statusClass,
@@ -74,18 +71,16 @@ type Handler struct {
 	runner       *ci.Runner
 	workspaceDir string
 	buildVersion string
-	apiToken     string
-	csrfEnabled  bool
+	auth         *auth.Service
 }
 
-func New(store stores.Store, runner *ci.Runner, workspaceDir, apiToken, buildVersion string) *Handler {
+func New(store stores.Store, runner *ci.Runner, workspaceDir string, authSvc *auth.Service, buildVersion string) *Handler {
 	return &Handler{
 		store:        store,
 		runner:       runner,
 		workspaceDir: workspaceDir,
 		buildVersion: buildVersion,
-		apiToken:     apiToken,
-		csrfEnabled:  apiToken != "",
+		auth:         authSvc,
 	}
 }
 
@@ -93,8 +88,16 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /login", h.LoginPage)
-	mux.HandleFunc("POST /login", h.Login)
+	mux.HandleFunc("GET /auth/github", h.LoginStart)
+	mux.HandleFunc("GET /auth/github/callback", h.LoginCallback)
 	mux.HandleFunc("POST /logout", h.Logout)
+
+	mux.HandleFunc("GET /account", h.AccountPage)
+	mux.HandleFunc("POST /account/tokens", h.AccountTokenCreate)
+	mux.HandleFunc("POST /account/tokens/{id}/rename", h.AccountTokenRename)
+	mux.HandleFunc("POST /account/tokens/{id}/delete", h.AccountTokenDelete)
+	mux.HandleFunc("POST /account/sessions/{id}/delete", h.AccountSessionDelete)
+	mux.HandleFunc("POST /account/sessions/delete-all", h.AccountSessionsDeleteAll)
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticRoot)))
 
@@ -129,7 +132,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /projects/{id}/executions/{executionID}/retry", h.ExecutionRetry)
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.ArtifactDownload)
 
-	return middlewares.Log(middlewares.Auth(h.apiToken, mux))
+	return middlewares.Log(h.sessionAuth(mux))
 }
 
 // base is embedded in every page model. It carries the shared chrome data.
@@ -141,10 +144,18 @@ type base struct {
 	FlashText    string
 	Version      string
 	AssetVersion string
+	User         *stores.User
 }
 
 func (h *Handler) base(w http.ResponseWriter, r *http.Request, title, active string) base {
-	b := base{Title: title, Active: active, CSRFToken: h.ensureCSRF(w, r), Version: h.buildVersion, AssetVersion: assetVersion}
+	b := base{Title: title, Active: active, Version: h.buildVersion, AssetVersion: assetVersion}
+	if principal, ok := auth.FromContext(r.Context()); ok {
+		user := principal.User
+		b.User = &user
+		if principal.Session != nil {
+			b.CSRFToken = principal.Session.CSRFToken
+		}
+	}
 	if c, err := r.Cookie(flashCookie); err == nil && c.Value != "" {
 		kind, text, _ := strings.Cut(c.Value, ":")
 		if decoded, err := url.QueryUnescape(text); err == nil {
@@ -188,36 +199,12 @@ func setFlash(w http.ResponseWriter, kind, text string) {
 	})
 }
 
-func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
-	if !h.csrfEnabled {
-		return ""
-	}
-	if c, err := r.Cookie(csrfCookie); err == nil && c.Value != "" {
-		return c.Value
-	}
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return ""
-	}
-	token := hex.EncodeToString(buf)
-	http.SetCookie(w, &http.Cookie{
-		Name:     csrfCookie,
-		Value:    token,
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-	})
-	return token
-}
-
 func (h *Handler) validCSRF(r *http.Request) bool {
-	if !h.csrfEnabled {
-		return true
-	}
-	c, err := r.Cookie(csrfCookie)
-	if err != nil || c.Value == "" {
+	principal, ok := auth.FromContext(r.Context())
+	if !ok || principal.Session == nil {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(r.FormValue("_csrf"))) == 1
+	return subtle.ConstantTimeCompare([]byte(principal.Session.CSRFToken), []byte(r.FormValue("_csrf"))) == 1
 }
 
 func statusClass(status any) string {

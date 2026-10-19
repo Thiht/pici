@@ -97,16 +97,23 @@ The mounted repo is trusted automatically (`safe.directory`), so `git` and Go's 
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
-| Flag               | Env                    | Default              | Description                          |
-| ------------------ | ---------------------- | -------------------- | ------------------------------------ |
-| `-http-addr`       | `PICI_HTTP_ADDR`       | `:8080`              | HTTP listen address                  |
-| `-db-driver`       | `PICI_DB_DRIVER`       | `sqlite`             | `sqlite` or `postgres`               |
-| `-db-dsn`          | `PICI_DB_DSN`          | `pici.db`            | SQLite path, or Postgres DSN         |
-| `-workspace-dir`   | `PICI_WORKSPACE_DIR`   | `~/.pici/workspaces` | where clones and logs live           |
-| `-repo-mount-path` | `PICI_REPO_MOUNT_PATH` | `/workspace`         | in-container mount point of the repo |
-| `-concurrency`     | `PICI_CONCURRENCY`     | `4`                  | max concurrent executions            |
-| `-step-timeout`    | `PICI_STEP_TIMEOUT`    | `30m`                | default step timeout                 |
-| `-config`          | `PICI_CONFIG`          | —                    | path to a JSON config file           |
+| Flag                    | Env                         | Default              | Description                                    |
+| ----------------------- | --------------------------- | -------------------- | ---------------------------------------------- |
+| `-http-addr`            | `PICI_HTTP_ADDR`            | `:8080`              | HTTP listen address                            |
+| `-db-driver`            | `PICI_DB_DRIVER`            | `sqlite`             | `sqlite` or `postgres`                         |
+| `-db-dsn`               | `PICI_DB_DSN`               | `pici.db`            | SQLite path, or Postgres DSN                   |
+| `-workspace-dir`        | `PICI_WORKSPACE_DIR`        | `~/.pici/workspaces` | where clones and logs live                     |
+| `-repo-mount-path`      | `PICI_REPO_MOUNT_PATH`      | `/workspace`         | in-container mount point of the repo           |
+| `-concurrency`          | `PICI_CONCURRENCY`          | `4`                  | max concurrent executions                      |
+| `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                | default step timeout                           |
+| `-secret-key`           | `PICI_SECRET_KEY`           | —                    | **required** — 32-byte key for secrets at rest |
+| `-public-url`           | `PICI_PUBLIC_URL`           | —                    | **required** — public base URL                 |
+| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                    | **required** — OAuth App client id             |
+| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                    | **required** — OAuth App client secret         |
+| `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                    | allowed teams (`org/team`)                     |
+| `-github-users`         | `PICI_GITHUB_USERS`         | —                    | allowed GitHub logins                          |
+| `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`               | browser session lifetime (sliding)             |
+| `-config`               | `PICI_CONFIG`               | —                    | path to a JSON config file                     |
 
 Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker`, ...).
 
@@ -115,13 +122,36 @@ Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker
 pici -http-addr :9090 -concurrency 8
 
 # env
-PICI_DB_DSN=/var/lib/pici/pici.db pici
+PICI_DB_DSN=/var/lib/pici/pici.db \
+PICI_PUBLIC_URL=https://pici.example.com \
+PICI_GITHUB_CLIENT_ID=Iv1.abc123 \
+PICI_GITHUB_CLIENT_SECRET=ghs_... \
+PICI_GITHUB_TEAMS=acme/pici-users \
+PICI_SECRET_KEY=$(openssl rand -hex 32) \
+pici
+
+# personal instance, no organization
+# PICI_GITHUB_USERS=Thiht
 
 # config file (JSON)
 pici -config /etc/pici.json
 ```
 
+At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. See
+[Authentication](docs/guide/authentication.md) for the GitHub OAuth App setup
+and both access models.
+
 ## API
+
+The API requires a **personal API token**, created from the Account page after
+signing in with GitHub. Send it as `Authorization: Bearer <token>` or
+`X-API-Token: <token>`. The browser session cookie is not accepted by the API.
+
+```sh
+curl -H 'Authorization: Bearer pici_pat_...' https://pici.example.com/api/projects
+```
+
+`/health`, `/badge/*` and `/api/webhooks/*` are exempt.
 
 ### Projects
 
@@ -217,13 +247,6 @@ GET    /badge/{id}?workflow=build&label=build
 ![build](https://pici.example.com/badge/demo?workflow=build)
 ```
 
-## Design notes
-
-- Plain `net/http` (Go 1.22+ routing), no framework.
-- Storage: `sqlite` (default, no CGO via `modernc.org/sqlite`) or `postgres` (via `pgx`).
-- Git: `go-git` (pure Go), supports HTTPS+token and SSH.
-- Docker: official Engine API SDK.
-
 ## Features
 
 - Projects (public/private, GitHub/GitLab/generic), variables & secrets.
@@ -232,6 +255,7 @@ GET    /badge/{id}?workflow=build&label=build
 - GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules; pull requests opened from a fork are never built automatically.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Partial re-run of failed steps, reusing the failed run's workspace.
+- GitHub OAuth login restricted to configured teams or a user allowlist, revocable personal API tokens, server-side sessions, and per-execution user attribution.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
 - Streaming logs (SSE) in the UI and on the API, public README status badges, graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
@@ -255,9 +279,15 @@ templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
 projects, variables & secrets, triggering/cancelling/rebuilding/retrying executions, per-step
 and full logs, artifacts, and per-project Docker cache (images and cache volumes).
 
-When `PICI_API_TOKEN` is set, the UI asks for it once and stores it in an `HttpOnly`
-cookie (the JSON API keeps using the `X-API-Token` / `Bearer` header). Static assets
-and the login form are the only unauthenticated UI routes.
+Humans sign in with **GitHub OAuth**; access is restricted to the teams listed
+in `PICI_GITHUB_TEAMS`, the logins listed in `PICI_GITHUB_USERS`, or both.
+Browser sessions are stored server-side and kept in an `HttpOnly`, `Secure`
+cookie. The Account page lets each user create,
+rename and revoke personal API tokens, and revoke browser sessions.
+
+The JSON API only accepts personal tokens (`Bearer` / `X-API-Token`); it never
+accepts the session cookie. Static assets, the login page and the OAuth callback
+are the only unauthenticated UI routes.
 
 The execution page streams logs live (SSE) while a run is in progress and falls
 back to a static render once it finishes.

@@ -77,7 +77,7 @@ func TestBadgeExemptFromAuth(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s := New(store, nil, nil, t.TempDir(), "/workspace", 512<<20, "secret", "dev")
+	s := New(store, nil, nil, t.TempDir(), "/workspace", 512<<20, newTestAuthService(t, store), "dev")
 
 	req := httptest.NewRequest(http.MethodGet, "/badge/demo", nil)
 	rr := httptest.NewRecorder()
