@@ -8,6 +8,9 @@ import (
 )
 
 type Config struct {
+	// Schema is the optional `$schema` key, used by editors for validation and
+	// completion. It is accepted but ignored at runtime.
+	Schema      string            `yaml:"$schema"`
 	Name        string            `yaml:"name"`
 	Image       string            `yaml:"image"`
 	Env         map[string]string `yaml:"env"`

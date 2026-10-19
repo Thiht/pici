@@ -73,6 +73,9 @@ steps:
 - `timeout` is per-step; default comes from `PICI_STEP_TIMEOUT` (30m).
 - `depends_on` controls ordering; a failure skips downstream steps.
 
+A [JSON Schema](docs/guide/ci-schema.md) for `ci.yml` is served by every
+instance at `/static/ci.schema.json`, for editor validation and completion.
+
 ### Built-in environment variables
 
 | Variable            | Description                                   |

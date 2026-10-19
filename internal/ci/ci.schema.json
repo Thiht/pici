@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pici workflow",
+  "description": "A pici workflow, stored as `.ci/<workflow>/ci.yml`. See https://github.com/Thiht/pici for the full documentation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["steps"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of the JSON Schema for this file. Editors use it for validation and completion; pici ignores it at runtime."
+    },
+    "name": {
+      "type": "string",
+      "description": "Workflow name. Defaults to the name of the folder under `.ci/`."
+    },
+    "image": {
+      "type": "string",
+      "description": "Docker image to run the steps in, instead of building the workflow's `Dockerfile`. Example: `node:20`."
+    },
+    "env": {
+      "description": "Environment variables injected into every step.",
+      "$ref": "#/$defs/env"
+    },
+    "on": {
+      "description": "Events that trigger the workflow. Accepts an event name, a list of event names, or a mapping with per-event filters. An empty value (`on:` or `on: {}`) means the workflow only runs when started by hand.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": ["push", "pull_request"],
+          "description": "A single event, unrestricted."
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": ["push", "pull_request"]
+          },
+          "description": "A list of unrestricted events."
+        },
+        {
+          "$ref": "#/$defs/onMapping"
+        }
+      ]
+    },
+    "paths": {
+      "description": "Globs (relative to the repo root). The workflow only runs when a push or pull request changes a matching file.",
+      "$ref": "#/$defs/stringList"
+    },
+    "paths_ignore": {
+      "description": "Globs (relative to the repo root) excluded from `paths`.",
+      "$ref": "#/$defs/stringList"
+    },
+    "cache": {
+      "description": "Paths (relative to the repo root) persisted between runs in a project-wide Docker volume.",
+      "$ref": "#/$defs/stringList"
+    },
+    "concurrency": {
+      "type": "string",
+      "description": "Concurrency group. Starting an execution in this group cancels the one already running for the project."
+    },
+    "steps": {
+      "type": "array",
+      "description": "The steps of the workflow. Independent steps run in parallel.",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" }
+        ]
+      }
+    },
+    "duration": {
+      "type": "string",
+      "description": "A Go duration, e.g. `30s`, `5m`, `1h30m`.",
+      "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "anyOf": [
+        {
+          "required": ["script"],
+          "properties": {
+            "script": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": ["run"],
+          "properties": {
+            "run": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Step name, unique within the workflow.",
+          "minLength": 1
+        },
+        "script": {
+          "type": "string",
+          "description": "Path to a script, relative to `.ci/<workflow>/`. Run through its shebang if present, otherwise through the interpreter matching its extension (`.sh`, `.py`, `.js`, `.rb`, `.go`, ...)."
+        },
+        "run": {
+          "type": "string",
+          "description": "An arbitrary shell command, run with `sh -c`. Alternative to `script`."
+        },
+        "timeout": {
+          "description": "Per-step timeout. Defaults to `PICI_STEP_TIMEOUT` (30m).",
+          "$ref": "#/$defs/duration"
+        },
+        "depends_on": {
+          "description": "Names of the steps that must succeed first. A failed step skips its dependents.",
+          "$ref": "#/$defs/stringList"
+        },
+        "env": {
+          "description": "Environment variables injected into this step only.",
+          "$ref": "#/$defs/env"
+        },
+        "retry": {
+          "type": "integer",
+          "description": "Number of additional attempts after the first failure.",
+          "minimum": 0
+        },
+        "artifacts": {
+          "description": "Globs (relative to the repo root) of files to collect after a successful step.",
+          "$ref": "#/$defs/stringList"
+        },
+        "docker": {
+          "type": "boolean",
+          "description": "Give the step access to the Docker daemon pici uses (sets `DOCKER_HOST`, mounts the socket when applicable). Defaults to false."
+        }
+      }
+    },
+    "refFilter": {
+      "description": "Restrict an event to matching branch and/or tag refs. An empty value matches everything.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "branches": {
+              "description": "Branch globs.",
+              "$ref": "#/$defs/stringList"
+            },
+            "tags": {
+              "description": "Tag globs.",
+              "$ref": "#/$defs/stringList"
+            }
+          }
+        }
+      ]
+    },
+    "pullRequestFilter": {
+      "description": "Restrict the `pull_request` event. The filter matches the target (base) branch.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "branches": {
+              "description": "Target branch globs.",
+              "$ref": "#/$defs/stringList"
+            }
+          }
+        }
+      ]
+    },
+    "onMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "push": {
+          "description": "Run on branch and tag pushes.",
+          "$ref": "#/$defs/refFilter"
+        },
+        "pull_request": {
+          "description": "Run on pull requests. Pull requests opened from a fork never trigger a run automatically.",
+          "$ref": "#/$defs/pullRequestFilter"
+        },
+        "manual": {
+          "description": "Restrict the refs that manual runs (CLI, web UI, `--local`) may use. Only accepts a mapping.",
+          "$ref": "#/$defs/refFilter"
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Cron expression. Runs on the project's default branch and is never filtered by `paths`.",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

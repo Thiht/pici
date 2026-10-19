@@ -31,6 +31,7 @@ export default defineConfig({
         items: [
           { text: 'Projects', link: '/guide/projects' },
           { text: 'Workflows (.ci)', link: '/guide/workflows' },
+          { text: 'ci.yml schema', link: '/guide/ci-schema' },
           { text: 'Variables & secrets', link: '/guide/variables' },
           { text: 'Webhooks & schedules', link: '/guide/webhooks' },
         ],

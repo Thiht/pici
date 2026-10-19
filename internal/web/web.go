@@ -100,6 +100,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /account/sessions/delete-all", h.AccountSessionsDeleteAll)
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticRoot)))
+	// The ci.yml JSON Schema has no UI counterpart but is served like a static
+	// asset, and the exact pattern takes precedence over the file server above.
+	mux.HandleFunc("GET /static/ci.schema.json", h.Schema)
 
 	mux.HandleFunc("GET /{$}", h.ProjectsList)
 	mux.HandleFunc("GET /projects/new", h.ProjectNew)
@@ -133,6 +136,14 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /projects/{id}/executions/{executionID}/artifacts/{step}/{path...}", h.ArtifactDownload)
 
 	return middlewares.Log(h.sessionAuth(mux))
+}
+
+// Schema serves the JSON Schema for `ci.yml` so editors can fetch it over HTTP
+// (see /guide/ci-schema).
+func (h *Handler) Schema(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/schema+json")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(ci.Schema)
 }
 
 // base is embedded in every page model. It carries the shared chrome data.

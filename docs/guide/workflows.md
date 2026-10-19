@@ -224,3 +224,6 @@ Git is pre-configured to trust the mounted repo (`safe.directory`) and to commit
 ```sh
 pici-cli validate .ci/build/ci.yml
 ```
+
+Editors can validate and autocomplete `ci.yml` as you type with the
+[ci.yml schema](/guide/ci-schema).

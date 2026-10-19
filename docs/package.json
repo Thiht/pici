@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync-schema": "cp ../internal/ci/ci.schema.json public/ci.schema.json",
+    "predev": "npm run sync-schema",
     "dev": "vitepress dev",
+    "prebuild": "npm run sync-schema",
     "build": "vitepress build",
     "preview": "vitepress preview"
   },

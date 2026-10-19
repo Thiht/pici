@@ -33,6 +33,22 @@ steps:
 	}
 }
 
+func TestParseSchemaKey(t *testing.T) {
+	data := []byte(`
+$schema: https://pici.example.com/static/ci.schema.json
+steps:
+  - name: test
+    run: go test ./...
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Schema != "https://pici.example.com/static/ci.schema.json" {
+		t.Errorf("expected the $schema URL to be kept, got %q", cfg.Schema)
+	}
+}
+
 func TestParseStepDocker(t *testing.T) {
 	data := []byte(`
 steps:

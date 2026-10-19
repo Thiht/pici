@@ -6,6 +6,9 @@
 *.db
 *.log
 
+# Generated from internal/ci/ci.schema.json by the docs build
+/docs/public/ci.schema.json
+
 # Local agent tooling
 /.agents/
 /.claude/
