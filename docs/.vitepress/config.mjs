@@ -5,6 +5,13 @@ export default defineConfig({
   description: 'A minimal, self-hosted CI system',
   lang: 'en-US',
   cleanUrls: true,
+  lastUpdated: true,
+  markdown: {
+    lineNumbers: true,
+    image: {
+      lazyLoading: true,
+    },
+  },
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
@@ -39,6 +46,25 @@ export default defineConfig({
         ],
       },
     ],
+    search: {
+      provider: 'local',
+    },
+    editLink: {
+      pattern: 'https://github.com/Thiht/pici/edit/main/docs/:path',
+      text: 'Edit this page',
+    },
+    externalLinkIcon: true,
+    footer: {
+      message: 'A minimal, self-hosted CI system',
+      copyright: '© 2026 pici',
+    },
+    notFound: {
+      title: 'Page not found',
+      quote: 'The page you are looking for does not exist.',
+      linkLabel: 'go to the guide',
+      linkText: 'Go to the guide',
+      link: '/guide/getting-started',
+    },
     socialLinks: [{ icon: 'github', link: 'https://github.com/Thiht/pici' }],
   },
 })
