@@ -29,6 +29,12 @@ type stepView struct {
 	Logs string
 }
 
+// TimeoutExceeded reports whether a failed step ran longer than its timeout.
+func (s stepView) TimeoutExceeded() bool {
+	return s.Status == stores.StepStatusFailed && s.Timeout > 0 && s.StartedAt != nil && s.FinishedAt != nil &&
+		s.FinishedAt.Sub(*s.StartedAt) > s.Timeout
+}
+
 type envVar struct {
 	Key   string
 	Value string

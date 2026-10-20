@@ -285,6 +285,33 @@ func TestExecutionTemplateRunningStepTimer(t *testing.T) {
 	}
 }
 
+func TestExecutionTemplateFailedStepShowsExceededTimeout(t *testing.T) {
+	started := time.Now().Add(-6 * time.Minute)
+	finished := time.Now()
+	data := executionPage{
+		Title: "Execution", Active: "projects", Version: "dev",
+		Execution: stores.Execution{
+			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
+			CreatedAt: started, StartedAt: &started, FinishedAt: &finished,
+		},
+		Steps: []stepView{
+			{Name: "compile", Status: stores.StepStatusFailed, StartedAt: &started, FinishedAt: &finished, Timeout: 5 * time.Minute},
+			{Name: "test", Status: stores.StepStatusSuccess, StartedAt: &started, FinishedAt: &finished, Timeout: 5 * time.Minute},
+		},
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "6m0s / 5m0s") {
+		t.Fatalf("expected the failed step to show its timeout, got:\n%s", out)
+	}
+	if n := strings.Count(out, "/ 5m0s"); n != 1 {
+		t.Fatalf("expected the timeout on the failed step only, got %d occurrences:\n%s", n, out)
+	}
+}
+
 func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 	started := time.Now()
 	data := executionPage{
@@ -1035,6 +1062,26 @@ func TestCapitalize(t *testing.T) {
 		if got := capitalize(in); got != want {
 			t.Errorf("capitalize(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestProjectShowExecutionShowsShortCommit(t *testing.T) {
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	data := projectPage{
+		Title: "demo", Active: "projects", Version: "dev",
+		Project: stores.Project{ID: uuid.MustParse("33333333-3333-3333-3333-333333333333"), Name: "demo"},
+		Executions: []stores.Execution{{
+			ID: 7, Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
+			CommitSHA: sha, CreatedAt: time.Now(),
+		}},
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "project_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `title="`+sha+`">0123456</span>`) {
+		t.Fatalf("expected the short commit next to the ref, got:\n%s", out)
 	}
 }
 

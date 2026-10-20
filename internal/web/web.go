@@ -42,6 +42,7 @@ var funcs = template.FuncMap{
 	"ansi":          ansiToHTML,
 	"capitalize":    capitalize,
 	"splitEnv":      splitEnv,
+	"shortSHA":      shortSHA,
 }
 
 var templates = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
@@ -234,6 +235,13 @@ func statusClass(status any) string {
 	default:
 		return "badge badge-soft badge-neutral"
 	}
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func capitalize(v any) string {

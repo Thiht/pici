@@ -115,15 +115,16 @@
           <summary class="collapse-title flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>{{.Name}}</span>
             <span class="ml-auto flex items-center gap-2">
-              <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
               {{if and .StartedAt (ne .ExitCode 0)}}<span class="text-xs opacity-60">exit {{.ExitCode}}</span>{{end}}
               <span class="text-xs opacity-60"
                     data-step-time
+                    data-status="{{.Status}}"
                     {{with .StartedAt}}data-started="{{.UnixMilli}}"
                     {{end}}
                     {{with .FinishedAt}}data-finished="{{.UnixMilli}}"
                     {{end}}
-                    data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}</span>
+                    data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}{{if .TimeoutExceeded}} / {{.Timeout}}{{end}}</span>
+              <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
             </span>
           </summary>
           <div class="collapse-content">
@@ -232,8 +233,10 @@
           if (!started) return;
           const finished = Number(el.dataset.finished);
           const timeout = Number(el.dataset.timeout);
-          let text = formatDuration((finished || now) - started);
-          if (!finished && timeout > 0) text += " / " + formatDuration(timeout);
+          const elapsed = (finished || now) - started;
+          let text = formatDuration(elapsed);
+          const timedOut = finished && el.dataset.status === "failed" && elapsed > timeout;
+          if (timeout > 0 && (!finished || timedOut)) text += " / " + formatDuration(timeout);
           el.textContent = text;
         });
       };
@@ -289,6 +292,7 @@
           }
           const time = details.querySelector("[data-step-time]");
           if (time) {
+            if (s.status) time.dataset.status = s.status;
             if (s.started_at) time.dataset.started = parseTime(s.started_at);
             if (s.finished_at) time.dataset.finished = parseTime(s.finished_at);
             if (s.timeout) time.dataset.timeout = Math.round(s.timeout / 1e6);
