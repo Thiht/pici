@@ -14,10 +14,16 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-max-snapshot-size`    | `PICI_MAX_SNAPSHOT_SIZE`    | `536870912` (512 MiB) | maximum size of an uploaded local snapshot                      |
 | `-secret-key`           | `PICI_SECRET_KEY`           | —                     | **required** — 32-byte key (hex/base64) for encrypting secrets  |
 | `-public-url`           | `PICI_PUBLIC_URL`           | —                     | **required** — public base URL, e.g. `https://pici.example.com` |
-| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                     | **required** — GitHub OAuth App client id                       |
-| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                     | **required** — GitHub OAuth App client secret                   |
+| `-auth-provider`        | `PICI_AUTH_PROVIDER`        | `github`              | sign-in provider: `github` or `gitlab`                          |
+| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                     | GitHub OAuth App client id                                      |
+| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                     | GitHub OAuth App client secret                                  |
 | `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                     | comma-separated teams allowed to sign in (`org/team`)           |
 | `-github-users`         | `PICI_GITHUB_USERS`         | —                     | comma-separated GitHub logins allowed to sign in                |
+| `-gitlab-url`           | `PICI_GITLAB_URL`           | `https://gitlab.com`  | GitLab instance base URL                                        |
+| `-gitlab-client-id`     | `PICI_GITLAB_CLIENT_ID`     | —                     | GitLab OAuth application id                                     |
+| `-gitlab-client-secret` | `PICI_GITLAB_CLIENT_SECRET` | —                     | GitLab OAuth application secret                                 |
+| `-gitlab-groups`        | `PICI_GITLAB_GROUPS`        | —                     | comma-separated groups allowed to sign in (`group/path`)        |
+| `-gitlab-users`         | `PICI_GITLAB_USERS`         | —                     | comma-separated GitLab usernames allowed to sign in             |
 | `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`                | browser session lifetime (sliding)                              |
 | `-gc-interval`          | `PICI_GC_INTERVAL`          | `10m`                 | garbage collection interval                                     |
 | `-gc-keep`              | `PICI_GC_KEEP`              | `24h`                 | keep finished workspaces/logs for this long                     |
@@ -25,9 +31,12 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-shutdown-timeout`     | `PICI_SHUTDOWN_TIMEOUT`     | `30s`                 | grace period for in-flight steps on shutdown                    |
 | `-config`               | `PICI_CONFIG`               | —                     | path to a JSON config file                                      |
 
-At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. See
-[Authentication](/guide/authentication) for the GitHub OAuth setup and personal
-API tokens.
+With the default `PICI_AUTH_PROVIDER=github`, at least one of
+`PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. With
+`PICI_AUTH_PROVIDER=gitlab`, set the `PICI_GITLAB_*` variables and at least one
+of `PICI_GITLAB_GROUPS` or `PICI_GITLAB_USERS`. Settings for the provider that
+is not selected are ignored. See [Authentication](/guide/authentication) for
+the OAuth setup and personal API tokens.
 
 ## Example config file
 
@@ -47,6 +56,10 @@ API tokens.
 
 For a personal instance, omit `github-teams` and use
 `"github-users": "Thiht"` instead.
+
+For a GitLab instance, set `"auth-provider": "gitlab"` and replace the GitHub
+keys with `gitlab-url`, `gitlab-client-id`, `gitlab-client-secret`, and
+`gitlab-groups` or `gitlab-users`.
 
 ```sh
 pici -config /etc/pici.json

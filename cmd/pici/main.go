@@ -80,16 +80,28 @@ func main() {
 
 	runner.Start(cfg.Concurrency)
 
+	var provider auth.Provider = auth.NewGitHubProvider(
+		cfg.GitHubClientID,
+		cfg.GitHubClientSecret,
+		cfg.PublicBaseURL+"/auth/github/callback",
+		len(cfg.GitHubTeams) > 0,
+	)
+	accessTeams, accessUsers := cfg.GitHubTeams, cfg.GitHubUsers
+	if cfg.AuthProvider == "gitlab" {
+		provider = auth.NewGitLabProvider(
+			cfg.GitLabURL,
+			cfg.GitLabClientID,
+			cfg.GitLabClientSecret,
+			cfg.PublicBaseURL+"/auth/gitlab/callback",
+		)
+		accessTeams, accessUsers = cfg.GitLabGroups, cfg.GitLabUsers
+	}
+
 	authSvc := auth.NewService(
 		store,
-		auth.NewGitHubProvider(
-			cfg.GitHubClientID,
-			cfg.GitHubClientSecret,
-			cfg.PublicBaseURL+"/auth/github/callback",
-			len(cfg.GitHubTeams) > 0,
-		),
-		cfg.GitHubTeams,
-		cfg.GitHubUsers,
+		provider,
+		accessTeams,
+		accessUsers,
 		cfg.SessionTTL,
 		strings.HasPrefix(strings.ToLower(cfg.PublicBaseURL), "https://"),
 	)

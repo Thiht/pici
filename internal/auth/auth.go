@@ -1,5 +1,5 @@
-// Package auth authenticates humans through an external provider (GitHub for
-// now) and issues the two credentials pici knows about: browser sessions for
+// Package auth authenticates humans through an external provider (GitHub or
+// GitLab) and issues the two credentials pici knows about: browser sessions for
 // the UI, and personal API tokens for the CLI and scripts.
 package auth
 
@@ -39,8 +39,9 @@ var (
 	// ErrUnauthorized means the credential is missing, expired, or belongs to
 	// a disabled user.
 	ErrUnauthorized = errors.New("unauthorized")
-	// ErrAccessDenied means GitHub authenticated the user but they are not in
-	// one of the configured teams, or did not grant the required scope.
+	// ErrAccessDenied means the provider authenticated the user but they are
+	// not in one of the configured teams or groups, or did not grant the
+	// scope needed to check their access.
 	ErrAccessDenied = errors.New("access denied")
 	// ErrTokenInvalid means the provider rejected the stored OAuth token:
 	// the user revoked the app or their account is gone.
@@ -50,10 +51,10 @@ var (
 	ErrProviderUnavailable = errors.New("provider unavailable")
 )
 
-// Team identifies a GitHub team by organization and slug.
+// Team identifies an access group by its full path: "org/team" for GitHub and
+// "group/subgroup" for GitLab.
 type Team struct {
-	Org  string
-	Slug string
+	Path string
 }
 
 // Token is an OAuth2 credential pair. Providers that issue expiring tokens also
@@ -87,11 +88,14 @@ type Provider interface {
 	// that rotate refresh tokens return a new RefreshToken, which the caller
 	// must persist immediately: the one it replaces is already invalid.
 	Refresh(ctx context.Context, refreshToken string) (Token, error)
-	// Teams returns the teams the user is a direct member of.
+	// Teams returns the teams or groups the user is a member of.
 	Teams(ctx context.Context, accessToken string) ([]Team, error)
+	// RequiredScope is the OAuth scope needed to list teams or groups. It is
+	// empty for providers that do not gate their API on an explicit scope.
+	RequiredScope() string
 	// Verify checks that a stored access token is still valid. It is used for
 	// allowlisted users when no teams are configured, so it must not require
-	// the read:org scope.
+	// the scope returned by RequiredScope.
 	Verify(ctx context.Context, accessToken string) error
 }
 
@@ -128,6 +132,7 @@ func UserID(ctx context.Context) *uuid.UUID {
 type Service struct {
 	store      stores.Store
 	provider   Provider
+	name       string
 	teams      map[string]struct{}
 	users      map[string]struct{}
 	sessionTTL time.Duration
@@ -139,6 +144,7 @@ func NewService(store stores.Store, provider Provider, teams, users []string, se
 	return &Service{
 		store:      store,
 		provider:   provider,
+		name:       provider.Name(),
 		teams:      normalizeAccessList(teams),
 		users:      normalizeAccessList(users),
 		sessionTTL: sessionTTL,
@@ -161,6 +167,7 @@ func (s *Service) HasTeams() bool            { return len(s.teams) > 0 }
 func (s *Service) HasUsers() bool            { return len(s.users) > 0 }
 func (s *Service) SessionTTL() time.Duration { return s.sessionTTL }
 func (s *Service) SecureCookies() bool       { return s.secure }
+func (s *Service) ProviderName() string      { return s.name }
 func (s *Service) LoginURL(state, verifier string) string {
 	return s.provider.AuthCodeURL(state, verifier)
 }
@@ -173,8 +180,8 @@ func (s *Service) Login(ctx context.Context, code, verifier string) (stores.User
 	if err != nil {
 		return stores.User{}, fmt.Errorf("exchange oauth code: %w", err)
 	}
-	if len(s.teams) > 0 && !hasScope(identity.Scopes, "read:org") {
-		return stores.User{}, fmt.Errorf("%w: the read:org scope was not granted", ErrAccessDenied)
+	if scope := s.provider.RequiredScope(); len(s.teams) > 0 && scope != "" && !hasScope(identity.Scopes, scope) {
+		return stores.User{}, fmt.Errorf("%w: the %s scope was not granted", ErrAccessDenied, scope)
 	}
 	allowed, err := s.authorized(ctx, identity.Login, identity.Token.AccessToken)
 	if err != nil {
@@ -186,7 +193,7 @@ func (s *Service) Login(ctx context.Context, code, verifier string) (stores.User
 
 	now := s.now()
 	user, err := s.store.UpsertUser(ctx, stores.User{
-		Provider:          s.provider.Name(),
+		Provider:          s.name,
 		ProviderUserID:    identity.ProviderUserID,
 		Login:             identity.Login,
 		Name:              identity.Name,
@@ -232,9 +239,9 @@ func (s *Service) accessToken(ctx context.Context, user stores.User) (string, er
 }
 
 // authorized accepts a user who is explicitly allowlisted, or who belongs to
-// one of the configured teams. When no team is configured, the provider only
-// verifies the token, which keeps personal instances free of the read:org
-// scope and of any GitHub organization.
+// one of the configured teams or groups. When no team is configured, the
+// provider only verifies the token, which keeps personal instances free of the
+// scope needed to list memberships.
 func (s *Service) authorized(ctx context.Context, login, accessToken string) (bool, error) {
 	if len(s.teams) == 0 {
 		if err := s.provider.Verify(ctx, accessToken); err != nil {
@@ -251,8 +258,7 @@ func (s *Service) authorized(ctx context.Context, login, accessToken string) (bo
 		return true, nil
 	}
 	for _, team := range teams {
-		key := strings.ToLower(team.Org + "/" + team.Slug)
-		if _, ok := s.teams[key]; ok {
+		if _, ok := s.teams[strings.ToLower(team.Path)]; ok {
 			return true, nil
 		}
 	}
@@ -335,6 +341,10 @@ func (s *Service) AuthenticateSession(ctx context.Context, raw string) (stores.U
 		_ = s.store.DeleteUserSessions(ctx, user.ID)
 		return stores.User{}, stores.Session{}, ErrUnauthorized
 	}
+	if user.Provider != s.name {
+		_ = s.store.DeleteUserSessions(ctx, user.ID)
+		return stores.User{}, stores.Session{}, ErrUnauthorized
+	}
 
 	if now.Sub(session.LastSeenAt) >= sessionTouchInterval {
 		expires := now.Add(s.sessionTTL)
@@ -407,6 +417,9 @@ func (s *Service) AuthenticateToken(ctx context.Context, raw string) (stores.Use
 	if user.DisabledAt != nil {
 		return stores.User{}, ErrUnauthorized
 	}
+	if user.Provider != s.name {
+		return stores.User{}, ErrUnauthorized
+	}
 
 	if token.LastUsedAt == nil || now.Sub(*token.LastUsedAt) >= tokenTouchInterval {
 		_ = s.store.TouchAPIToken(ctx, token.ID, now)
@@ -453,6 +466,10 @@ func (s *Service) Revalidate(ctx context.Context) {
 	}
 	now := s.now()
 	for _, user := range users {
+		if user.Provider != s.name {
+			s.disable(ctx, user, "signed in with a different auth provider")
+			continue
+		}
 		if user.LastOrgCheckAt != nil && now.Sub(*user.LastOrgCheckAt) < membershipCheckInterval {
 			continue
 		}

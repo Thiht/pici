@@ -111,10 +111,16 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                | default step timeout                           |
 | `-secret-key`           | `PICI_SECRET_KEY`           | —                    | **required** — 32-byte key for secrets at rest |
 | `-public-url`           | `PICI_PUBLIC_URL`           | —                    | **required** — public base URL                 |
-| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                    | **required** — OAuth App client id             |
-| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                    | **required** — OAuth App client secret         |
+| `-auth-provider`        | `PICI_AUTH_PROVIDER`        | `github`             | sign-in provider: `github` or `gitlab`         |
+| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                    | GitHub OAuth App client id                     |
+| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                    | GitHub OAuth App client secret                 |
 | `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                    | allowed teams (`org/team`)                     |
 | `-github-users`         | `PICI_GITHUB_USERS`         | —                    | allowed GitHub logins                          |
+| `-gitlab-url`           | `PICI_GITLAB_URL`           | `https://gitlab.com` | GitLab instance base URL                       |
+| `-gitlab-client-id`     | `PICI_GITLAB_CLIENT_ID`     | —                    | GitLab OAuth application id                    |
+| `-gitlab-client-secret` | `PICI_GITLAB_CLIENT_SECRET` | —                    | GitLab OAuth application secret                |
+| `-gitlab-groups`        | `PICI_GITLAB_GROUPS`        | —                    | allowed groups (`group/path`)                  |
+| `-gitlab-users`         | `PICI_GITLAB_USERS`         | —                    | allowed GitLab usernames                       |
 | `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`               | browser session lifetime (sliding)             |
 | `-config`               | `PICI_CONFIG`               | —                    | path to a JSON config file                     |
 
@@ -136,13 +142,21 @@ pici
 # personal instance, no organization
 # PICI_GITHUB_USERS=Thiht
 
+# GitLab instance instead of GitHub
+# PICI_AUTH_PROVIDER=gitlab
+# PICI_GITLAB_CLIENT_ID=0123456789abcdef
+# PICI_GITLAB_CLIENT_SECRET=gloas-...
+# PICI_GITLAB_GROUPS=acme/pici-users
+
 # config file (JSON)
 pici -config /etc/pici.json
 ```
 
-At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. See
-[Authentication](docs/guide/authentication.md) for the GitHub OAuth App setup
-and both access models.
+At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required with
+`PICI_AUTH_PROVIDER=github` (the default). With `PICI_AUTH_PROVIDER=gitlab`, set
+the `PICI_GITLAB_*` variables instead and at least one of `PICI_GITLAB_GROUPS`
+or `PICI_GITLAB_USERS`. See [Authentication](docs/guide/authentication.md) for
+the OAuth setup and both access models.
 
 ## API
 
@@ -258,7 +272,7 @@ GET    /badge/{id}?workflow=build&label=build
 - GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules; pull requests opened from a fork are never built automatically.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Partial re-run of failed steps, reusing the failed run's workspace.
-- GitHub OAuth login restricted to configured teams or a user allowlist, revocable personal API tokens, server-side sessions, and per-execution user attribution.
+- GitHub or GitLab OAuth login restricted to configured teams/groups or a user allowlist, revocable personal API tokens, server-side sessions, and per-execution user attribution.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
 - Streaming logs (SSE) in the UI and on the API, public README status badges, graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
@@ -282,8 +296,11 @@ templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
 projects, variables & secrets, triggering/cancelling/rebuilding/retrying executions, per-step
 and full logs, artifacts, and per-project Docker cache (images and cache volumes).
 
-Humans sign in with **GitHub OAuth**; access is restricted to the teams listed
-in `PICI_GITHUB_TEAMS`, the logins listed in `PICI_GITHUB_USERS`, or both.
+Humans sign in with **GitHub or GitLab OAuth** (one provider per instance). In
+GitHub mode, access is restricted to the teams listed in `PICI_GITHUB_TEAMS`,
+the logins listed in `PICI_GITHUB_USERS`, or both. In GitLab mode, it is
+restricted to the groups in `PICI_GITLAB_GROUPS`, the usernames in
+`PICI_GITLAB_USERS`, or both.
 Browser sessions are stored server-side and kept in an `HttpOnly`, `Secure`
 cookie. The Account page lets each user create,
 rename and revoke personal API tokens, and revoke browser sessions.

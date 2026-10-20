@@ -58,6 +58,14 @@ func newGitHubProvider(clientID, clientSecret, redirectURL, authURL, tokenURL, a
 
 func (p *GitHubProvider) Name() string { return "github" }
 
+// RequiredScope is read:org, and only in team mode.
+func (p *GitHubProvider) RequiredScope() string {
+	if len(p.config.Scopes) == 0 {
+		return ""
+	}
+	return "read:org"
+}
+
 func (p *GitHubProvider) AuthCodeURL(state, verifier string) string {
 	var opts []oauth2.AuthCodeOption
 	if verifier != "" {
@@ -170,7 +178,7 @@ func (p *GitHubProvider) Teams(ctx context.Context, accessToken string) ([]Team,
 			return nil, fmt.Errorf("decode GitHub teams: %w", err)
 		}
 		for _, team := range page {
-			teams = append(teams, Team{Org: team.Organization.Login, Slug: team.Slug})
+			teams = append(teams, Team{Path: team.Organization.Login + "/" + team.Slug})
 		}
 	}
 	return teams, nil

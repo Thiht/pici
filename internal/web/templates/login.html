@@ -5,19 +5,19 @@
       <div class="card-body">
         <h1 class="card-title text-xl">Sign in to pici</h1>
         <p class="text-sm opacity-70">
-          Use your GitHub account.
+          Use your {{.Provider}} account.
           {{if and .HasUsers .HasTeams}}
-            Access is restricted to authorized GitHub accounts or teams.
+            Access is restricted to authorized {{.Provider}} accounts or {{.AccessNoun}}s.
           {{else if .HasUsers}}
-            Access is restricted to specific GitHub accounts.
+            Access is restricted to specific {{.Provider}} accounts.
           {{else}}
-            Access is restricted to members of an authorized team.
+            Access is restricted to members of an authorized {{.AccessNoun}}.
           {{end}}
         </p>
         {{if .Error}}
           <div class="alert alert-soft alert-error mt-2" role="alert">{{.Error}}</div>
         {{end}}
-        <a class="btn btn-primary mt-4" href="/auth/github?next={{.Next | urlquery}}">Sign in with GitHub</a>
+        <a class="btn btn-primary mt-4" href="{{.AuthPath}}?next={{.Next | urlquery}}">Sign in with {{.Provider}}</a>
       </div>
     </div>
   </main>

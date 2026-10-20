@@ -79,8 +79,8 @@ func TestGitHubProviderExchangeAndTeams(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(teams) != 2 ||
-		teams[0] != (Team{Org: "acme", Slug: "pici"}) ||
-		teams[1] != (Team{Org: "acme", Slug: "ops"}) {
+		teams[0] != (Team{Path: "acme/pici"}) ||
+		teams[1] != (Team{Path: "acme/ops"}) {
 		t.Fatalf("unexpected teams: %#v", teams)
 	}
 }

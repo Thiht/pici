@@ -4,9 +4,11 @@ pici ships with a self-contained [Docker-in-Docker](https://hub.docker.com/_/doc
 
 ## docker-compose
 
-`PICI_SECRET_KEY`, `PICI_PUBLIC_URL` and the GitHub OAuth settings are
-**required** — the compose file fails fast if they are unset. pici also
-requires at least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS`.
+`PICI_SECRET_KEY` and `PICI_PUBLIC_URL` are **required**. You also need the
+OAuth settings for one provider: `PICI_AUTH_PROVIDER` defaults to `github`;
+with `gitlab`, set the `PICI_GITLAB_*` variables and use the GitLab callback
+URL. pici requires at least one allowed team/group or user for that provider and
+refuses to start otherwise.
 
 ```sh
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
@@ -23,9 +25,12 @@ For a personal instance with no organization, use
 
 Create the OAuth App with callback URL
 `${PICI_PUBLIC_URL}/auth/github/callback` (see
-[Authentication](/guide/authentication)). The server is then reachable at the
-public URL; locally, `http://localhost:8080`. Data (SQLite DB + workspaces)
-lives in the `pici-data` volume.
+[Authentication](/guide/authentication)). For GitLab, set
+`PICI_AUTH_PROVIDER=gitlab` plus `PICI_GITLAB_CLIENT_ID`,
+`PICI_GITLAB_CLIENT_SECRET` and `PICI_GITLAB_GROUPS` or `PICI_GITLAB_USERS`,
+and use callback URL `${PICI_PUBLIC_URL}/auth/gitlab/callback`. The server is
+then reachable at the public URL; locally, `http://localhost:8080`. Data (SQLite
+DB + workspaces) lives in the `pici-data` volume.
 
 ## Plain docker
 
@@ -46,7 +51,9 @@ docker run -d --privileged \
 ```
 
 Use `-e PICI_GITHUB_USERS=your-github-login` instead of
-`PICI_GITHUB_TEAMS` for a personal instance.
+`PICI_GITHUB_TEAMS` for a personal instance. For GitLab, add
+`-e PICI_AUTH_PROVIDER=gitlab` and use the `PICI_GITLAB_*` variables in place of
+the GitHub ones.
 
 ## Notes
 

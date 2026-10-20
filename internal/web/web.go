@@ -88,8 +88,9 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /login", h.LoginPage)
-	mux.HandleFunc("GET /auth/github", h.LoginStart)
-	mux.HandleFunc("GET /auth/github/callback", h.LoginCallback)
+	authPath := "/auth/" + h.auth.ProviderName()
+	mux.HandleFunc("GET "+authPath, h.LoginStart)
+	mux.HandleFunc("GET "+authPath+"/callback", h.LoginCallback)
 	mux.HandleFunc("POST /logout", h.Logout)
 
 	mux.HandleFunc("GET /account", h.AccountPage)

@@ -15,10 +15,13 @@ const oauthCookieMaxAge = 10 * 60
 
 type loginPage struct {
 	base
-	Error    string
-	Next     string
-	HasTeams bool
-	HasUsers bool
+	Error      string
+	Next       string
+	Provider   string
+	AccessNoun string
+	AuthPath   string
+	HasTeams   bool
+	HasUsers   bool
 }
 
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -26,12 +29,19 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/")
 		return
 	}
+	provider, accessNoun := "GitHub", "team"
+	if h.auth.ProviderName() == "gitlab" {
+		provider, accessNoun = "GitLab", "group"
+	}
 	data := loginPage{
-		base:     h.base(w, r, "Sign in", ""),
-		Next:     safeNext(r.URL.Query().Get("next")),
-		Error:    loginError(r.URL.Query().Get("error")),
-		HasTeams: h.auth.HasTeams(),
-		HasUsers: h.auth.HasUsers(),
+		base:       h.base(w, r, "Sign in", ""),
+		Next:       safeNext(r.URL.Query().Get("next")),
+		Error:      loginError(r.URL.Query().Get("error"), provider),
+		Provider:   provider,
+		AccessNoun: accessNoun,
+		AuthPath:   "/auth/" + h.auth.ProviderName(),
+		HasTeams:   h.auth.HasTeams(),
+		HasUsers:   h.auth.HasUsers(),
 	}
 	h.render(w, r, http.StatusOK, "login", data)
 }
@@ -97,7 +107,7 @@ func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("github login failed", "error", err)
+		slog.Error("provider login failed", "provider", h.auth.ProviderName(), "error", err)
 		redirect(w, r, loginErrorURL(next, "provider"))
 		return
 	}
@@ -131,7 +141,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 // sessionAuth protects every UI route except the login flow and static assets.
 func (h *Handler) sessionAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isPublicWebPath(r.URL.Path) {
+		if h.isPublicWebPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -157,10 +167,11 @@ func (h *Handler) sessionAuth(next http.Handler) http.Handler {
 	})
 }
 
-func isPublicWebPath(path string) bool {
+func (h *Handler) isPublicWebPath(path string) bool {
+	authPath := "/auth/" + h.auth.ProviderName()
 	return path == "/login" ||
-		path == "/auth/github" ||
-		path == "/auth/github/callback" ||
+		path == authPath ||
+		path == authPath+"/callback" ||
 		strings.HasPrefix(path, "/static/")
 }
 
@@ -250,16 +261,16 @@ func loginErrorURL(next, code string) string {
 	return "/login?" + values.Encode()
 }
 
-func loginError(code string) string {
+func loginError(code, provider string) string {
 	switch code {
 	case "not_member":
-		return "Your GitHub account is not authorized for this pici instance."
+		return "Your " + provider + " account is not authorized for this pici instance."
 	case "denied":
-		return "GitHub sign-in was cancelled."
+		return provider + " sign-in was cancelled."
 	case "state":
 		return "Your sign-in session expired. Please try again."
 	case "provider":
-		return "GitHub is unavailable right now. Please try again."
+		return provider + " is unavailable right now. Please try again."
 	default:
 		return ""
 	}

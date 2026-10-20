@@ -11,9 +11,24 @@ func validConfig() Config {
 	return Config{
 		SecretKey:          "x",
 		PublicBaseURL:      "https://pici.example.com",
+		AuthProvider:       "github",
 		GitHubClientID:     "id",
 		GitHubClientSecret: "secret",
 		GitHubTeams:        []string{"acme/pici-users"},
+		SessionTTL:         1,
+		MaxSnapshotSize:    1,
+	}
+}
+
+func validGitLabConfig() Config {
+	return Config{
+		SecretKey:          "x",
+		PublicBaseURL:      "https://pici.example.com",
+		AuthProvider:       "gitlab",
+		GitLabURL:          "https://gitlab.example.com",
+		GitLabClientID:     "id",
+		GitLabClientSecret: "secret",
+		GitLabGroups:       []string{"acme/pici-users"},
 		SessionTTL:         1,
 		MaxSnapshotSize:    1,
 	}
@@ -55,6 +70,37 @@ func TestLoadPriority(t *testing.T) {
 	}
 	if cfg.SessionTTL != time.Hour {
 		t.Fatalf("unexpected session TTL: %v", cfg.SessionTTL)
+	}
+	if cfg.AuthProvider != "github" {
+		t.Fatalf("unexpected default auth provider: %q", cfg.AuthProvider)
+	}
+}
+
+func TestLoadGitLabProvider(t *testing.T) {
+	t.Setenv("PICI_AUTH_PROVIDER", " GitLab ")
+	t.Setenv("PICI_GITLAB_URL", "https://gitlab.example.com/")
+	t.Setenv("PICI_GITLAB_CLIENT_ID", "id")
+	t.Setenv("PICI_GITLAB_CLIENT_SECRET", "secret")
+	t.Setenv("PICI_GITLAB_GROUPS", "acme/pici, acme/platform")
+	t.Setenv("PICI_GITLAB_USERS", "alice")
+	t.Setenv("PICI_SECRET_KEY", "x")
+	t.Setenv("PICI_PUBLIC_URL", "https://pici.example.com")
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthProvider != "gitlab" {
+		t.Fatalf("unexpected provider: %q", cfg.AuthProvider)
+	}
+	if cfg.GitLabURL != "https://gitlab.example.com" {
+		t.Fatalf("unexpected GitLab URL: %q", cfg.GitLabURL)
+	}
+	if len(cfg.GitLabGroups) != 2 || cfg.GitLabGroups[0] != "acme/pici" || cfg.GitLabGroups[1] != "acme/platform" {
+		t.Fatalf("unexpected groups: %#v", cfg.GitLabGroups)
+	}
+	if len(cfg.GitLabUsers) != 1 || cfg.GitLabUsers[0] != "alice" {
+		t.Fatalf("unexpected users: %#v", cfg.GitLabUsers)
 	}
 }
 
@@ -149,6 +195,108 @@ func TestValidateInvalidTeam(t *testing.T) {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("expected error for team %q", team)
 		}
+	}
+}
+
+func TestValidateGitLabOK(t *testing.T) {
+	if err := validGitLabConfig().Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateGitLabUsersOnly(t *testing.T) {
+	cfg := validGitLabConfig()
+	cfg.GitLabGroups = nil
+	cfg.GitLabUsers = []string{"alice"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateGitLabMissingAccessList(t *testing.T) {
+	cfg := validGitLabConfig()
+	cfg.GitLabGroups = nil
+	cfg.GitLabUsers = nil
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when neither users nor groups are configured")
+	}
+}
+
+func TestValidateGitLabMissingCredentials(t *testing.T) {
+	cases := map[string]func(*Config){
+		"client id":     func(c *Config) { c.GitLabClientID = "" },
+		"client secret": func(c *Config) { c.GitLabClientSecret = "" },
+	}
+	for name, mutate := range cases {
+		cfg := validGitLabConfig()
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestValidateGitLabURL(t *testing.T) {
+	for _, value := range []string{"", "not a url", "ftp://gitlab.example.com", "https://", "https://gitlab.example.com?x=1"} {
+		cfg := validGitLabConfig()
+		cfg.GitLabURL = value
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected error for GitLab URL %q", value)
+		}
+	}
+	for _, value := range []string{"https://gitlab.example.com", "http://localhost:8081", "https://example.com/gitlab"} {
+		cfg := validGitLabConfig()
+		cfg.GitLabURL = value
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error for GitLab URL %q: %v", value, err)
+		}
+	}
+}
+
+func TestValidateGitLabGroup(t *testing.T) {
+	for _, group := range []string{"", "/acme", "acme/", "a//b", "acme / pici", "a/b c"} {
+		cfg := validGitLabConfig()
+		cfg.GitLabGroups = []string{group}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected error for GitLab group %q", group)
+		}
+	}
+	for _, group := range []string{"acme", "acme/pici", "acme/sub/pici"} {
+		cfg := validGitLabConfig()
+		cfg.GitLabGroups = []string{group}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error for GitLab group %q: %v", group, err)
+		}
+	}
+}
+
+func TestValidateGitLabIgnoresGitHubConfig(t *testing.T) {
+	cfg := validGitLabConfig()
+	cfg.GitHubClientID = ""
+	cfg.GitHubClientSecret = ""
+	cfg.GitHubTeams = nil
+	cfg.GitHubUsers = nil
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("GitHub settings must be ignored in GitLab mode: %v", err)
+	}
+}
+
+func TestValidateGitHubIgnoresGitLabConfig(t *testing.T) {
+	cfg := validConfig()
+	cfg.GitLabClientID = ""
+	cfg.GitLabClientSecret = ""
+	cfg.GitLabGroups = nil
+	cfg.GitLabUsers = nil
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("GitLab settings must be ignored in GitHub mode: %v", err)
+	}
+}
+
+func TestValidateUnsupportedProvider(t *testing.T) {
+	cfg := validConfig()
+	cfg.AuthProvider = "google"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for an unsupported provider")
 	}
 }
 

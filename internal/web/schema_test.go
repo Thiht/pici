@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 )
 
 func TestSchemaRoute(t *testing.T) {
-	handler := New(nil, nil, "", nil, "test").Routes()
+	svc := auth.NewService(nil, &fakeProvider{}, nil, nil, time.Hour, false)
+	handler := New(nil, nil, "", svc, "test").Routes()
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/ci.schema.json", nil))

@@ -52,7 +52,7 @@ func TestExecutionStream(t *testing.T) {
 
 	svc := newWebTestService(t, store, &fakeProvider{
 		identity: fakeIdentity(),
-		teams:    []auth.Team{{Org: "acme", Slug: "pici"}},
+		teams:    []auth.Team{{Path: "acme/pici"}},
 	}, []string{"acme/pici"}, nil)
 	user := newWebTestUser(t, store)
 	session, _ := newWebTestSession(t, svc, user.ID)

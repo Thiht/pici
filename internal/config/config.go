@@ -29,10 +29,16 @@ type Config struct {
 
 	SecretKey          string
 	PublicBaseURL      string
+	AuthProvider       string
 	GitHubClientID     string
 	GitHubClientSecret string
 	GitHubTeams        []string
 	GitHubUsers        []string
+	GitLabURL          string
+	GitLabClientID     string
+	GitLabClientSecret string
+	GitLabGroups       []string
+	GitLabUsers        []string
 	SessionTTL         time.Duration
 	GCInterval         time.Duration
 	GCKeepDuration     time.Duration
@@ -43,7 +49,7 @@ type Config struct {
 func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("pici", flag.ContinueOnError)
 	var cfg Config
-	var githubTeams, githubUsers string
+	var githubTeams, githubUsers, gitlabGroups, gitlabUsers string
 
 	fs.StringVar(&cfg.HTTPAddr, "http-addr", ":8080", "HTTP listen address")
 	fs.StringVar(&cfg.DBDriver, "db-driver", "sqlite", "database driver (sqlite, postgres)")
@@ -57,10 +63,16 @@ func Load(args []string) (Config, error) {
 
 	fs.StringVar(&cfg.SecretKey, "secret-key", "", "32-byte key (hex or base64) used to encrypt secrets at rest (required)")
 	fs.StringVar(&cfg.PublicBaseURL, "public-url", "", "public base URL, e.g. https://pici.example.com (required)")
-	fs.StringVar(&cfg.GitHubClientID, "github-client-id", "", "GitHub OAuth App client id (required)")
-	fs.StringVar(&cfg.GitHubClientSecret, "github-client-secret", "", "GitHub OAuth App client secret (required)")
+	fs.StringVar(&cfg.AuthProvider, "auth-provider", "github", "identity provider for sign-in (github, gitlab)")
+	fs.StringVar(&cfg.GitHubClientID, "github-client-id", "", "GitHub OAuth App client id (required with -auth-provider=github)")
+	fs.StringVar(&cfg.GitHubClientSecret, "github-client-secret", "", "GitHub OAuth App client secret (required with -auth-provider=github)")
 	fs.StringVar(&githubTeams, "github-teams", "", "comma-separated GitHub teams allowed to sign in, e.g. acme/pici-users")
 	fs.StringVar(&githubUsers, "github-users", "", "comma-separated GitHub logins allowed to sign in, e.g. octocat")
+	fs.StringVar(&cfg.GitLabURL, "gitlab-url", "https://gitlab.com", "base URL of the GitLab instance")
+	fs.StringVar(&cfg.GitLabClientID, "gitlab-client-id", "", "GitLab OAuth application id (required with -auth-provider=gitlab)")
+	fs.StringVar(&cfg.GitLabClientSecret, "gitlab-client-secret", "", "GitLab OAuth application secret (required with -auth-provider=gitlab)")
+	fs.StringVar(&gitlabGroups, "gitlab-groups", "", "comma-separated GitLab groups allowed to sign in, e.g. acme/pici-users")
+	fs.StringVar(&gitlabUsers, "gitlab-users", "", "comma-separated GitLab usernames allowed to sign in, e.g. alice")
 	fs.DurationVar(&cfg.SessionTTL, "session-ttl", 30*24*time.Hour, "browser session lifetime")
 	fs.DurationVar(&cfg.GCInterval, "gc-interval", 10*time.Minute, "garbage collection interval")
 	fs.DurationVar(&cfg.GCKeepDuration, "gc-keep", 24*time.Hour, "how long to keep finished workspaces and logs")
@@ -76,8 +88,12 @@ func Load(args []string) (Config, error) {
 	}
 
 	cfg.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/")
+	cfg.AuthProvider = strings.ToLower(strings.TrimSpace(cfg.AuthProvider))
+	cfg.GitLabURL = strings.TrimRight(strings.TrimSpace(cfg.GitLabURL), "/")
 	cfg.GitHubTeams = splitList(githubTeams)
 	cfg.GitHubUsers = splitList(githubUsers)
+	cfg.GitLabGroups = splitList(gitlabGroups)
+	cfg.GitLabUsers = splitList(gitlabUsers)
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -103,27 +119,62 @@ func (c Config) Validate() error {
 	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 		return fmt.Errorf("PICI_PUBLIC_URL must be an origin without credentials, path, query or fragment: %q", c.PublicBaseURL)
 	}
-	if c.GitHubClientID == "" {
-		return errors.New("PICI_GITHUB_CLIENT_ID is required")
-	}
-	if c.GitHubClientSecret == "" {
-		return errors.New("PICI_GITHUB_CLIENT_SECRET is required")
-	}
-	if len(c.GitHubTeams) == 0 && len(c.GitHubUsers) == 0 {
-		return errors.New("PICI_GITHUB_TEAMS or PICI_GITHUB_USERS is required, e.g. acme/pici-users or octocat")
-	}
-	for _, team := range c.GitHubTeams {
-		parts := strings.Split(team, "/")
-		if len(parts) != 2 ||
-			parts[0] == "" || parts[1] == "" ||
-			strings.TrimSpace(parts[0]) != parts[0] || strings.TrimSpace(parts[1]) != parts[1] {
-			return fmt.Errorf("invalid GitHub team %q (want org/team)", team)
+	switch c.AuthProvider {
+	case "", "github":
+		if c.GitHubClientID == "" {
+			return errors.New("PICI_GITHUB_CLIENT_ID is required")
 		}
-	}
-	for _, user := range c.GitHubUsers {
-		if user == "" || strings.ContainsAny(user, "/ \t") {
-			return fmt.Errorf("invalid GitHub user %q", user)
+		if c.GitHubClientSecret == "" {
+			return errors.New("PICI_GITHUB_CLIENT_SECRET is required")
 		}
+		if len(c.GitHubTeams) == 0 && len(c.GitHubUsers) == 0 {
+			return errors.New("PICI_GITHUB_TEAMS or PICI_GITHUB_USERS is required, e.g. acme/pici-users or octocat")
+		}
+		for _, team := range c.GitHubTeams {
+			parts := strings.Split(team, "/")
+			if len(parts) != 2 ||
+				parts[0] == "" || parts[1] == "" ||
+				strings.TrimSpace(parts[0]) != parts[0] || strings.TrimSpace(parts[1]) != parts[1] {
+				return fmt.Errorf("invalid GitHub team %q (want org/team)", team)
+			}
+		}
+		for _, user := range c.GitHubUsers {
+			if user == "" || strings.ContainsAny(user, "/ \t") {
+				return fmt.Errorf("invalid GitHub user %q", user)
+			}
+		}
+	case "gitlab":
+		if c.GitLabClientID == "" {
+			return errors.New("PICI_GITLAB_CLIENT_ID is required")
+		}
+		if c.GitLabClientSecret == "" {
+			return errors.New("PICI_GITLAB_CLIENT_SECRET is required")
+		}
+		u, err := url.Parse(c.GitLabURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return fmt.Errorf("PICI_GITLAB_URL is not a valid URL: %q", c.GitLabURL)
+		}
+		if len(c.GitLabGroups) == 0 && len(c.GitLabUsers) == 0 {
+			return errors.New("PICI_GITLAB_GROUPS or PICI_GITLAB_USERS is required, e.g. acme/pici-users or alice")
+		}
+		for _, group := range c.GitLabGroups {
+			if strings.HasPrefix(group, "/") || strings.HasSuffix(group, "/") || strings.Contains(group, "//") {
+				return fmt.Errorf("invalid GitLab group %q (want a full path like acme/pici-users)", group)
+			}
+			for segment := range strings.SplitSeq(group, "/") {
+				if segment == "" || strings.TrimSpace(segment) != segment || strings.ContainsAny(segment, " \t") {
+					return fmt.Errorf("invalid GitLab group %q (want a full path like acme/pici-users)", group)
+				}
+			}
+		}
+		for _, user := range c.GitLabUsers {
+			if user == "" || strings.ContainsAny(user, "/ \t") {
+				return fmt.Errorf("invalid GitLab user %q", user)
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported auth provider %q (want github or gitlab)", c.AuthProvider)
 	}
 	if c.SessionTTL <= 0 {
 		return errors.New("PICI_SESSION_TTL must be greater than zero")

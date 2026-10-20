@@ -12,6 +12,7 @@ import (
 )
 
 type fakeProvider struct {
+	name         string
 	identity     Identity
 	teams        []Team
 	exchangeErr  error
@@ -27,7 +28,14 @@ type fakeProvider struct {
 	lastVerifier string
 }
 
-func (p *fakeProvider) Name() string { return "github" }
+func (p *fakeProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "github"
+}
+
+func (p *fakeProvider) RequiredScope() string { return "read:org" }
 
 func (p *fakeProvider) AuthCodeURL(state, verifier string) string {
 	return "https://github.test/" + state + "?verifier=" + verifier
@@ -85,7 +93,7 @@ func newTestServiceWithAccess(t *testing.T, teams, users []string) (*Service, st
 			Token:          Token{AccessToken: "oauth"},
 			Scopes:         []string{"read:org"},
 		},
-		teams: []Team{{Org: "acme", Slug: "pici"}},
+		teams: []Team{{Path: "acme/pici"}},
 	}
 	svc := NewService(store, provider, teams, users, 24*time.Hour, false)
 	return svc, store, provider
@@ -340,7 +348,7 @@ func TestRevalidateKeepsMember(t *testing.T) {
 	svc, store, provider := newTestService(t)
 	ctx := context.Background()
 	user := seedUser(t, store)
-	provider.teams = []Team{{Org: "acme", Slug: "pici"}}
+	provider.teams = []Team{{Path: "acme/pici"}}
 
 	svc.Revalidate(ctx)
 
@@ -587,6 +595,44 @@ func TestRevalidateKeepsAccessOnRefreshFailure(t *testing.T) {
 	}
 	if provider.teamsCalls != 0 {
 		t.Fatal("a failed refresh must not run a membership check with an expired token")
+	}
+}
+
+func TestUsersFromAnotherProviderAreRejected(t *testing.T) {
+	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	provider := &fakeProvider{name: "gitlab", teams: []Team{{Path: "acme/pici"}}}
+	svc := NewService(store, provider, []string{"acme/pici"}, nil, 24*time.Hour, false)
+	ctx := context.Background()
+	user := seedUser(t, store) // stored with provider "github"
+	raw, session := createSession(t, svc, user.ID)
+
+	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected the old provider session to be unauthorized, got %v", err)
+	}
+	if _, err := store.GetSession(ctx, session.ID); !errors.Is(err, stores.ErrNotFound) {
+		t.Fatalf("expected the old provider session to be deleted, got %v", err)
+	}
+
+	rawToken, _, err := svc.CreateAPIToken(ctx, user.ID, "cli", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AuthenticateToken(ctx, rawToken); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected the old provider token to be unauthorized, got %v", err)
+	}
+
+	svc.Revalidate(ctx)
+	got, err := store.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DisabledAt == nil {
+		t.Fatal("expected a user from another provider to be disabled")
 	}
 }
 

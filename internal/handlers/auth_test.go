@@ -20,6 +20,7 @@ import (
 type stubProvider struct{}
 
 func (stubProvider) Name() string                      { return "github" }
+func (stubProvider) RequiredScope() string             { return "read:org" }
 func (stubProvider) AuthCodeURL(string, string) string { return "" }
 func (stubProvider) Exchange(context.Context, string, string) (auth.Identity, error) {
 	return auth.Identity{}, errors.New("unused")

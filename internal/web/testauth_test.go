@@ -18,6 +18,7 @@ import (
 )
 
 type fakeProvider struct {
+	name         string
 	identity     auth.Identity
 	teams        []auth.Team
 	exchangeErr  error
@@ -27,7 +28,14 @@ type fakeProvider struct {
 	lastVerifier string
 }
 
-func (p *fakeProvider) Name() string { return "github" }
+func (p *fakeProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "github"
+}
+
+func (p *fakeProvider) RequiredScope() string { return "read:org" }
 
 func (p *fakeProvider) AuthCodeURL(state, verifier string) string {
 	return "https://github.com/login/oauth/authorize?state=" + url.QueryEscape(state) +
@@ -151,7 +159,7 @@ func newTestEnvWithAccess(t *testing.T, teams, users []string, opts ...func(*fak
 	store := newWebTestStore(t)
 	provider := &fakeProvider{
 		identity: fakeIdentity(),
-		teams:    []auth.Team{{Org: "acme", Slug: "pici"}},
+		teams:    []auth.Team{{Path: "acme/pici"}},
 	}
 	for _, opt := range opts {
 		opt(provider)
