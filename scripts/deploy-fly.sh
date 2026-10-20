@@ -19,7 +19,8 @@ Options:
   --org ORG          Fly organization (default: your default organization)
   --provider NAME    Auth provider: github, gitlab or oidc (default: github)
   --ref REF          Git ref to deploy when not run from the pici repo (default: main)
-  --no-depot         Build with Fly's legacy remote builder instead of Depot
+  --depot            Build with Depot (faster, third-party service)
+  --no-depot         Build with Fly's legacy remote builder (default)
   --reconfigure      Ask for sign-in settings even if the app already has secrets
   --dry-run          Print the commands instead of running them
   -h, --help         Show this help
@@ -67,7 +68,7 @@ org=${PICI_FLY_ORG:-}
 provider=${PICI_AUTH_PROVIDER:-}
 ref=${PICI_FLY_REF:-$default_ref}
 dry_run=0
-no_depot=0
+no_depot=1
 reconfigure=0
 local_repo=0
 app_ready=0
@@ -122,6 +123,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --ref=*)
       ref=${1#*=}
+      shift
+      ;;
+    --depot)
+      no_depot=0
       shift
       ;;
     --no-depot)
@@ -199,6 +204,8 @@ EOF
   fi
   if [ "$no_depot" -eq 1 ]; then
     rerun="$rerun --no-depot"
+  else
+    rerun="$rerun --depot"
   fi
   if [ "$public_url" != "https://$app.fly.dev" ]; then
     rerun="PICI_PUBLIC_URL=$public_url $rerun"
@@ -221,9 +228,13 @@ EOF
     fi
     printf '\n%s\n' 'Rerun:'
     printf '  %s\n' "$rerun"
+    if [ "$deploy_started" -eq 1 ] && [ "$no_depot" -eq 1 ]; then
+      printf '\n%s\n' "If the build failed in Fly's builder, try Depot (usually faster):"
+      printf '  %s\n' "${rerun% --no-depot} --depot"
+    fi
     if [ "$deploy_started" -eq 1 ] && [ "$no_depot" -eq 0 ]; then
-      printf '\n%s\n' 'If the build failed in Depot (timeout, connection reset), add --no-depot:'
-      printf '  %s --no-depot\n' "$rerun"
+      printf '\n%s\n' 'If the build failed in Depot (timeout, connection reset), use the Fly builder:'
+      printf '  %s\n' "${rerun% --depot} --no-depot"
     fi
     if [ "$secrets_ready" -eq 1 ] && [ "$deploy_started" -eq 1 ]; then
       printf '\n%s\n' 'If the app failed on sign-in, add --reconfigure to update the Fly secrets:'
@@ -663,7 +674,7 @@ deploy_started=1
 if [ "$no_depot" -eq 1 ]; then
   run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now --depot=false
 else
-  run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now
+  run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now --depot
 fi
 deploy_done=1
 
