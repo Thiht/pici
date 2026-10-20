@@ -145,7 +145,7 @@ func main() {
 	go collector.Run(rootCtx)
 
 	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.MaxSnapshotSize, authSvc, buildVersion).Routes()
-	webHandler := web.New(store, runner, cfg.WorkspaceDir, authSvc, buildVersion).Routes()
+	webHandler := web.New(store, runner, cfg.WorkspaceDir, authSvc, cfg.PublicBaseURL, buildVersion).Routes()
 
 	root := http.NewServeMux()
 	root.Handle("/", webHandler)

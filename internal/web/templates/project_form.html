@@ -31,16 +31,40 @@
     </label>
     {{template "project_fields" .Fields}}
     {{template "secret_fields" .Fields}}
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-medium">Webhook secret</span>
-      <input class="input w-full"
-             type="password"
-             name="webhook_secret"
-             autocomplete="new-password"
-             {{if .Editing}}
-             placeholder="Leave blank to keep the current secret"
-             {{end}}>
-    </label>
+    <div class="flex flex-col gap-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="text-sm font-medium" for="webhook-secret">Webhook secret</label>
+        <a class="btn btn-ghost btn-xs btn-circle"
+           href="#webhook-help"
+           aria-label="Webhook setup instructions"
+           title="Webhook setup instructions">
+          <svg class="size-4"
+               xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2"
+               aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path stroke-linecap="round" d="M12 11v5M12 8h.01" />
+          </svg>
+        </a>
+      </div>
+      <div class="join w-full">
+        <input id="webhook-secret"
+               class="input join-item w-full"
+               type="password"
+               name="webhook_secret"
+               autocomplete="new-password"
+               {{if .Editing}}
+               placeholder="Leave blank to keep the current secret"
+               {{end}}>
+        <button class="btn join-item" type="button" onclick="generateWebhookSecret(this)">Generate</button>
+      </div>
+      {{if .Project.WebhookSecret}}
+        <p class="text-xs text-warning">A secret is already set. Changing it also requires updating the provider's webhook settings.</p>
+      {{end}}
+    </div>
     <div class="card-actions mt-2">
       {{if .Editing}}<a class="btn btn-outline" href="/projects/{{.Project.ID}}">Cancel</a>{{end}}
       <button class="btn btn-primary" type="submit">{{if .Editing}}Save changes{{else}}Create project{{end}}</button>
@@ -48,6 +72,7 @@
   </form>
   </div>
   </div>
+  {{template "webhook_help" .Fields}}
   {{if .Editing}}
     <form method="post"
           action="/projects/{{.Project.ID}}/delete"
@@ -58,6 +83,30 @@
     </form>
   {{end}}
   </div>
+  <script>
+    function generateWebhookSecret(button) {
+      var input = button.parentElement.querySelector('input');
+      var bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      input.value = Array.from(bytes, function (byte) {
+        return byte.toString(16).padStart(2, '0');
+      }).join('');
+      input.type = 'text';
+      input.focus();
+      input.select();
+    }
+
+    function copyWebhookPayloadURL(button) {
+      var code = button.parentElement.querySelector('code');
+      if (!code || !navigator.clipboard) return;
+      navigator.clipboard.writeText(code.textContent.trim()).then(function () {
+        button.textContent = 'Copied';
+        setTimeout(function () {
+          button.textContent = 'Copy';
+        }, 1500);
+      });
+    }
+  </script>
   </main>
   {{template "foot" .}}
 {{end}}
@@ -144,4 +193,78 @@
 {{define "project_detect"}}
   {{template "project_fields" .}}
   <div id="secret-fields" class="flex flex-col gap-4" hx-swap-oob="outerHTML">{{template "secret_fields_inner" .}}</div>
+  <div id="webhook-help-content" hx-swap-oob="innerHTML">{{template "webhook_help_inner" .}}</div>
+{{end}}
+
+{{define "webhook_help"}}
+  <div id="webhook-help" class="modal" role="dialog" aria-modal="true" aria-labelledby="webhook-help-title">
+    <div class="modal-box max-w-2xl">
+      <a class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" href="#" aria-label="Close">✕</a>
+      <div id="webhook-help-content">{{template "webhook_help_inner" .}}</div>
+      <div class="modal-action"><a class="btn btn-outline" href="#">Close</a></div>
+    </div>
+    <a class="modal-backdrop" href="#" aria-label="Close">Close</a>
+  </div>
+{{end}}
+
+{{define "webhook_help_inner"}}
+  <h3 id="webhook-help-title" class="text-lg font-semibold">Set up a webhook</h3>
+  <p class="mt-2 text-sm opacity-70">
+    pici starts workflows when your Git provider sends a webhook. The webhook secret is optional but recommended: it lets pici check that deliveries really come from your provider.
+  </p>
+  {{if eq (printf "%s" .Provider) "github"}}
+    <p class="mt-4 text-sm">
+      <span class="font-semibold">GitHub</span>
+      {{if .WebhookSetupURL}}· <a class="link link-primary"
+    href="{{.WebhookSetupURL}}"
+    target="_blank"
+    rel="noopener">Open webhook settings</a>{{end}}
+    </p>
+    <ol class="mt-2 list-decimal space-y-2 pl-5 text-sm">
+      <li>
+        <strong>Payload URL:</strong>
+        {{template "webhook_payload_url" .WebhookPayloadURL}}
+      </li>
+      <li><strong>Content type:</strong> <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-xs">application/json</code></li>
+      <li><strong>Secret:</strong> the value in the Webhook secret field.</li>
+      <li><strong>Which events?</strong> choose <em>Let me select individual events</em>, then tick <strong>Pushes</strong> and <strong>Pull requests</strong>.</li>
+      <li>Keep <strong>Active</strong> checked and click <strong>Add webhook</strong>. GitHub sends a <code>ping</code> event that pici acknowledges.</li>
+    </ol>
+    {{if not .WebhookSetupURL}}
+      <p class="mt-2 text-xs opacity-70">Fill in the Repository URL above to get a direct link to the webhook settings.</p>
+    {{end}}
+  {{else if eq (printf "%s" .Provider) "gitlab"}}
+    <p class="mt-4 text-sm">
+      <span class="font-semibold">GitLab</span>
+      {{if .WebhookSetupURL}}· <a class="link link-primary"
+    href="{{.WebhookSetupURL}}"
+    target="_blank"
+    rel="noopener">Open webhook settings</a>{{end}}
+    </p>
+    <ol class="mt-2 list-decimal space-y-2 pl-5 text-sm">
+      <li>
+        <strong>URL:</strong>
+        {{template "webhook_payload_url" .WebhookPayloadURL}}
+      </li>
+      <li>
+        <strong>Secret token:</strong> the value in the Webhook secret field. Use <strong>Secret token</strong>, not <strong>Signing token</strong>: pici verifies the <code>X-Gitlab-Token</code> header.
+      </li>
+      <li><strong>Trigger:</strong> tick <strong>Push events</strong>, <strong>Tag push events</strong> and <strong>Merge request events</strong>.</li>
+      <li>Keep <strong>Enable SSL verification</strong> checked and click <strong>Add webhook</strong>.</li>
+    </ol>
+    {{if not .WebhookSetupURL}}
+      <p class="mt-2 text-xs opacity-70">Fill in the Repository URL above to get a direct link to the webhook settings.</p>
+    {{end}}
+  {{else}}
+    <div class="alert alert-soft alert-info mt-4" role="note">
+      <span>Webhooks are only supported for GitHub and GitLab projects. Set the provider above to get setup instructions.</span>
+    </div>
+  {{end}}
+{{end}}
+
+{{define "webhook_payload_url"}}
+  <span class="inline-flex flex-wrap items-center gap-2">
+    <code class="break-all rounded bg-base-200 px-1 py-0.5 font-mono text-xs">{{.}}</code>
+    <button type="button" class="btn btn-ghost btn-xs" onclick="copyWebhookPayloadURL(this)">Copy</button>
+  </span>
 {{end}}

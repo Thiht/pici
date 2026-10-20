@@ -7,7 +7,8 @@
   include:
     rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock,
     button, card, badge, table, input, select, checkbox, alert, toast, navbar,
-    menu, link, loading, collapse, label, divider, modal, fileinput, textarea;
+    menu, link, loading, collapse, label, divider, join, modal, fileinput,
+    textarea;
 }
 @source "./templates";
 @source inline("{alert,badge}-{soft,success,error,warning,info,neutral}");
@@ -95,5 +96,10 @@
     background: #1e1e1e;
     color: #d4d4d4;
     border-radius: var(--radius-box);
+  }
+
+  /* An empty console is an empty black box: hide it until output arrives. */
+  .logs:empty {
+    display: none;
   }
 }

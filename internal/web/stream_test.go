@@ -56,7 +56,7 @@ func TestExecutionStream(t *testing.T) {
 	}, []string{"acme/pici"}, nil)
 	user := newWebTestUser(t, store)
 	session, _ := newWebTestSession(t, svc, user.ID)
-	h := New(store, runner, dir, svc, "dev")
+	h := New(store, runner, dir, svc, "https://pici.test", "dev")
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
 

@@ -67,20 +67,22 @@ func mustSub(fsys fs.FS, dir string) fs.FS {
 }
 
 type Handler struct {
-	store        stores.Store
-	runner       *ci.Runner
-	workspaceDir string
-	buildVersion string
-	auth         *auth.Service
+	store         stores.Store
+	runner        *ci.Runner
+	workspaceDir  string
+	publicBaseURL string
+	buildVersion  string
+	auth          *auth.Service
 }
 
-func New(store stores.Store, runner *ci.Runner, workspaceDir string, authSvc *auth.Service, buildVersion string) *Handler {
+func New(store stores.Store, runner *ci.Runner, workspaceDir string, authSvc *auth.Service, publicBaseURL, buildVersion string) *Handler {
 	return &Handler{
-		store:        store,
-		runner:       runner,
-		workspaceDir: workspaceDir,
-		buildVersion: buildVersion,
-		auth:         authSvc,
+		store:         store,
+		runner:        runner,
+		workspaceDir:  workspaceDir,
+		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
+		buildVersion:  buildVersion,
+		auth:          authSvc,
 	}
 }
 

@@ -186,7 +186,7 @@ func newTestEnvWithAccess(t *testing.T, teams, users []string, opts ...func(*fak
 	user := newWebTestUser(t, store)
 	raw, session := newWebTestSession(t, svc, user.ID)
 
-	h := New(store, &ci.Runner{Store: store}, t.TempDir(), svc, "dev")
+	h := New(store, &ci.Runner{Store: store}, t.TempDir(), svc, "https://pici.test", "dev")
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
 	registerTestCSRF(srv.URL, session.CSRFToken)

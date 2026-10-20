@@ -66,7 +66,7 @@ func cookieValue(client *http.Client, rawURL, name string) string {
 }
 
 func TestTemplatesParse(t *testing.T) {
-	for _, name := range []string{"head", "nav", "foot", "flash", "login", "account", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "project_show", "project_variables", "project_cache", "workflows", "refs", "variables_list", "execution_show", "error"} {
+	for _, name := range []string{"head", "nav", "foot", "flash", "login", "account", "projects_list", "project_form", "project_fields", "secret_fields", "secret_fields_inner", "project_detect", "webhook_help", "webhook_help_inner", "webhook_payload_url", "project_show", "project_variables", "project_cache", "workflows", "refs", "variables_list", "execution_show", "error"} {
 		if templates.Lookup(name) == nil {
 			t.Errorf("template %q not found", name)
 		}
@@ -840,6 +840,91 @@ func TestDefaultAuthUser(t *testing.T) {
 	}
 	if got := defaultAuthUser(stores.AuthTypeNone); got != "" {
 		t.Errorf("none auth user = %q", got)
+	}
+}
+
+func TestWebhookSetupURL(t *testing.T) {
+	cases := []struct {
+		provider stores.Provider
+		repoURL  string
+		want     string
+	}{
+		{stores.ProviderGithub, "https://github.com/acme/demo.git", "https://github.com/acme/demo/settings/hooks/new"},
+		{stores.ProviderGithub, "git@github.com:acme/demo.git", "https://github.com/acme/demo/settings/hooks/new"},
+		{stores.ProviderGitlab, "https://gitlab.com/acme/demo.git", "https://gitlab.com/acme/demo/-/hooks"},
+		{stores.ProviderGitlab, "git@gitlab.example.com:acme/demo.git", "https://gitlab.example.com/acme/demo/-/hooks"},
+		{stores.ProviderGitlab, "http://gitlab.local:8080/acme/demo.git", "http://gitlab.local:8080/acme/demo/-/hooks"},
+		{stores.ProviderGeneric, "https://github.com/acme/demo.git", ""},
+		{stores.ProviderGithub, "", ""},
+	}
+	for _, tc := range cases {
+		if got := webhookSetupURL(tc.provider, tc.repoURL); got != tc.want {
+			t.Errorf("webhookSetupURL(%q, %q) = %q, want %q", tc.provider, tc.repoURL, got, tc.want)
+		}
+	}
+}
+
+func TestWebhookPayloadURL(t *testing.T) {
+	h := &Handler{publicBaseURL: "https://pici.example.com"}
+	cases := []struct {
+		provider stores.Provider
+		name     string
+		want     string
+	}{
+		{stores.ProviderGithub, "demo", "https://pici.example.com/api/webhooks/github/demo"},
+		{stores.ProviderGitlab, "", "https://pici.example.com/api/webhooks/gitlab/<project-name>"},
+		{stores.ProviderGeneric, "demo", ""},
+	}
+	for _, tc := range cases {
+		if got := h.webhookPayloadURL(tc.provider, tc.name); got != tc.want {
+			t.Errorf("webhookPayloadURL(%q, %q) = %q, want %q", tc.provider, tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestProjectFormWebhookHelp(t *testing.T) {
+	env := newTestEnv(t)
+	resp, err := env.client.Get(env.srv.URL + "/projects/new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	out := body(t, resp)
+	for _, want := range []string{
+		`href="#webhook-help"`,
+		`aria-label="Webhook setup instructions"`,
+		`onclick="generateWebhookSecret(this)"`,
+		"Webhooks are only supported for GitHub and GitLab projects.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in the project form, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestProjectDetectWebhookHelp(t *testing.T) {
+	srv, client := newTestServer(t, "")
+	resp := postForm(t, client, srv.URL+"/projects/detect", url.Values{
+		"name":           {"demo"},
+		"repo_url":       {"https://github.com/acme/demo.git"},
+		"provider":       {"github"},
+		"default_branch": {"main"},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	out := body(t, resp)
+	for _, want := range []string{
+		`hx-swap-oob="innerHTML"`,
+		"https://github.com/acme/demo/settings/hooks/new",
+		"https://pici.test/api/webhooks/github/demo",
+		"Let me select individual events",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in the detect response, got:\n%s", want, out)
+		}
 	}
 }
 

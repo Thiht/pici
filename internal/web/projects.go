@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/git"
+	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -21,21 +23,62 @@ type projectsPage struct {
 }
 
 type projectFields struct {
-	RepoURL       string
-	Provider      stores.Provider
-	DefaultBranch string
-	AuthType      stores.AuthType
-	AuthUser      string
-	Secret        string
+	RepoURL           string
+	Provider          stores.Provider
+	DefaultBranch     string
+	AuthType          stores.AuthType
+	AuthUser          string
+	Secret            string
+	WebhookPayloadURL string
+	WebhookSetupURL   string
 }
 
-func fieldsFromProject(p stores.Project) projectFields {
-	return projectFields{
+func (h *Handler) fieldsFromProject(p stores.Project) projectFields {
+	fields := projectFields{
 		RepoURL:       p.RepoURL,
 		Provider:      p.Provider,
 		DefaultBranch: p.DefaultBranch,
 		AuthType:      p.AuthType,
 		AuthUser:      p.AuthUser,
+	}
+	fields.WebhookPayloadURL = h.webhookPayloadURL(p.Provider, p.Name)
+	fields.WebhookSetupURL = webhookSetupURL(p.Provider, p.RepoURL)
+	return fields
+}
+
+// webhookPayloadURL is the endpoint to paste in the provider's webhook form.
+// The project does not have a name yet on the creation form, hence the
+// placeholder.
+func (h *Handler) webhookPayloadURL(provider stores.Provider, name string) string {
+	if provider != stores.ProviderGithub && provider != stores.ProviderGitlab {
+		return ""
+	}
+	project := "<project-name>"
+	if name != "" {
+		project = url.PathEscape(name)
+	}
+	return h.publicBaseURL + "/api/webhooks/" + provider.String() + "/" + project
+}
+
+// webhookSetupURL is the provider page where the webhook is created. Web
+// providers offer no query parameters to prefill that form, so users still
+// copy the payload URL and secret from the project form.
+func webhookSetupURL(provider stores.Provider, repoURL string) string {
+	host, path, ok := github.ParseRemote(repoURL)
+	if !ok || host == "" || path == "" {
+		return ""
+	}
+	scheme := "https"
+	if strings.HasPrefix(strings.ToLower(repoURL), "http://") {
+		scheme = "http"
+	}
+	switch provider {
+	case stores.ProviderGithub:
+		return scheme + "://" + host + "/" + path + "/settings/hooks/new"
+	case stores.ProviderGitlab:
+		return scheme + "://" + host + "/" + path + "/-/hooks"
+	default:
+		return ""
 	}
 }
 
@@ -76,7 +119,7 @@ func (h *Handler) ProjectsList(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ProjectNew(w http.ResponseWriter, r *http.Request) {
 	project := stores.Project{Provider: stores.ProviderGeneric, AuthType: stores.AuthTypeNone}
-	data := projectFormPage{base: h.base(w, r, "New project", "projects"), Project: project, Fields: fieldsFromProject(project)}
+	data := projectFormPage{base: h.base(w, r, "New project", "projects"), Project: project, Fields: h.fieldsFromProject(project)}
 	h.render(w, r, http.StatusOK, "project_form", data)
 }
 
@@ -87,7 +130,7 @@ func (h *Handler) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	project, errMsg := projectFromForm(r, stores.Project{})
 	if errMsg != "" {
-		fields := fieldsFromProject(project)
+		fields := h.fieldsFromProject(project)
 		fields.Secret = project.AuthSecret
 		data := projectFormPage{base: h.base(w, r, "New project", "projects"), Project: project, Fields: fields, Error: errMsg}
 		h.render(w, r, http.StatusBadRequest, "project_form", data)
@@ -165,7 +208,7 @@ func (h *Handler) ProjectEdit(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	data := projectFormPage{base: h.base(w, r, "Edit "+project.Name, "projects"), Project: project, Fields: fieldsFromProject(project), Editing: true}
+	data := projectFormPage{base: h.base(w, r, "Edit "+project.Name, "projects"), Project: project, Fields: h.fieldsFromProject(project), Editing: true}
 	h.render(w, r, http.StatusOK, "project_form", data)
 }
 
@@ -181,7 +224,7 @@ func (h *Handler) ProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, errMsg := projectFromForm(r, project)
 	if errMsg != "" {
-		fields := fieldsFromProject(updated)
+		fields := h.fieldsFromProject(updated)
 		fields.Secret = updated.AuthSecret
 		data := projectFormPage{base: h.base(w, r, "Edit "+project.Name, "projects"), Project: updated, Fields: fields, Editing: true, Error: errMsg}
 		h.render(w, r, http.StatusBadRequest, "project_form", data)
@@ -270,6 +313,8 @@ func (h *Handler) ProjectDetect(w http.ResponseWriter, r *http.Request) {
 	if fields.RepoURL != "" {
 		fields.Provider = inferProvider(fields.RepoURL)
 	}
+	fields.WebhookPayloadURL = h.webhookPayloadURL(fields.Provider, strings.TrimSpace(r.FormValue("name")))
+	fields.WebhookSetupURL = webhookSetupURL(fields.Provider, fields.RepoURL)
 	if fields.AuthUser == "" || fields.AuthUser == "oauth2" || fields.AuthUser == "git" {
 		fields.AuthUser = defaultAuthUser(fields.AuthType)
 	}
