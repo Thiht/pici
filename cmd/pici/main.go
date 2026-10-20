@@ -19,6 +19,7 @@ import (
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/gc"
 	"github.com/Thiht/pici/internal/handlers"
+	"github.com/Thiht/pici/internal/logging"
 	"github.com/Thiht/pici/internal/scheduler"
 	"github.com/Thiht/pici/internal/secrets"
 	"github.com/Thiht/pici/internal/stores"
@@ -36,6 +37,8 @@ func main() {
 		slog.Error("load config", "error", err)
 		os.Exit(1)
 	}
+
+	logging.Setup(cfg.LogFormat)
 
 	cipher, err := secrets.New(cfg.SecretKey)
 	if err != nil {

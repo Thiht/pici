@@ -14,6 +14,7 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-concurrency`          | `PICI_CONCURRENCY`          | `4`                                   | max concurrent executions                                       |
 | `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                                 | default step timeout                                            |
 | `-max-snapshot-size`    | `PICI_MAX_SNAPSHOT_SIZE`    | `536870912` (512 MiB)                 | maximum size of an uploaded local snapshot                      |
+| `-log-format`           | `PICI_LOG_FORMAT`           | `text`                                | log output format: `text` or `json` (for Loki/Grafana, ...)     |
 | `-secret-key`           | `PICI_SECRET_KEY`           | —                                     | **required** — 32-byte key (hex/base64) for encrypting secrets  |
 | `-public-url`           | `PICI_PUBLIC_URL`           | —                                     | **required** — public base URL, e.g. `https://pici.example.com` |
 | `-auth-provider`        | `PICI_AUTH_PROVIDER`        | `github`                              | sign-in provider: `github`, `gitlab` or `oidc`                  |

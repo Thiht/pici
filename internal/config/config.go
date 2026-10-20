@@ -29,6 +29,7 @@ type Config struct {
 	StepTimeout     time.Duration
 	MaxSnapshotSize int64
 	ConfigFile      string
+	LogFormat       string
 
 	SecretKey          string
 	PublicBaseURL      string
@@ -71,6 +72,7 @@ func Load(args []string) (Config, error) {
 	fs.DurationVar(&cfg.StepTimeout, "step-timeout", 30*time.Minute, "default step timeout")
 	fs.Int64Var(&cfg.MaxSnapshotSize, "max-snapshot-size", 512<<20, "maximum size in bytes of an uploaded local snapshot")
 	fs.StringVar(&cfg.ConfigFile, "config", "", "path to a JSON config file")
+	fs.StringVar(&cfg.LogFormat, "log-format", "text", "log format (text, json)")
 
 	fs.StringVar(&cfg.SecretKey, "secret-key", "", "32-byte key (hex or base64) used to encrypt secrets at rest (required)")
 	fs.StringVar(&cfg.PublicBaseURL, "public-url", "", "public base URL, e.g. https://pici.example.com (required)")
@@ -107,6 +109,7 @@ func Load(args []string) (Config, error) {
 
 	cfg.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/")
 	cfg.AuthProvider = strings.ToLower(strings.TrimSpace(cfg.AuthProvider))
+	cfg.LogFormat = strings.ToLower(strings.TrimSpace(cfg.LogFormat))
 	cfg.GitLabURL = strings.TrimRight(strings.TrimSpace(cfg.GitLabURL), "/")
 	cfg.GitHubTeams = splitList(githubTeams)
 	cfg.GitHubUsers = splitList(githubUsers)
@@ -131,6 +134,11 @@ func Load(args []string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	switch c.LogFormat {
+	case "", "text", "json":
+	default:
+		return fmt.Errorf("invalid log format %q (want text or json)", c.LogFormat)
+	}
 	if c.SecretKey == "" {
 		return errors.New("PICI_SECRET_KEY is required (generate one with `openssl rand -hex 32`)")
 	}

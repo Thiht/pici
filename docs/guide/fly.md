@@ -171,6 +171,8 @@ fly status -a my-pici
 fly ssh console -a my-pici
 ```
 
+Logs are structured JSON (`PICI_LOG_FORMAT=json` in `fly.toml`), so they can be piped to `jq` or shipped to Loki/Grafana without further parsing. Set `PICI_LOG_FORMAT=text` if you prefer the human-readable format.
+
 - **The app starts but workflows fail**: check that Docker is running with `docker info` inside `fly ssh console`. The entrypoint starts `dockerd` before pici.
 - **The health check fails**: the first boot waits for `dockerd` and the database; `fly logs` shows the startup sequence. The check has a 60-second grace period.
 - **The volume fills up**: images and build cache live under `/data/docker`. Remove unused cache entries from the project cache page or with `pici-cli cache`, then extend the volume if needed.

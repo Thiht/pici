@@ -15,6 +15,8 @@ kill_timeout = 120
   PICI_WORKSPACE_DIR = "/data/workspaces"
   PICI_CONCURRENCY = "2"
   PICI_SHUTDOWN_TIMEOUT = "2m"
+  # Structured JSON logs so log collectors (Grafana, Loki, ...) can parse them.
+  PICI_LOG_FORMAT = "json"
   # A Fly Machine can only mount one volume. Keep the Docker image/build cache
   # on the same /data volume as the database and workspaces.
   DOCKER_DATA_ROOT = "/data/docker"

@@ -46,6 +46,7 @@ As with compose, swap the GitHub variables for the provider you use.
 
 - `--privileged` (or `privileged: true`) is required for nested Docker.
 - The image starts `dockerd` in the background, then runs pici; pici talks to it over the local Unix socket.
+- Set `PICI_LOG_FORMAT=json` to emit structured JSON logs (for example to feed Loki/Grafana) instead of the default text format.
 - On `docker stop`, pici drains in-flight steps gracefully (see `-shutdown-timeout`). Keep `stop_grace_period` (compose: `2m`) larger than your longest step.
 - The workspace and database live under `/data`, so mount a volume there to persist state and caches.
 - Put pici behind an HTTPS reverse proxy: the OAuth callback and `Secure` session cookies assume a stable HTTPS public URL.
