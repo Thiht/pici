@@ -2,6 +2,7 @@
 set -eu
 
 repo_url="https://github.com/Thiht/pici.git"
+script_url="https://raw.githubusercontent.com/Thiht/pici/main/scripts/deploy-fly.sh"
 default_ref="main"
 
 usage() {
@@ -17,6 +18,7 @@ Options:
   --org ORG          Fly organization (default: your default organization)
   --provider NAME    Auth provider: github, gitlab or oidc (default: github)
   --ref REF          Git ref to deploy when not run from the pici repo (default: main)
+  --no-depot         Build with Fly's legacy remote builder instead of Depot
   --dry-run          Print the commands instead of running them
   -h, --help         Show this help
 
@@ -58,6 +60,12 @@ org=${PICI_FLY_ORG:-}
 provider=${PICI_AUTH_PROVIDER:-}
 ref=${PICI_FLY_REF:-$default_ref}
 dry_run=0
+no_depot=0
+local_repo=0
+app_ready=0
+secrets_staged=0
+deploy_started=0
+deploy_done=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -106,6 +114,10 @@ while [ "$#" -gt 0 ]; do
       ref=${1#*=}
       shift
       ;;
+    --no-depot)
+      no_depot=1
+      shift
+      ;;
     --dry-run)
       dry_run=1
       shift
@@ -138,15 +150,80 @@ if [ -t 0 ]; then
   tty=/dev/tty
 fi
 
+failure_help() {
+  if [ "$app_ready" -eq 0 ]; then
+    cat >&2 <<'EOF'
+
+Deployment did not complete. Fix the error above and rerun the same command.
+EOF
+    return 0
+  fi
+
+  if [ "$local_repo" -eq 1 ] && [ -f "$0" ]; then
+    rerun="$0"
+  else
+    rerun="sh -c \"\$(curl -fsSL $script_url)\" deploy-fly"
+  fi
+  rerun="$rerun --name $app --region $region --provider $provider"
+  if [ -n "$org" ]; then
+    rerun="$rerun --org $org"
+  fi
+  if [ "$local_repo" -eq 0 ]; then
+    rerun="$rerun --ref $ref"
+  fi
+  if [ "$no_depot" -eq 1 ]; then
+    rerun="$rerun --no-depot"
+  fi
+  if [ "$public_url" != "https://$app.fly.dev" ]; then
+    rerun="PICI_PUBLIC_URL=$public_url $rerun"
+  fi
+
+  {
+    printf '\n%s\n' '----------------------------------------------------------------------'
+    printf '%s\n' 'Deployment did not complete.'
+    printf '\n'
+    if [ "$secrets_staged" -eq 1 ]; then
+      printf '%s\n' 'The app and its staged secrets are kept. Rerunning is safe and idempotent:'
+      printf '%s\n' 'the existing app is reused, PICI_SECRET_KEY is kept, and the other secrets'
+      printf '%s\n' 'are replaced. Fly does not expose secret values, so you will be asked for'
+      printf '%s\n' 'the sign-in credentials again.'
+    else
+      printf '%s\n' 'Rerunning is safe and idempotent: the existing app, if any, is reused and'
+      printf '%s\n' 'PICI_SECRET_KEY is kept.'
+    fi
+    printf '\n%s\n' 'Rerun:'
+    printf '  %s\n' "$rerun"
+    if [ "$deploy_started" -eq 1 ] && [ "$no_depot" -eq 0 ]; then
+      printf '\n%s\n' 'If the build failed in Depot (timeout, connection reset), add --no-depot:'
+      printf '  %s --no-depot\n' "$rerun"
+    fi
+    if [ "$secrets_staged" -eq 1 ] && [ "$local_repo" -eq 1 ] && [ -d "$repo" ]; then
+      printf '\n%s\n' 'Or deploy directly with the secrets already staged:'
+      printf '  fly deploy . -a %s --primary-region %s --ha=false --now --depot=false\n' "$app" "$region"
+    fi
+    if [ "$deploy_started" -eq 1 ] || [ "$secrets_staged" -eq 1 ]; then
+      printf '\n%s\n' 'Then check the deployment:'
+      printf '  fly status -a %s\n' "$app"
+      printf '  fly logs -a %s\n' "$app"
+    fi
+    printf '%s\n' '----------------------------------------------------------------------'
+  } >&2
+  return 0
+}
+
 cleanup() {
+  status=$?
   if [ -n "$tty" ]; then
     stty echo <"$tty" 2>/dev/null || true
   fi
   if [ -n "$tmp_repo" ]; then
-    rm -rf "$tmp_repo"
+    rm -rf "$tmp_repo" || true
   fi
   if [ -n "$secrets_file" ]; then
-    rm -f "$secrets_file"
+    rm -f "$secrets_file" || true
+  fi
+  if [ "$status" -ne 0 ] && [ "$deploy_done" -eq 0 ]; then
+    failure_help
   fi
 }
 trap cleanup EXIT
@@ -229,9 +306,11 @@ case "$public_url" in
   https://*/*) die "PICI_PUBLIC_URL must be an origin without a path: $public_url" ;;
 esac
 callback="$public_url/auth/$provider/callback"
+app_ready=1
 
 if [ -f fly.toml ] && [ -f docker/Dockerfile ] && [ -f cmd/pici/main.go ]; then
   repo=$(pwd)
+  local_repo=1
   echo "Using pici source from $repo" >&2
 else
   command -v git >/dev/null 2>&1 || die "git is required to fetch the pici source"
@@ -446,6 +525,7 @@ if [ "$dry_run" -eq 1 ]; then
   sed 's/=.*/=<redacted>/' "$secrets_file" >&2
 else
   fly secrets import --app "$app" --stage <"$secrets_file"
+  secrets_staged=1
 fi
 
 unset_stale_secret() {
@@ -466,7 +546,13 @@ else
   unset_stale_secret PICI_OIDC_USERS "$oidc_users"
 fi
 
-run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now
+deploy_started=1
+if [ "$no_depot" -eq 1 ]; then
+  run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now --depot=false
+else
+  run fly deploy "$repo" --app "$app" --primary-region "$region" --ha=false --now
+fi
+deploy_done=1
 
 if [ "$dry_run" -eq 1 ]; then
   echo "Dry run complete; no Fly resources were changed." >&2
