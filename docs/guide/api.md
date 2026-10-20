@@ -1,31 +1,24 @@
 # API
 
-Base URL: `http://localhost:8080`.
+Base URL: your `PICI_PUBLIC_URL` (e.g. `https://pici.example.com`), or `http://localhost:8080` locally.
 
-For day-to-day operations, prefer the [CLI](/guide/cli) (`pici-cli`). This page documents the underlying HTTP endpoints.
+For day-to-day operations, prefer the [CLI](/guide/cli). This page documents the underlying HTTP endpoints; the full interactive reference is available in [API reference](/guide/api-reference).
 
 ## Authentication
 
-The API requires a **personal API token**, created from the Account page after
-signing in with GitHub. Send it either as `Authorization: Bearer <token>` or
-`X-API-Token: <token>`:
+The API requires a **personal API token**, created from the Account page. Send it as `Authorization: Bearer <token>` or `X-API-Token: <token>`:
 
 ```sh
-curl -H 'Authorization: Bearer pici_pat_...' localhost:8080/api/projects
+curl -H 'Authorization: Bearer pici_pat_...' https://pici.example.com/api/projects
 ```
 
-Personal tokens inherit the full access of their owner and can be revoked at
-any time. The browser session cookie is **not** accepted by the JSON API.
+Personal tokens inherit the full access of their owner and can be revoked at any time. The JSON API never accepts the browser session cookie.
 
-`/health`, `/badge/*` and `/api/webhooks/*` are exempt (webhooks use their own
-signature/token). The [CLI](/guide/cli) reads `PICI_TOKEN`.
-
-See [Authentication](/guide/authentication) for the OAuth setup and token
-management.
-
-The full API is also available as an [interactive OpenAPI reference](/guide/api-reference).
+`/health`, `/badge/*`, and `/api/webhooks/*` are exempt. The CLI reads `PICI_TOKEN`.
 
 ## Projects
+
+Project `{id}` can be a project name or a UUID.
 
 | Method   | Path                         | Description               |
 | -------- | ---------------------------- | ------------------------- |
@@ -56,14 +49,16 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 | `POST` | `/api/projects/{id}/executions`                                 | trigger a run               |
 | `GET`  | `/api/projects/{id}/executions`                                 | list executions             |
 | `GET`  | `/api/projects/{id}/executions/{executionID}`                   | get an execution            |
-| `GET`  | `/api/projects/{id}/executions/{executionID}/logs`              | combined logs               |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/logs`              | combined logs (text)        |
 | `GET`  | `/api/projects/{id}/executions/{executionID}/logs/stream`       | stream logs over SSE        |
 | `GET`  | `/api/projects/{id}/executions/{executionID}/steps/{step}/logs` | a single step's logs        |
 | `POST` | `/api/projects/{id}/executions/{executionID}/cancel`            | cancel a running execution  |
 | `POST` | `/api/projects/{id}/executions/{executionID}/rebuild`           | re-run with the same commit |
 | `POST` | `/api/projects/{id}/executions/{executionID}/retry`             | retry failed steps          |
 
-`POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes; such executions are `source: snapshot` and cannot be rebuilt.
+`POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes. Such executions have `source: snapshot` and cannot be rebuilt.
+
+`POST .../retry` retries the failed steps of a git execution, reusing its workspace. It returns `409` when the execution is not retryable (not failed, a snapshot, or already running) and `410` when the workspace is gone.
 
 ## Artifacts
 
@@ -79,9 +74,7 @@ pici-cli artifacts get demo 42 build/dist/app.tar.gz
 
 ## Cache
 
-Docker resources tied to a project: workflow images built by pici and the cross-run
-cache volumes declared in `ci.yml`. Sizes are read from the Docker daemon; listing
-returns `503` when Docker is unavailable.
+Docker resources tied to a project: workflow images built by pici and cross-run cache volumes (declared in `ci.yml` or detected automatically). Sizes are read from the Docker daemon; listing returns `503` when Docker is unavailable.
 
 | Method   | Path                               | Description                          |
 | -------- | ---------------------------------- | ------------------------------------ |
@@ -105,28 +98,27 @@ Log events are labeled by source (`setup` or the step name). A `state` event car
 
 ## Status badge
 
-A public SVG badge for a project, embeddable in a README. It does not require a
-personal API token.
+A public SVG badge for a project, embeddable in a README. It does not require a token.
 
 | Method | Path          | Description                                                                            |
 | ------ | ------------- | -------------------------------------------------------------------------------------- |
 | `GET`  | `/badge/{id}` | shields-style badge (`?workflow=` selects the workflow, `?label=` overrides the label) |
 
 ```md
-![build](http://<your-host>:8080/badge/demo?workflow=build)
+![build](https://pici.example.com/badge/demo?workflow=build)
 ```
 
-## Other
+## System
 
 | Method | Path                        | Description                                       |
 | ------ | --------------------------- | ------------------------------------------------- |
-| `GET`  | `/health`                   | healthcheck (docker + queue depth)                |
+| `GET`  | `/health`                   | healthcheck (Docker + queue depth)                |
 | `GET`  | `/version`                  | server build version + VCS revision/time/modified |
 | `POST` | `/api/validate`             | validate a `ci.yml`                               |
 | `POST` | `/api/webhooks/github/{id}` | GitHub webhook                                    |
 | `POST` | `/api/webhooks/gitlab/{id}` | GitLab webhook                                    |
 
-An execution looks like:
+## Execution object
 
 ```json
 {
@@ -155,8 +147,6 @@ An execution looks like:
 
 Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
-`status` is one of `pending`, `running`, `success`, `failed`, `canceled`. `trigger` is one of `manual`, `webhook`, `cron`, `rebuild`, `retry`. `source` is `git` or `snapshot`.
-
-`POST .../retry` retries the failed steps of a git execution, reusing its
-workspace. It returns `409` when the execution is not retryable (not failed,
-a snapshot, or already running) and `410` when the workspace is gone.
+- `status`: `pending`, `running`, `success`, `failed`, `canceled`.
+- `trigger`: `manual`, `webhook`, `cron`, `rebuild`, `retry`.
+- `source`: `git`, `snapshot`.

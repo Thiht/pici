@@ -4,14 +4,9 @@ pici ships with a self-contained [Docker-in-Docker](https://hub.docker.com/_/doc
 
 For a hosted one-command deployment, see [Fly.io](/guide/fly).
 
-## docker-compose
+## docker compose
 
-`PICI_SECRET_KEY` and `PICI_PUBLIC_URL` are **required**. You also need the
-OAuth settings for one provider: `PICI_AUTH_PROVIDER` defaults to `github`;
-with `gitlab`, set the `PICI_GITLAB_*` variables and use the GitLab callback
-URL; with `oidc`, set `PICI_OIDC_ISSUER`, the client id/secret, and
-`PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`. pici requires at least one allowed
-team/group or user for that provider and refuses to start otherwise.
+`PICI_SECRET_KEY` and `PICI_PUBLIC_URL` are required, plus the OAuth settings for one provider (see [Authentication](/guide/authentication)). The server refuses to start without them.
 
 ```sh
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
@@ -23,20 +18,9 @@ export PICI_GITHUB_TEAMS=acme/pici-users
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-For a personal instance with no organization, use
-`PICI_GITHUB_USERS=your-github-login` instead of `PICI_GITHUB_TEAMS`.
+Use `PICI_GITHUB_USERS=your-github-login` instead of `PICI_GITHUB_TEAMS` for a personal instance. For GitLab or OIDC, set `PICI_AUTH_PROVIDER` and the matching `PICI_GITLAB_*` or `PICI_OIDC_*` variables.
 
-Create the OAuth App with callback URL
-`${PICI_PUBLIC_URL}/auth/github/callback` (see
-[Authentication](/guide/authentication)). For GitLab, set
-`PICI_AUTH_PROVIDER=gitlab` plus `PICI_GITLAB_CLIENT_ID`,
-`PICI_GITLAB_CLIENT_SECRET` and `PICI_GITLAB_GROUPS` or `PICI_GITLAB_USERS`,
-and use callback URL `${PICI_PUBLIC_URL}/auth/gitlab/callback`. For OIDC, set
-`PICI_AUTH_PROVIDER=oidc`, `PICI_OIDC_ISSUER`, `PICI_OIDC_CLIENT_ID`,
-`PICI_OIDC_CLIENT_SECRET`, and `PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`; the
-callback URL is `${PICI_PUBLIC_URL}/auth/oidc/callback`. The server is then
-reachable at the public URL; locally, `http://localhost:8080`. Data (SQLite DB +
-workspaces) lives in the `pici-data` volume.
+Create the OAuth app with callback URL `${PICI_PUBLIC_URL}/auth/<provider>/callback`. The server is reachable at the public URL (locally, `http://localhost:8080`), and data (SQLite database + workspaces) lives in the `pici-data` volume.
 
 ## Plain docker
 
@@ -56,24 +40,19 @@ docker run -d --privileged \
   pici:dev
 ```
 
-Use `-e PICI_GITHUB_USERS=your-github-login` instead of
-`PICI_GITHUB_TEAMS` for a personal instance. For GitLab, add
-`-e PICI_AUTH_PROVIDER=gitlab` and use the `PICI_GITLAB_*` variables in place of
-the GitHub ones. For OIDC, add `-e PICI_AUTH_PROVIDER=oidc` and use the
-`PICI_OIDC_*` variables.
+As with compose, swap the GitHub variables for the provider you use.
 
 ## Notes
 
 - `--privileged` (or `privileged: true`) is required for nested Docker.
 - The image starts `dockerd` in the background, then runs pici; pici talks to it over the local Unix socket.
-- On `docker stop`, pici drains in-flight steps gracefully (see `-shutdown-timeout`); keep `stop_grace_period` (compose: `2m`) larger than your longest step.
-- The workspace and database are stored in `/data`, so mount a volume there to persist state and caches.
-- Put pici behind an HTTPS reverse proxy: the OAuth callback and `Secure`
-  session cookies assume a stable HTTPS public URL.
+- On `docker stop`, pici drains in-flight steps gracefully (see `-shutdown-timeout`). Keep `stop_grace_period` (compose: `2m`) larger than your longest step.
+- The workspace and database live under `/data`, so mount a volume there to persist state and caches.
+- Put pici behind an HTTPS reverse proxy: the OAuth callback and `Secure` session cookies assume a stable HTTPS public URL.
 
 ## Alternative: sidecar DinD
 
-If you prefer to keep pici unprivileged, run `docker:dind` as a separate service and point pici at it:
+To keep pici unprivileged, run `docker:dind` as a separate service and point pici at it:
 
 ```yaml
 services:
@@ -81,11 +60,9 @@ services:
     image: docker:dind
     privileged: true
   pici:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: your-pici-image
     environment:
       DOCKER_HOST: tcp://dind:2375
 ```
 
-In that case use the `docker/Dockerfile`'s build stage only, or a slim runtime image (Alpine) with the binary.
+The bundled image starts its own daemon, so this setup needs a slim runtime image containing only the `pici` binary.

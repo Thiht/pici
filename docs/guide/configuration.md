@@ -2,6 +2,8 @@
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
+## Settings
+
 | Flag                    | Env                         | Default                               | Description                                                     |
 | ----------------------- | --------------------------- | ------------------------------------- | --------------------------------------------------------------- |
 | `-http-addr`            | `PICI_HTTP_ADDR`            | `:8080`                               | HTTP listen address                                             |
@@ -34,20 +36,21 @@ Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with th
 | `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`                                | browser session lifetime (sliding)                              |
 | `-gc-interval`          | `PICI_GC_INTERVAL`          | `10m`                                 | garbage collection interval                                     |
 | `-gc-keep`              | `PICI_GC_KEEP`              | `24h`                                 | keep finished workspaces/logs for this long                     |
-| `-scheduler-interval`   | `PICI_SCHEDULER_INTERVAL`   | `1m`                                  | scheduled build polling interval                                |
+| `-scheduler-interval`   | `PICI_SCHEDULER_INTERVAL`   | `1m`                                  | scheduled run polling interval                                  |
 | `-shutdown-timeout`     | `PICI_SHUTDOWN_TIMEOUT`     | `30s`                                 | grace period for in-flight steps on shutdown                    |
 | `-config`               | `PICI_CONFIG`               | —                                     | path to a JSON config file                                      |
 
-With the default `PICI_AUTH_PROVIDER=github`, at least one of
-`PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required. With
-`PICI_AUTH_PROVIDER=gitlab`, set the `PICI_GITLAB_*` variables and at least one
-of `PICI_GITLAB_GROUPS` or `PICI_GITLAB_USERS`. With
-`PICI_AUTH_PROVIDER=oidc`, set the `PICI_OIDC_*` variables and at least one of
-`PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`. Settings for the provider that is not
-selected are ignored. See [Authentication](/guide/authentication) for the OAuth
-setup and personal API tokens.
+Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker`, ...).
 
-## Example config file
+## Requirements
+
+`PICI_SECRET_KEY` and `PICI_PUBLIC_URL` are required. The public URL must be an origin (no path, query, or credentials) and use HTTPS, except for localhost.
+
+For the selected provider, set the client credentials and at least one of the groups/teams or users allowlists. Settings for other providers are ignored. See [Authentication](/guide/authentication) for the OAuth setup.
+
+## Config file
+
+Keys are flag names. Arguments passed on the command line take precedence.
 
 ```json
 {
@@ -59,38 +62,17 @@ setup and personal API tokens.
   "public-url": "https://pici.example.com",
   "github-client-id": "Iv1.abc123",
   "github-client-secret": "ghs_...",
-  "github-teams": "acme/pici-users"
+  "github-users": "Thiht"
 }
 ```
-
-For a personal instance, omit `github-teams` and use
-`"github-users": "Thiht"` instead.
-
-For a GitLab instance, set `"auth-provider": "gitlab"` and replace the GitHub
-keys with `gitlab-url`, `gitlab-client-id`, `gitlab-client-secret`, and
-`gitlab-groups` or `gitlab-users`. For a generic OIDC provider, use
-`"auth-provider": "oidc"`, `oidc-issuer`, `oidc-client-id`,
-`oidc-client-secret`, and `oidc-groups` or `oidc-users`.
 
 ```sh
 pici -config /etc/pici.json
 ```
 
-## Garbage collection
+## Runtime behavior
 
-pici periodically:
-
-- removes finished workspaces and logs older than `-gc-keep`
-- prunes unused Docker images built by pici (labeled `pici=1`)
-
-## Crash recovery
-
-On startup, pici requeues any execution left in `running` state (e.g. after a crash), so no build is lost.
-
-## Graceful shutdown
-
-On `SIGTERM`/`SIGINT`, pici stops accepting new work, waits up to `-shutdown-timeout` for in-flight steps to finish, then force-cancels anything still running.
-
-## Multi-instance
-
-Because the queue is database-backed, multiple instances can share a Postgres database and consume the queue concurrently.
+- **Garbage collection** runs every `-gc-interval`: it removes finished workspaces and logs older than `-gc-keep`, and prunes unused Docker images built by pici (labeled `pici=1`).
+- **Crash recovery**: on startup, pici requeues executions left in `running` state, so no run is lost.
+- **Graceful shutdown**: on `SIGTERM`/`SIGINT`, pici stops accepting new work, waits up to `-shutdown-timeout` for in-flight steps, then cancels anything still running.
+- **Multi-instance**: the queue is database-backed, so multiple instances can share a Postgres database and consume it concurrently. Local snapshot uploads also require the API and the worker to share the same workspace directory (single node, or a shared volume).

@@ -23,25 +23,15 @@ export PICI_GITHUB_TEAMS=acme/pici-users
 pici
 ```
 
-For a personal instance with no organization, replace `PICI_GITHUB_TEAMS` with
-`PICI_GITHUB_USERS=your-github-login` (no `read:org` scope needed).
-
-To sign in with GitLab instead, set `PICI_AUTH_PROVIDER=gitlab`,
-`PICI_GITLAB_CLIENT_ID`, `PICI_GITLAB_CLIENT_SECRET`, and
-`PICI_GITLAB_GROUPS` (or `PICI_GITLAB_USERS`). For a generic OpenID Connect
-provider, use `PICI_AUTH_PROVIDER=oidc` with `PICI_OIDC_ISSUER`,
-`PICI_OIDC_CLIENT_ID`, `PICI_OIDC_CLIENT_SECRET`, and `PICI_OIDC_GROUPS` (or
-`PICI_OIDC_USERS`). An instance uses one provider at a time.
-
-Sign in at `http://localhost:8080`, create a personal token from the Account
-page, then register a project and trigger a run:
+Open `http://localhost:8080`, sign in, create a personal token from the **Account** page, then install a workflow in your repository and run it:
 
 ```sh
 export PICI_TOKEN=pici_pat_...
 
 pici-cli projects add demo https://github.com/acme/demo.git
-
 pici-cli run demo build
 ```
 
-See [Authentication](/guide/authentication) and [Getting started](/guide/getting-started) for full walkthroughs.
+- Personal instance without an organization? Use `PICI_GITHUB_USERS=your-login` instead of a team.
+- Signing in with GitLab or OpenID Connect? See [Authentication](/guide/authentication).
+- Want the full walkthrough? Start with [Getting started](/guide/getting-started).

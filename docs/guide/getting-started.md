@@ -2,15 +2,12 @@
 
 ## Prerequisites
 
-- Docker (running, with the Engine API reachable)
-- SQLite (default) or Postgres
+- Docker, running, with the Engine API reachable.
+- SQLite (default) or Postgres.
 
-## Run the server
+## 1. Start the server
 
-pici signs people in with GitHub, GitLab, or any OpenID Connect provider. You
-need an OAuth/OIDC application, a secret key, and either a team/group whose
-members may use pici or a list of allowed logins. The server refuses to start
-without them.
+pici signs people in with GitHub, GitLab, or any OpenID Connect provider. Create an OAuth application, set a secret key, and list who may sign in. The server refuses to start without them.
 
 ```sh
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
@@ -22,65 +19,56 @@ export PICI_GITHUB_TEAMS=acme/pici-users
 pici
 ```
 
-For a personal instance with no organization, replace the team with an
-allowlist:
+Create the GitHub OAuth App with callback URL `http://localhost:8080/auth/github/callback`. For a personal instance with no organization, use `PICI_GITHUB_USERS=your-github-login` instead of `PICI_GITHUB_TEAMS`.
+
+To use GitLab or OpenID Connect instead, set `PICI_AUTH_PROVIDER` and the matching variables. The callback is `PICI_PUBLIC_URL/auth/<provider>/callback`. Choose one of:
 
 ```sh
-export PICI_GITHUB_USERS=your-github-login
-```
-
-Create the OAuth App with callback URL
-`http://localhost:8080/auth/github/callback`, then open
-`http://localhost:8080` and sign in. See
-[Authentication](/guide/authentication) for the full setup, including
-organization approval in team mode.
-
-To sign in with GitLab instead, set the provider and GitLab application
-settings:
-
-```sh
+# GitLab
 export PICI_AUTH_PROVIDER=gitlab
 export PICI_GITLAB_CLIENT_ID=0123456789abcdef
 export PICI_GITLAB_CLIENT_SECRET=gloas-...
 export PICI_GITLAB_GROUPS=acme/pici-users
 ```
 
-Use callback URL `http://localhost:8080/auth/gitlab/callback`, and
-`PICI_GITLAB_USERS=your-gitlab-username` instead of a group for a personal
-instance. `PICI_GITLAB_URL` defaults to `https://gitlab.com`; set it for a
-self-hosted instance.
+```sh
+# OpenID Connect
+export PICI_AUTH_PROVIDER=oidc
+export PICI_OIDC_ISSUER=https://keycloak.example.com/realms/pici
+export PICI_OIDC_CLIENT_ID=pici
+export PICI_OIDC_CLIENT_SECRET=...
+export PICI_OIDC_GROUPS=acme/pici-users
+```
 
-For an OpenID Connect provider, use `PICI_AUTH_PROVIDER=oidc` with
-`PICI_OIDC_ISSUER`, `PICI_OIDC_CLIENT_ID`, `PICI_OIDC_CLIENT_SECRET`, and
-`PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`; the callback URL is
-`http://localhost:8080/auth/oidc/callback`.
+See [Authentication](/guide/authentication) for the full setup.
 
-Configuration is flags-first. See [Configuration](/guide/configuration) for the full list.
+Configuration is flags-first: flags, then `PICI_*` environment variables, then an optional JSON config file.
 
 ```sh
 pici -http-addr :8080 -db-driver sqlite -db-dsn pici.db
 ```
 
-## Create an API token
+See [Configuration](/guide/configuration) for every setting.
 
-Open the **Account** page and create a personal token. Copy it now: it is shown
-once. Then export it for the CLI:
+## 2. Create an API token
+
+Open `http://localhost:8080`, sign in, go to **Account**, and create a personal token. Copy it now: it is shown once.
 
 ```sh
 export PICI_TOKEN=pici_pat_...
 ```
 
-## Add a project
+## 3. Register a project
 
-Register a repository (GitHub, GitLab, or any git URL):
+A project is a git repository: GitHub, GitLab, or any git URL.
 
 ```sh
 pici-cli projects add demo https://github.com/acme/demo.git
 ```
 
-## Write a workflow
+## 4. Write a workflow
 
-In your repository, create a `.ci/build` folder:
+A workflow is a folder under `.ci/` in the repository. It contains a `Dockerfile` (the runner image) and a `ci.yml` (the steps).
 
 ```
 .ci/
@@ -110,14 +98,15 @@ steps:
     depends_on: [install]
 ```
 
-## Trigger a run
+## 5. Trigger a run
 
 ```sh
 pici-cli run demo build
+pici-cli logs demo 1 --follow
 ```
 
-Then watch the logs:
+## Next steps
 
-```sh
-pici-cli logs <id> --follow
-```
+- [Workflows](/guide/workflows): triggers, cache, artifacts, retries.
+- [Webhooks & schedules](/guide/webhooks): run on push, pull requests, and on a cron.
+- [Deployment](/guide/docker): run pici in production.

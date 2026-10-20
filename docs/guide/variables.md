@@ -1,6 +1,6 @@
 # Variables & secrets
 
-Variables and secrets are injected into every workflow execution as environment variables. Secrets are masked in API responses and redacted from logs.
+Variables and secrets are injected into every execution as environment variables. Secrets are masked in API responses and redacted from logs.
 
 ## Global variables
 
@@ -20,18 +20,25 @@ pici-cli vars --project demo
 pici-cli vars rm NPM_TOKEN --project demo
 ```
 
-Project variables override global variables with the same key. Step-level `env` overrides both.
+Variables are merged in this order, and a later value wins:
+
+1. global variables
+2. project variables
+3. workflow-level `env` in `ci.yml`
+4. step-level `env`
+
+Project variables therefore override global variables with the same key.
 
 ## Secrets at rest
 
-Set `PICI_SECRET_KEY` (or `-secret-key`) to a 32-byte key (hex or base64) to encrypt secret values at rest with AES-256-GCM:
+`PICI_SECRET_KEY` is required. It encrypts secret values at rest with AES-256-GCM:
 
 ```sh
-PICI_SECRET_KEY=$(openssl rand -hex 32) pici
+export PICI_SECRET_KEY=$(openssl rand -hex 32)
 ```
 
-Without a key, secrets are stored in plaintext (with a warning).
+Changing the key makes existing secrets unreadable, so keep it safe and back it up with the database.
 
 ## Secret masking
 
-Values of secret variables are automatically replaced with `***` in all step and build logs.
+Secret values are omitted from API responses and replaced with `***` in all step and execution logs.
