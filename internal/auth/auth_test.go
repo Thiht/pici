@@ -37,11 +37,14 @@ func (p *fakeProvider) Name() string {
 
 func (p *fakeProvider) RequiredScope() string { return "read:org" }
 
-func (p *fakeProvider) AuthCodeURL(state, verifier string) string {
+func (p *fakeProvider) DisplayName() string { return "GitHub" }
+func (p *fakeProvider) AccessNoun() string  { return "team" }
+
+func (p *fakeProvider) AuthCodeURL(state, _, verifier string) string {
 	return "https://github.test/" + state + "?verifier=" + verifier
 }
 
-func (p *fakeProvider) Exchange(_ context.Context, _, verifier string) (Identity, error) {
+func (p *fakeProvider) Exchange(_ context.Context, _, _, verifier string) (Identity, error) {
 	p.lastVerifier = verifier
 	if p.exchangeErr != nil {
 		return Identity{}, p.exchangeErr
@@ -103,7 +106,7 @@ func TestLoginAndSession(t *testing.T) {
 	svc, store, provider := newTestService(t)
 	ctx := context.Background()
 
-	user, err := svc.Login(ctx, "code", "verifier")
+	user, err := svc.Login(ctx, "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +147,7 @@ func TestLoginStoresExpiringToken(t *testing.T) {
 	expires := time.Now().Add(8 * time.Hour)
 	provider.identity.Token = Token{AccessToken: "gho_test", RefreshToken: "ghr_test", ExpiresAt: &expires}
 
-	user, err := svc.Login(context.Background(), "code", "verifier")
+	user, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,14 +171,14 @@ func TestLoginAccessDenied(t *testing.T) {
 	t.Run("no team", func(t *testing.T) {
 		svc, _, provider := newTestService(t)
 		provider.teams = nil
-		if _, err := svc.Login(context.Background(), "code", "verifier"); !errors.Is(err, ErrAccessDenied) {
+		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, ErrAccessDenied) {
 			t.Fatalf("expected ErrAccessDenied, got %v", err)
 		}
 	})
 	t.Run("missing scope", func(t *testing.T) {
 		svc, _, provider := newTestService(t)
 		provider.identity.Scopes = []string{"repo"}
-		if _, err := svc.Login(context.Background(), "code", "verifier"); !errors.Is(err, ErrAccessDenied) {
+		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, ErrAccessDenied) {
 			t.Fatalf("expected ErrAccessDenied, got %v", err)
 		}
 	})
@@ -185,7 +188,7 @@ func TestLoginAllowlistedUserWithoutTeams(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, nil, []string{"alice"})
 	provider.identity.Scopes = nil
 
-	user, err := svc.Login(context.Background(), "code", "verifier")
+	user, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +204,7 @@ func TestLoginDeniesUserNotAllowlistedWithoutTeams(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, nil, []string{"bob"})
 	provider.identity.Scopes = nil
 
-	_, err := svc.Login(context.Background(), "code", "verifier")
+	_, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if !errors.Is(err, ErrAccessDenied) {
 		t.Fatalf("expected ErrAccessDenied, got %v", err)
 	}
@@ -214,7 +217,7 @@ func TestMixedModeAllowsListedUser(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, []string{"acme/other"}, []string{"alice"})
 	provider.teams = nil
 
-	if _, err := svc.Login(context.Background(), "code", "verifier"); err != nil {
+	if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); err != nil {
 		t.Fatalf("allowlisted user should be allowed: %v", err)
 	}
 	if provider.teamsCalls != 1 {
@@ -225,7 +228,7 @@ func TestMixedModeAllowsListedUser(t *testing.T) {
 func TestLoginProviderError(t *testing.T) {
 	svc, _, provider := newTestService(t)
 	provider.exchangeErr = errors.New("boom")
-	_, err := svc.Login(context.Background(), "code", "verifier")
+	_, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if err == nil || errors.Is(err, ErrAccessDenied) {
 		t.Fatalf("expected provider error, got %v", err)
 	}
@@ -268,7 +271,7 @@ func TestDisabledUserSession(t *testing.T) {
 func TestAuthenticateToken(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	ctx := context.Background()
-	user, err := svc.Login(ctx, "code", "verifier")
+	user, err := svc.Login(ctx, "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}

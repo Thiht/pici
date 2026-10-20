@@ -1,11 +1,12 @@
 # Authentication
 
-pici signs people in with **GitHub or GitLab OAuth**, and uses **personal API
-tokens** for the CLI and scripts. There is no local password.
+pici signs people in with **GitHub, GitLab, or any OpenID Connect provider**,
+and uses **personal API tokens** for the CLI and scripts. There is no local
+password.
 
 An instance uses exactly one identity provider at a time, selected with
-`PICI_AUTH_PROVIDER` (`github` by default, or `gitlab`). Access is restricted
-to:
+`PICI_AUTH_PROVIDER` (`github` by default, `gitlab`, or `oidc`). Access is
+restricted to:
 
 - members of one or more **teams or groups**, or
 - an explicit **allowlist of logins**.
@@ -188,6 +189,99 @@ The list is matched case-insensitively. Changing the list requires a pici
 restart, and renaming a GitLab username requires updating the list (the
 username is refreshed on every sign-in).
 
+## OpenID Connect
+
+Any OpenID Connect 1.0 provider works: Keycloak, Authentik, Authelia, Okta,
+Microsoft Entra ID, Google, Dex, Zitadel, Forgejo/Codeberg, and so on. pici
+discovers the issuer configuration at startup, so a misconfigured issuer stops
+the server immediately.
+
+### 1. Create an OIDC application
+
+In your provider, create a **confidential** OAuth2/OIDC application:
+
+- **Redirect URI**: `https://pici.example.com/auth/oidc/callback`
+- **Scopes**: `openid profile email offline_access`
+- **Client secret**: enabled (pici exchanges the code server-side)
+
+`offline_access` lets pici refresh the access token before each access check.
+If your provider rejects that scope, override the list with
+`PICI_OIDC_SCOPES`, but expect users to sign in again when their token expires.
+
+### 2. Configure pici
+
+| Variable                  | Description                                                   |
+| ------------------------- | ------------------------------------------------------------- |
+| `PICI_AUTH_PROVIDER`      | `oidc`                                                        |
+| `PICI_PUBLIC_URL`         | public base URL, used to build the OAuth callback             |
+| `PICI_OIDC_ISSUER`        | issuer URL, exactly as returned in OIDC discovery             |
+| `PICI_OIDC_CLIENT_ID`     | OIDC client id                                                |
+| `PICI_OIDC_CLIENT_SECRET` | OIDC client secret                                            |
+| `PICI_OIDC_GROUPS`        | optional, groups allowed to sign in (from the `groups` claim) |
+| `PICI_OIDC_USERS`         | optional, usernames or emails allowed to sign in              |
+| `PICI_OIDC_SCOPES`        | optional, default `openid profile email offline_access`       |
+| `PICI_OIDC_NAME`          | optional display name, e.g. `Keycloak` (default `SSO`)        |
+| `PICI_SECRET_KEY`         | 32-byte key; also encrypts the stored OAuth tokens            |
+| `PICI_SESSION_TTL`        | optional browser session lifetime (default `720h`)            |
+
+Group instance:
+
+```sh
+export PICI_AUTH_PROVIDER=oidc
+export PICI_PUBLIC_URL=https://pici.example.com
+export PICI_OIDC_ISSUER=https://keycloak.example.com/realms/pici
+export PICI_OIDC_CLIENT_ID=pici
+export PICI_OIDC_CLIENT_SECRET=...
+export PICI_OIDC_GROUPS=acme/pici-users
+export PICI_OIDC_NAME=Keycloak
+export PICI_SECRET_KEY=$(openssl rand -hex 32)
+pici
+```
+
+Personal instance, with no group:
+
+```sh
+export PICI_AUTH_PROVIDER=oidc
+export PICI_PUBLIC_URL=https://pici.example.com
+export PICI_OIDC_ISSUER=https://authentik.example.com/application/o/pici/
+export PICI_OIDC_CLIENT_ID=...
+export PICI_OIDC_CLIENT_SECRET=...
+export PICI_OIDC_USERS=alice@example.com
+export PICI_SECRET_KEY=$(openssl rand -hex 32)
+pici
+```
+
+The issuer must match the provider's discovery document exactly, including any
+trailing slash. For Google, the issuer is `https://accounts.google.com`; for
+Entra ID, use your tenant-specific issuer. pici sends `access_type=offline` so
+Google can return a refresh token.
+
+### 3. Configure access
+
+pici reads the `groups` claim from the userinfo endpoint. Configure the groups
+with `PICI_OIDC_GROUPS`:
+
+```sh
+export PICI_OIDC_GROUPS=acme/pici-users,platform
+```
+
+Group names are matched case-insensitively. Make sure your provider actually
+includes the `groups` claim (some require an extra scope or claim mapper).
+
+Otherwise, list usernames or emails in `PICI_OIDC_USERS`:
+
+```sh
+export PICI_OIDC_USERS=alice,bob@example.com
+```
+
+pici matches the `preferred_username` claim, or the `email` claim when the
+provider does not return a username. The list is matched case-insensitively and
+requires a pici restart to change.
+
+Forgejo and Codeberg work as OIDC providers, but do not expose organization
+teams in their userinfo response. Use `PICI_OIDC_USERS` with them, or add a
+Forgejo-specific provider that queries its teams API.
+
 ## Sign in and create a token
 
 Open your `PICI_PUBLIC_URL`, click **Sign in with GitHub** or **Sign in with
@@ -249,14 +343,15 @@ pici uses the OAuth 2.0 authorization-code flow with:
 - a static redirect URI built from `PICI_PUBLIC_URL`, exchanged server-side
   with the client secret;
 - a `/user` call after every exchange to revalidate the identity;
+- **OIDC-specific**: a `nonce`, sent in the authorization request and compared
+  in the ID token; the ID token is validated for signature, issuer, audience,
+  expiry and `sub`; the userinfo `sub` must match the ID token;
 - minimal scopes: `read:org` only in GitHub team mode, `read_api` for GitLab
-  (plus `offline_access` so the token can be refreshed), and nothing extra in
-  users-only mode.
+  (plus `offline_access` so the token can be refreshed), and `openid profile
+email offline_access` by default for OIDC.
 
-There is no OIDC `nonce`: neither GitHub OAuth Apps nor GitLab OAuth
-applications return an ID token. If an OIDC provider (Google, GitLab OIDC, ...)
-is added later, its ID token must be validated for signature, issuer, audience
-and nonce.
+GitHub OAuth Apps and GitLab OAuth applications do not return an ID token, so
+the nonce and ID token checks only apply to the OIDC provider.
 
 In the OAuth application settings, keep **wildcard matching disabled** so the
 callback URL must match exactly.
@@ -264,9 +359,12 @@ callback URL must match exactly.
 Stored access tokens are renewed with their refresh token before every access
 check. GitHub rotates refresh tokens on every use and pici persists each new
 pair immediately; GitLab access tokens expire after two hours by default, so
-`offline_access` is requested. If a refresh is rejected (the user revoked the
-application, or the credential expired for good), the account is disabled and
-the user must sign in again.
+`offline_access` is requested. OIDC providers that support `offline_access`
+issue a refresh token; pici keeps the previous one when a later sign-in does not
+return a new one. If a refresh is rejected (the user revoked the application, or
+the credential expired for good), the account is disabled and the user must sign
+in again. A provider that never issues refresh tokens cannot be revalidated once
+its access token expires, so users must sign in again.
 
 ## Limitations
 

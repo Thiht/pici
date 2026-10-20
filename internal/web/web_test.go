@@ -534,6 +534,48 @@ func TestGitLabLoginFlow(t *testing.T) {
 	}
 }
 
+func TestOIDCLoginFlow(t *testing.T) {
+	env := newTestEnvWithAccess(t, []string{"acme/pici"}, nil, func(p *fakeProvider) {
+		p.name = "oidc"
+	})
+	client := env.anonymousClient(t)
+
+	page, err := client.Get(env.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := body(t, page)
+	if !strings.Contains(out, "Sign in with SSO") || !strings.Contains(out, "authorized group") {
+		t.Fatalf("expected the OIDC login page, got:\n%s", out)
+	}
+
+	start, err := client.Get(env.srv.URL + "/auth/oidc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer start.Body.Close()
+	if start.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected redirect to the OIDC provider, got %d", start.StatusCode)
+	}
+	location, err := url.Parse(start.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := location.Query().Get("state")
+
+	callback, err := client.Get(env.srv.URL + "/auth/oidc/callback?state=" + url.QueryEscape(state) + "&code=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.Body.Close()
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/" {
+		t.Fatalf("expected redirect to /, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
+	}
+	if cookieValue(client, env.srv.URL, auth.SessionCookie) == "" {
+		t.Fatal("expected session cookie to be set")
+	}
+}
+
 func TestAccountTokenLifecycle(t *testing.T) {
 	env := newTestEnv(t)
 

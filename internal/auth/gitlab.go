@@ -43,14 +43,16 @@ func NewGitLabProvider(baseURL, clientID, clientSecret, redirectURL string) *Git
 	}
 }
 
-func (p *GitLabProvider) Name() string { return "gitlab" }
+func (p *GitLabProvider) Name() string        { return "gitlab" }
+func (p *GitLabProvider) DisplayName() string { return "GitLab" }
+func (p *GitLabProvider) AccessNoun() string  { return "group" }
 
 // RequiredScope is empty: the read_api scope grants both profile and group
 // access, so a missing scope is reported as a provider error rather than as a
 // membership denial.
 func (p *GitLabProvider) RequiredScope() string { return "" }
 
-func (p *GitLabProvider) AuthCodeURL(state, verifier string) string {
+func (p *GitLabProvider) AuthCodeURL(state, _, verifier string) string {
 	var opts []oauth2.AuthCodeOption
 	if verifier != "" {
 		opts = append(opts, oauth2.S256ChallengeOption(verifier))
@@ -58,7 +60,7 @@ func (p *GitLabProvider) AuthCodeURL(state, verifier string) string {
 	return p.config.AuthCodeURL(state, opts...)
 }
 
-func (p *GitLabProvider) Exchange(ctx context.Context, code, verifier string) (Identity, error) {
+func (p *GitLabProvider) Exchange(ctx context.Context, code, _, verifier string) (Identity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 

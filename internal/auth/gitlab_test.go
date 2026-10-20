@@ -52,7 +52,7 @@ func TestGitLabProviderExchangeAndGroups(t *testing.T) {
 
 	provider := NewGitLabProvider(server.URL, "client-id", "client-secret", "https://pici.example.com/auth/gitlab/callback")
 
-	identity, err := provider.Exchange(context.Background(), "code", "verifier")
+	identity, err := provider.Exchange(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestGitLabProviderErrors(t *testing.T) {
 
 func TestGitLabAuthCodeURL(t *testing.T) {
 	provider := NewGitLabProvider("https://gitlab.example.com", "client-id", "secret", "https://pici.example.com/auth/gitlab/callback")
-	raw := provider.AuthCodeURL("state-123", "verifier")
+	raw := provider.AuthCodeURL("state-123", "nonce", "verifier")
 
 	sum := sha256.Sum256([]byte("verifier"))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -234,7 +234,7 @@ func TestGitLabProviderExpiringToken(t *testing.T) {
 	defer server.Close()
 
 	provider := NewGitLabProvider(server.URL, "id", "secret", "")
-	identity, err := provider.Exchange(context.Background(), "code", "verifier")
+	identity, err := provider.Exchange(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}

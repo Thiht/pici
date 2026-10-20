@@ -29,10 +29,7 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/")
 		return
 	}
-	provider, accessNoun := "GitHub", "team"
-	if h.auth.ProviderName() == "gitlab" {
-		provider, accessNoun = "GitLab", "group"
-	}
+	provider, accessNoun := h.auth.DisplayName(), h.auth.AccessNoun()
 	data := loginPage{
 		base:       h.base(w, r, "Sign in", ""),
 		Next:       safeNext(r.URL.Query().Get("next")),
@@ -57,14 +54,19 @@ func (h *Handler) LoginStart(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	nonce, err := auth.NewNonce()
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	verifier, err := auth.NewVerifier()
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	next := safeNext(r.URL.Query().Get("next"))
-	h.setOAuthCookies(w, state, verifier, next)
-	http.Redirect(w, r, h.auth.LoginURL(state, verifier), http.StatusSeeOther)
+	h.setOAuthCookies(w, state, nonce, verifier, next)
+	http.Redirect(w, r, h.auth.LoginURL(state, nonce, verifier), http.StatusSeeOther)
 }
 
 // LoginCallback verifies the OAuth state, exchanges the code, and creates a
@@ -85,8 +87,12 @@ func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.OAuthVerifierCookie); err == nil {
 		verifier = cookie.Value
 	}
+	nonce := ""
+	if cookie, err := r.Cookie(auth.OAuthNonceCookie); err == nil {
+		nonce = cookie.Value
+	}
 	h.clearOAuthCookies(w)
-	if verifier == "" {
+	if verifier == "" || nonce == "" {
 		redirect(w, r, loginErrorURL(next, "state"))
 		return
 	}
@@ -101,7 +107,7 @@ func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.auth.Login(r.Context(), code, verifier)
+	user, err := h.auth.Login(r.Context(), code, nonce, verifier)
 	if errors.Is(err, auth.ErrAccessDenied) {
 		redirect(w, r, loginErrorURL(next, "not_member"))
 		return
@@ -221,9 +227,10 @@ func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func (h *Handler) setOAuthCookies(w http.ResponseWriter, state, verifier, next string) {
+func (h *Handler) setOAuthCookies(w http.ResponseWriter, state, nonce, verifier, next string) {
 	for name, value := range map[string]string{
 		auth.OAuthStateCookie:    state,
+		auth.OAuthNonceCookie:    nonce,
 		auth.OAuthVerifierCookie: verifier,
 		auth.OAuthNextCookie:     next,
 	} {
@@ -240,7 +247,7 @@ func (h *Handler) setOAuthCookies(w http.ResponseWriter, state, verifier, next s
 }
 
 func (h *Handler) clearOAuthCookies(w http.ResponseWriter) {
-	for _, name := range []string{auth.OAuthStateCookie, auth.OAuthVerifierCookie, auth.OAuthNextCookie} {
+	for _, name := range []string{auth.OAuthStateCookie, auth.OAuthNonceCookie, auth.OAuthVerifierCookie, auth.OAuthNextCookie} {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",

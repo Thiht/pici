@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 
 	"github.com/Thiht/pici/internal/ci"
 )
+
+const oidcScope = "openid"
 
 type Config struct {
 	HTTPAddr        string
@@ -39,6 +42,13 @@ type Config struct {
 	GitLabClientSecret string
 	GitLabGroups       []string
 	GitLabUsers        []string
+	OIDCIssuer         string
+	OIDCClientID       string
+	OIDCClientSecret   string
+	OIDCGroups         []string
+	OIDCUsers          []string
+	OIDCScopes         []string
+	OIDCDisplayName    string
 	SessionTTL         time.Duration
 	GCInterval         time.Duration
 	GCKeepDuration     time.Duration
@@ -50,6 +60,7 @@ func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("pici", flag.ContinueOnError)
 	var cfg Config
 	var githubTeams, githubUsers, gitlabGroups, gitlabUsers string
+	var oidcGroups, oidcUsers, oidcScopes string
 
 	fs.StringVar(&cfg.HTTPAddr, "http-addr", ":8080", "HTTP listen address")
 	fs.StringVar(&cfg.DBDriver, "db-driver", "sqlite", "database driver (sqlite, postgres)")
@@ -63,7 +74,7 @@ func Load(args []string) (Config, error) {
 
 	fs.StringVar(&cfg.SecretKey, "secret-key", "", "32-byte key (hex or base64) used to encrypt secrets at rest (required)")
 	fs.StringVar(&cfg.PublicBaseURL, "public-url", "", "public base URL, e.g. https://pici.example.com (required)")
-	fs.StringVar(&cfg.AuthProvider, "auth-provider", "github", "identity provider for sign-in (github, gitlab)")
+	fs.StringVar(&cfg.AuthProvider, "auth-provider", "github", "identity provider for sign-in (github, gitlab, oidc)")
 	fs.StringVar(&cfg.GitHubClientID, "github-client-id", "", "GitHub OAuth App client id (required with -auth-provider=github)")
 	fs.StringVar(&cfg.GitHubClientSecret, "github-client-secret", "", "GitHub OAuth App client secret (required with -auth-provider=github)")
 	fs.StringVar(&githubTeams, "github-teams", "", "comma-separated GitHub teams allowed to sign in, e.g. acme/pici-users")
@@ -73,6 +84,13 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&cfg.GitLabClientSecret, "gitlab-client-secret", "", "GitLab OAuth application secret (required with -auth-provider=gitlab)")
 	fs.StringVar(&gitlabGroups, "gitlab-groups", "", "comma-separated GitLab groups allowed to sign in, e.g. acme/pici-users")
 	fs.StringVar(&gitlabUsers, "gitlab-users", "", "comma-separated GitLab usernames allowed to sign in, e.g. alice")
+	fs.StringVar(&cfg.OIDCIssuer, "oidc-issuer", "", "OpenID Connect issuer URL, e.g. https://keycloak.example.com/realms/pici")
+	fs.StringVar(&cfg.OIDCClientID, "oidc-client-id", "", "OpenID Connect client id (required with -auth-provider=oidc)")
+	fs.StringVar(&cfg.OIDCClientSecret, "oidc-client-secret", "", "OpenID Connect client secret (required with -auth-provider=oidc)")
+	fs.StringVar(&oidcGroups, "oidc-groups", "", "comma-separated groups allowed to sign in, from the groups claim")
+	fs.StringVar(&oidcUsers, "oidc-users", "", "comma-separated usernames or emails allowed to sign in")
+	fs.StringVar(&oidcScopes, "oidc-scopes", "", "space or comma separated OAuth scopes (default: openid profile email offline_access)")
+	fs.StringVar(&cfg.OIDCDisplayName, "oidc-name", "SSO", "display name of the OIDC provider, e.g. Keycloak")
 	fs.DurationVar(&cfg.SessionTTL, "session-ttl", 30*24*time.Hour, "browser session lifetime")
 	fs.DurationVar(&cfg.GCInterval, "gc-interval", 10*time.Minute, "garbage collection interval")
 	fs.DurationVar(&cfg.GCKeepDuration, "gc-keep", 24*time.Hour, "how long to keep finished workspaces and logs")
@@ -94,6 +112,16 @@ func Load(args []string) (Config, error) {
 	cfg.GitHubUsers = splitList(githubUsers)
 	cfg.GitLabGroups = splitList(gitlabGroups)
 	cfg.GitLabUsers = splitList(gitlabUsers)
+	cfg.OIDCGroups = splitList(oidcGroups)
+	cfg.OIDCUsers = splitList(oidcUsers)
+	cfg.OIDCScopes = splitScopes(oidcScopes)
+	if len(cfg.OIDCScopes) == 0 {
+		cfg.OIDCScopes = []string{"openid", "profile", "email", "offline_access"}
+	}
+	cfg.OIDCDisplayName = strings.TrimSpace(cfg.OIDCDisplayName)
+	if cfg.OIDCDisplayName == "" {
+		cfg.OIDCDisplayName = "SSO"
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -173,8 +201,39 @@ func (c Config) Validate() error {
 				return fmt.Errorf("invalid GitLab user %q", user)
 			}
 		}
+	case "oidc":
+		if c.OIDCIssuer == "" {
+			return errors.New("PICI_OIDC_ISSUER is required")
+		}
+		u, err := url.Parse(c.OIDCIssuer)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return fmt.Errorf("PICI_OIDC_ISSUER is not a valid URL: %q", c.OIDCIssuer)
+		}
+		if c.OIDCClientID == "" {
+			return errors.New("PICI_OIDC_CLIENT_ID is required")
+		}
+		if c.OIDCClientSecret == "" {
+			return errors.New("PICI_OIDC_CLIENT_SECRET is required")
+		}
+		if len(c.OIDCGroups) == 0 && len(c.OIDCUsers) == 0 {
+			return errors.New("PICI_OIDC_GROUPS or PICI_OIDC_USERS is required, e.g. acme/pici-users or alice")
+		}
+		for _, group := range c.OIDCGroups {
+			if group == "" {
+				return fmt.Errorf("invalid OIDC group %q", group)
+			}
+		}
+		for _, user := range c.OIDCUsers {
+			if user == "" || strings.ContainsAny(user, "/ \t") {
+				return fmt.Errorf("invalid OIDC user %q", user)
+			}
+		}
+		if !slices.Contains(c.OIDCScopes, oidcScope) {
+			return fmt.Errorf("PICI_OIDC_SCOPES must include %q", oidcScope)
+		}
 	default:
-		return fmt.Errorf("unsupported auth provider %q (want github or gitlab)", c.AuthProvider)
+		return fmt.Errorf("unsupported auth provider %q (want github, gitlab or oidc)", c.AuthProvider)
 	}
 	if c.SessionTTL <= 0 {
 		return errors.New("PICI_SESSION_TTL must be greater than zero")
@@ -199,6 +258,12 @@ func splitList(value string) []string {
 		}
 	}
 	return result
+}
+
+func splitScopes(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
 }
 
 func isLocalHost(host string) bool {

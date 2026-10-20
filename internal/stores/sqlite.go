@@ -711,7 +711,7 @@ func (s *sqliteStore) UpsertUser(ctx context.Context, u User) (User, error) {
             name = excluded.name,
             avatar_url = excluded.avatar_url,
             oauth_token = excluded.oauth_token,
-            oauth_refresh_token = excluded.oauth_refresh_token,
+            oauth_refresh_token = CASE WHEN excluded.oauth_refresh_token = '' THEN users.oauth_refresh_token ELSE excluded.oauth_refresh_token END,
             oauth_token_expires_at = excluded.oauth_token_expires_at,
             last_login_at = excluded.last_login_at,
             last_org_check_at = excluded.last_org_check_at,

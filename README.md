@@ -100,29 +100,36 @@ The mounted repo is trusted automatically (`safe.directory`), so `git` and Go's 
 
 Configuration is flags-first ([ff](https://github.com/peterbourgon/ff)), with three sources in priority order: **flags**, then **environment variables** (`PICI_` prefix), then a **JSON config file** (`-config`).
 
-| Flag                    | Env                         | Default              | Description                                    |
-| ----------------------- | --------------------------- | -------------------- | ---------------------------------------------- |
-| `-http-addr`            | `PICI_HTTP_ADDR`            | `:8080`              | HTTP listen address                            |
-| `-db-driver`            | `PICI_DB_DRIVER`            | `sqlite`             | `sqlite` or `postgres`                         |
-| `-db-dsn`               | `PICI_DB_DSN`               | `pici.db`            | SQLite path, or Postgres DSN                   |
-| `-workspace-dir`        | `PICI_WORKSPACE_DIR`        | `~/.pici/workspaces` | where clones and logs live                     |
-| `-repo-mount-path`      | `PICI_REPO_MOUNT_PATH`      | `/workspace`         | in-container mount point of the repo           |
-| `-concurrency`          | `PICI_CONCURRENCY`          | `4`                  | max concurrent executions                      |
-| `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                | default step timeout                           |
-| `-secret-key`           | `PICI_SECRET_KEY`           | —                    | **required** — 32-byte key for secrets at rest |
-| `-public-url`           | `PICI_PUBLIC_URL`           | —                    | **required** — public base URL                 |
-| `-auth-provider`        | `PICI_AUTH_PROVIDER`        | `github`             | sign-in provider: `github` or `gitlab`         |
-| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                    | GitHub OAuth App client id                     |
-| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                    | GitHub OAuth App client secret                 |
-| `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                    | allowed teams (`org/team`)                     |
-| `-github-users`         | `PICI_GITHUB_USERS`         | —                    | allowed GitHub logins                          |
-| `-gitlab-url`           | `PICI_GITLAB_URL`           | `https://gitlab.com` | GitLab instance base URL                       |
-| `-gitlab-client-id`     | `PICI_GITLAB_CLIENT_ID`     | —                    | GitLab OAuth application id                    |
-| `-gitlab-client-secret` | `PICI_GITLAB_CLIENT_SECRET` | —                    | GitLab OAuth application secret                |
-| `-gitlab-groups`        | `PICI_GITLAB_GROUPS`        | —                    | allowed groups (`group/path`)                  |
-| `-gitlab-users`         | `PICI_GITLAB_USERS`         | —                    | allowed GitLab usernames                       |
-| `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`               | browser session lifetime (sliding)             |
-| `-config`               | `PICI_CONFIG`               | —                    | path to a JSON config file                     |
+| Flag                    | Env                         | Default                               | Description                                    |
+| ----------------------- | --------------------------- | ------------------------------------- | ---------------------------------------------- |
+| `-http-addr`            | `PICI_HTTP_ADDR`            | `:8080`                               | HTTP listen address                            |
+| `-db-driver`            | `PICI_DB_DRIVER`            | `sqlite`                              | `sqlite` or `postgres`                         |
+| `-db-dsn`               | `PICI_DB_DSN`               | `pici.db`                             | SQLite path, or Postgres DSN                   |
+| `-workspace-dir`        | `PICI_WORKSPACE_DIR`        | `~/.pici/workspaces`                  | where clones and logs live                     |
+| `-repo-mount-path`      | `PICI_REPO_MOUNT_PATH`      | `/workspace`                          | in-container mount point of the repo           |
+| `-concurrency`          | `PICI_CONCURRENCY`          | `4`                                   | max concurrent executions                      |
+| `-step-timeout`         | `PICI_STEP_TIMEOUT`         | `30m`                                 | default step timeout                           |
+| `-secret-key`           | `PICI_SECRET_KEY`           | —                                     | **required** — 32-byte key for secrets at rest |
+| `-public-url`           | `PICI_PUBLIC_URL`           | —                                     | **required** — public base URL                 |
+| `-auth-provider`        | `PICI_AUTH_PROVIDER`        | `github`                              | sign-in provider: `github`, `gitlab` or `oidc` |
+| `-github-client-id`     | `PICI_GITHUB_CLIENT_ID`     | —                                     | GitHub OAuth App client id                     |
+| `-github-client-secret` | `PICI_GITHUB_CLIENT_SECRET` | —                                     | GitHub OAuth App client secret                 |
+| `-github-teams`         | `PICI_GITHUB_TEAMS`         | —                                     | allowed teams (`org/team`)                     |
+| `-github-users`         | `PICI_GITHUB_USERS`         | —                                     | allowed GitHub logins                          |
+| `-gitlab-url`           | `PICI_GITLAB_URL`           | `https://gitlab.com`                  | GitLab instance base URL                       |
+| `-gitlab-client-id`     | `PICI_GITLAB_CLIENT_ID`     | —                                     | GitLab OAuth application id                    |
+| `-gitlab-client-secret` | `PICI_GITLAB_CLIENT_SECRET` | —                                     | GitLab OAuth application secret                |
+| `-gitlab-groups`        | `PICI_GITLAB_GROUPS`        | —                                     | allowed groups (`group/path`)                  |
+| `-gitlab-users`         | `PICI_GITLAB_USERS`         | —                                     | allowed GitLab usernames                       |
+| `-oidc-issuer`          | `PICI_OIDC_ISSUER`          | —                                     | OpenID Connect issuer URL                      |
+| `-oidc-client-id`       | `PICI_OIDC_CLIENT_ID`       | —                                     | OIDC client id                                 |
+| `-oidc-client-secret`   | `PICI_OIDC_CLIENT_SECRET`   | —                                     | OIDC client secret                             |
+| `-oidc-groups`          | `PICI_OIDC_GROUPS`          | —                                     | allowed groups (`groups` claim)                |
+| `-oidc-users`           | `PICI_OIDC_USERS`           | —                                     | allowed usernames or emails                    |
+| `-oidc-scopes`          | `PICI_OIDC_SCOPES`          | `openid profile email offline_access` | OIDC scopes                                    |
+| `-oidc-name`            | `PICI_OIDC_NAME`            | `SSO`                                 | OIDC display name                              |
+| `-session-ttl`          | `PICI_SESSION_TTL`          | `720h`                                | browser session lifetime (sliding)             |
+| `-config`               | `PICI_CONFIG`               | —                                     | path to a JSON config file                     |
 
 Docker is reached via the standard Docker environment (`DOCKER_HOST`, `~/.docker`, ...).
 
@@ -148,6 +155,13 @@ pici
 # PICI_GITLAB_CLIENT_SECRET=gloas-...
 # PICI_GITLAB_GROUPS=acme/pici-users
 
+# Generic OpenID Connect provider
+# PICI_AUTH_PROVIDER=oidc
+# PICI_OIDC_ISSUER=https://keycloak.example.com/realms/pici
+# PICI_OIDC_CLIENT_ID=pici
+# PICI_OIDC_CLIENT_SECRET=...
+# PICI_OIDC_GROUPS=acme/pici-users
+
 # config file (JSON)
 pici -config /etc/pici.json
 ```
@@ -155,8 +169,10 @@ pici -config /etc/pici.json
 At least one of `PICI_GITHUB_TEAMS` or `PICI_GITHUB_USERS` is required with
 `PICI_AUTH_PROVIDER=github` (the default). With `PICI_AUTH_PROVIDER=gitlab`, set
 the `PICI_GITLAB_*` variables instead and at least one of `PICI_GITLAB_GROUPS`
-or `PICI_GITLAB_USERS`. See [Authentication](docs/guide/authentication.md) for
-the OAuth setup and both access models.
+or `PICI_GITLAB_USERS`. With `PICI_AUTH_PROVIDER=oidc`, set the `PICI_OIDC_*`
+variables and at least one of `PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`. See
+[Authentication](docs/guide/authentication.md) for the OAuth setup and access
+models.
 
 ## API
 
@@ -272,7 +288,7 @@ GET    /badge/{id}?workflow=build&label=build
 - GitHub & GitLab webhooks (push/PR/MR/tag), GitHub check runs, GitLab commit statuses, cron schedules; pull requests opened from a fork are never built automatically.
 - Artifacts, cross-run cache (Docker volumes), concurrency groups.
 - Partial re-run of failed steps, reusing the failed run's workspace.
-- GitHub or GitLab OAuth login restricted to configured teams/groups or a user allowlist, revocable personal API tokens, server-side sessions, and per-execution user attribution.
+- GitHub, GitLab, or OpenID Connect login restricted to configured teams/groups or a user allowlist, revocable personal API tokens, server-side sessions, and per-execution user attribution.
 - Secrets encrypted at rest + masked in logs, DB-backed queue with crash recovery.
 - Streaming logs (SSE) in the UI and on the API, public README status badges, graceful shutdown, garbage collection, healthcheck/version endpoints, and a CLI (`cmd/pici-cli`).
 - CLI shell completion (bash/zsh/fish/powershell) for commands, flags, and dynamic values (projects, workflows, variable keys).
@@ -296,11 +312,12 @@ templates + htmx, styled with Tailwind + daisyUI, no Node at runtime). It covers
 projects, variables & secrets, triggering/cancelling/rebuilding/retrying executions, per-step
 and full logs, artifacts, and per-project Docker cache (images and cache volumes).
 
-Humans sign in with **GitHub or GitLab OAuth** (one provider per instance). In
-GitHub mode, access is restricted to the teams listed in `PICI_GITHUB_TEAMS`,
-the logins listed in `PICI_GITHUB_USERS`, or both. In GitLab mode, it is
-restricted to the groups in `PICI_GITLAB_GROUPS`, the usernames in
-`PICI_GITLAB_USERS`, or both.
+Humans sign in with **GitHub, GitLab, or any OpenID Connect provider** (one
+provider per instance). In GitHub mode, access is restricted to the teams listed
+in `PICI_GITHUB_TEAMS`, the logins listed in `PICI_GITHUB_USERS`, or both. In
+GitLab mode, it is restricted to the groups in `PICI_GITLAB_GROUPS`, the
+usernames in `PICI_GITLAB_USERS`, or both. The OIDC provider uses
+`PICI_OIDC_GROUPS` and `PICI_OIDC_USERS` the same way.
 Browser sessions are stored server-side and kept in an `HttpOnly`, `Secure`
 cookie. The Account page lets each user create,
 rename and revoke personal API tokens, and revoke browser sessions.

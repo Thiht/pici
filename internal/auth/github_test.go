@@ -59,7 +59,7 @@ func TestGitHubProviderExchangeAndTeams(t *testing.T) {
 		true,
 	)
 
-	identity, err := provider.Exchange(context.Background(), "code", "verifier")
+	identity, err := provider.Exchange(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestGitHubProviderErrors(t *testing.T) {
 
 func TestGitHubAuthCodeURL(t *testing.T) {
 	provider := newGitHubProvider("client-id", "secret", "https://pici.example.com/auth/github/callback", githubAuthURL, githubTokenURL, githubAPIURL, true)
-	raw := provider.AuthCodeURL("state-123", "verifier")
+	raw := provider.AuthCodeURL("state-123", "nonce", "verifier")
 
 	sum := sha256.Sum256([]byte("verifier"))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -138,7 +138,7 @@ func TestGitHubAuthCodeURL(t *testing.T) {
 
 func TestGitHubAuthCodeURLWithoutTeams(t *testing.T) {
 	provider := newGitHubProvider("client-id", "secret", "https://pici.example.com/auth/github/callback", githubAuthURL, githubTokenURL, githubAPIURL, false)
-	raw := provider.AuthCodeURL("state-123", "verifier")
+	raw := provider.AuthCodeURL("state-123", "nonce", "verifier")
 	if strings.Contains(raw, "scope=") {
 		t.Fatalf("users-only provider should not request a scope: %s", raw)
 	}
@@ -163,7 +163,7 @@ func TestGitHubProviderAcceptsExpiringTokens(t *testing.T) {
 	defer server.Close()
 
 	provider := newGitHubProvider("id", "secret", "", server.URL+"/auth", server.URL+"/login/oauth/access_token", server.URL, true)
-	identity, err := provider.Exchange(context.Background(), "code", "verifier")
+	identity, err := provider.Exchange(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}

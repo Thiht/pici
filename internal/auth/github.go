@@ -56,7 +56,9 @@ func newGitHubProvider(clientID, clientSecret, redirectURL, authURL, tokenURL, a
 	}
 }
 
-func (p *GitHubProvider) Name() string { return "github" }
+func (p *GitHubProvider) Name() string        { return "github" }
+func (p *GitHubProvider) DisplayName() string { return "GitHub" }
+func (p *GitHubProvider) AccessNoun() string  { return "team" }
 
 // RequiredScope is read:org, and only in team mode.
 func (p *GitHubProvider) RequiredScope() string {
@@ -66,7 +68,7 @@ func (p *GitHubProvider) RequiredScope() string {
 	return "read:org"
 }
 
-func (p *GitHubProvider) AuthCodeURL(state, verifier string) string {
+func (p *GitHubProvider) AuthCodeURL(state, _, verifier string) string {
 	var opts []oauth2.AuthCodeOption
 	if verifier != "" {
 		opts = append(opts, oauth2.S256ChallengeOption(verifier))
@@ -74,7 +76,7 @@ func (p *GitHubProvider) AuthCodeURL(state, verifier string) string {
 	return p.config.AuthCodeURL(state, opts...)
 }
 
-func (p *GitHubProvider) Exchange(ctx context.Context, code, verifier string) (Identity, error) {
+func (p *GitHubProvider) Exchange(ctx context.Context, code, _, verifier string) (Identity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 

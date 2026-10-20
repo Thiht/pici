@@ -82,6 +82,23 @@ func TestUserUpsertAndEncryption(t *testing.T) {
 	if updated.OAuthRefreshToken != "new-refresh" || updated.OAuthExpiresAt != nil {
 		t.Fatalf("refresh token not rotated on login: %+v", updated)
 	}
+	// A provider that stops returning a refresh token (Google only returns it
+	// on the first consent) must not erase the one stored earlier.
+	renewed, err := s.UpsertUser(ctx, User{
+		ID:               uuid.New(),
+		Provider:         "github",
+		ProviderUserID:   "42",
+		Login:            "alice-renamed",
+		OAuthAccessToken: "newer-secret",
+		CreatedAt:        later,
+		LastLoginAt:      later,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.OAuthRefreshToken != "new-refresh" || renewed.OAuthAccessToken != "newer-secret" {
+		t.Fatalf("existing refresh token not preserved: %+v", renewed)
+	}
 	if updated.DisabledAt != nil {
 		t.Fatal("login should reactivate a disabled user")
 	}

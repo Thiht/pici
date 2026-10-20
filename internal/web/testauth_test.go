@@ -37,12 +37,30 @@ func (p *fakeProvider) Name() string {
 
 func (p *fakeProvider) RequiredScope() string { return "read:org" }
 
-func (p *fakeProvider) AuthCodeURL(state, verifier string) string {
+func (p *fakeProvider) DisplayName() string {
+	switch p.name {
+	case "gitlab":
+		return "GitLab"
+	case "oidc":
+		return "SSO"
+	default:
+		return "GitHub"
+	}
+}
+
+func (p *fakeProvider) AccessNoun() string {
+	if p.name == "" || p.name == "github" {
+		return "team"
+	}
+	return "group"
+}
+
+func (p *fakeProvider) AuthCodeURL(state, _, verifier string) string {
 	return "https://github.com/login/oauth/authorize?state=" + url.QueryEscape(state) +
 		"&code_challenge=" + url.QueryEscape(verifier)
 }
 
-func (p *fakeProvider) Exchange(_ context.Context, _, verifier string) (auth.Identity, error) {
+func (p *fakeProvider) Exchange(_ context.Context, _, _, verifier string) (auth.Identity, error) {
 	p.lastVerifier = verifier
 	if p.exchangeErr != nil {
 		return auth.Identity{}, p.exchangeErr

@@ -7,9 +7,10 @@
 
 ## Run the server
 
-pici signs people in with GitHub or GitLab. You need an OAuth application, a
-secret key, and either a team/group whose members may use pici or a list of
-allowed logins. The server refuses to start without them.
+pici signs people in with GitHub, GitLab, or any OpenID Connect provider. You
+need an OAuth/OIDC application, a secret key, and either a team/group whose
+members may use pici or a list of allowed logins. The server refuses to start
+without them.
 
 ```sh
 export PICI_SECRET_KEY=$(openssl rand -hex 32)
@@ -48,6 +49,11 @@ Use callback URL `http://localhost:8080/auth/gitlab/callback`, and
 `PICI_GITLAB_USERS=your-gitlab-username` instead of a group for a personal
 instance. `PICI_GITLAB_URL` defaults to `https://gitlab.com`; set it for a
 self-hosted instance.
+
+For an OpenID Connect provider, use `PICI_AUTH_PROVIDER=oidc` with
+`PICI_OIDC_ISSUER`, `PICI_OIDC_CLIENT_ID`, `PICI_OIDC_CLIENT_SECRET`, and
+`PICI_OIDC_GROUPS` or `PICI_OIDC_USERS`; the callback URL is
+`http://localhost:8080/auth/oidc/callback`.
 
 Configuration is flags-first. See [Configuration](/guide/configuration) for the full list.
 

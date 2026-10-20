@@ -1,6 +1,6 @@
-// Package auth authenticates humans through an external provider (GitHub or
-// GitLab) and issues the two credentials pici knows about: browser sessions for
-// the UI, and personal API tokens for the CLI and scripts.
+// Package auth authenticates humans through an external provider (GitHub,
+// GitLab, or OpenID Connect) and issues the two credentials pici knows about:
+// browser sessions for the UI, and personal API tokens for the CLI and scripts.
 package auth
 
 import (
@@ -23,6 +23,7 @@ import (
 const (
 	SessionCookie       = "pici_session"
 	OAuthStateCookie    = "pici_oauth_state"
+	OAuthNonceCookie    = "pici_oauth_nonce"
 	OAuthNextCookie     = "pici_oauth_next"
 	OAuthVerifierCookie = "pici_oauth_verifier"
 
@@ -82,8 +83,13 @@ type Identity struct {
 // in place of GitHub.
 type Provider interface {
 	Name() string
-	AuthCodeURL(state, verifier string) string
-	Exchange(ctx context.Context, code, verifier string) (Identity, error)
+	// DisplayName is the human-readable provider name shown in the UI.
+	DisplayName() string
+	// AccessNoun is what the provider calls a membership group: "team" for
+	// GitHub, "group" for GitLab and OIDC.
+	AccessNoun() string
+	AuthCodeURL(state, nonce, verifier string) string
+	Exchange(ctx context.Context, code, nonce, verifier string) (Identity, error)
 	// Refresh exchanges a refresh token for a new credential pair. Providers
 	// that rotate refresh tokens return a new RefreshToken, which the caller
 	// must persist immediately: the one it replaces is already invalid.
@@ -168,15 +174,17 @@ func (s *Service) HasUsers() bool            { return len(s.users) > 0 }
 func (s *Service) SessionTTL() time.Duration { return s.sessionTTL }
 func (s *Service) SecureCookies() bool       { return s.secure }
 func (s *Service) ProviderName() string      { return s.name }
-func (s *Service) LoginURL(state, verifier string) string {
-	return s.provider.AuthCodeURL(state, verifier)
+func (s *Service) DisplayName() string       { return s.provider.DisplayName() }
+func (s *Service) AccessNoun() string        { return s.provider.AccessNoun() }
+func (s *Service) LoginURL(state, nonce, verifier string) string {
+	return s.provider.AuthCodeURL(state, nonce, verifier)
 }
 
 // Login exchanges an OAuth code, verifies team membership, and creates or
 // refreshes the user. It does not create a browser session; the caller does
 // that once it knows the user agent.
-func (s *Service) Login(ctx context.Context, code, verifier string) (stores.User, error) {
-	identity, err := s.provider.Exchange(ctx, code, verifier)
+func (s *Service) Login(ctx context.Context, code, nonce, verifier string) (stores.User, error) {
+	identity, err := s.provider.Exchange(ctx, code, nonce, verifier)
 	if err != nil {
 		return stores.User{}, fmt.Errorf("exchange oauth code: %w", err)
 	}
@@ -272,6 +280,11 @@ func (s *Service) hasUser(login string) bool {
 
 // NewState returns an unguessable OAuth state value.
 func NewState() (string, error) {
+	return randomToken("")
+}
+
+// NewNonce returns an unguessable OIDC nonce value.
+func NewNonce() (string, error) {
 	return randomToken("")
 }
 

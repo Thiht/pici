@@ -87,7 +87,8 @@ func main() {
 		len(cfg.GitHubTeams) > 0,
 	)
 	accessTeams, accessUsers := cfg.GitHubTeams, cfg.GitHubUsers
-	if cfg.AuthProvider == "gitlab" {
+	switch cfg.AuthProvider {
+	case "gitlab":
 		provider = auth.NewGitLabProvider(
 			cfg.GitLabURL,
 			cfg.GitLabClientID,
@@ -95,6 +96,22 @@ func main() {
 			cfg.PublicBaseURL+"/auth/gitlab/callback",
 		)
 		accessTeams, accessUsers = cfg.GitLabGroups, cfg.GitLabUsers
+	case "oidc":
+		oidcProvider, err := auth.NewOIDCProvider(
+			rootCtx,
+			cfg.OIDCIssuer,
+			cfg.OIDCClientID,
+			cfg.OIDCClientSecret,
+			cfg.PublicBaseURL+"/auth/oidc/callback",
+			cfg.OIDCDisplayName,
+			cfg.OIDCScopes,
+		)
+		if err != nil {
+			slog.Error("discover OIDC provider", "error", err)
+			os.Exit(1)
+		}
+		provider = oidcProvider
+		accessTeams, accessUsers = cfg.OIDCGroups, cfg.OIDCUsers
 	}
 
 	authSvc := auth.NewService(

@@ -19,10 +19,12 @@ import (
 
 type stubProvider struct{}
 
-func (stubProvider) Name() string                      { return "github" }
-func (stubProvider) RequiredScope() string             { return "read:org" }
-func (stubProvider) AuthCodeURL(string, string) string { return "" }
-func (stubProvider) Exchange(context.Context, string, string) (auth.Identity, error) {
+func (stubProvider) Name() string                              { return "github" }
+func (stubProvider) DisplayName() string                       { return "GitHub" }
+func (stubProvider) AccessNoun() string                        { return "team" }
+func (stubProvider) RequiredScope() string                     { return "read:org" }
+func (stubProvider) AuthCodeURL(string, string, string) string { return "" }
+func (stubProvider) Exchange(context.Context, string, string, string) (auth.Identity, error) {
 	return auth.Identity{}, errors.New("unused")
 }
 

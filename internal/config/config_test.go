@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -198,6 +199,53 @@ func TestValidateInvalidTeam(t *testing.T) {
 	}
 }
 
+func TestLoadOIDCProvider(t *testing.T) {
+	t.Setenv("PICI_AUTH_PROVIDER", "OIDC")
+	t.Setenv("PICI_OIDC_ISSUER", "https://keycloak.example.com/realms/pici")
+	t.Setenv("PICI_OIDC_CLIENT_ID", "id")
+	t.Setenv("PICI_OIDC_CLIENT_SECRET", "secret")
+	t.Setenv("PICI_OIDC_GROUPS", "acme/pici, acme/platform")
+	t.Setenv("PICI_OIDC_USERS", "alice")
+	t.Setenv("PICI_OIDC_SCOPES", "openid, profile,email")
+	t.Setenv("PICI_OIDC_NAME", "Keycloak")
+	t.Setenv("PICI_SECRET_KEY", "x")
+	t.Setenv("PICI_PUBLIC_URL", "https://pici.example.com")
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthProvider != "oidc" || cfg.OIDCDisplayName != "Keycloak" {
+		t.Fatalf("unexpected OIDC config: %+v", cfg)
+	}
+	if len(cfg.OIDCGroups) != 2 || len(cfg.OIDCUsers) != 1 {
+		t.Fatalf("unexpected access lists: %#v %#v", cfg.OIDCGroups, cfg.OIDCUsers)
+	}
+	want := []string{"openid", "profile", "email"}
+	if !slices.Equal(cfg.OIDCScopes, want) {
+		t.Fatalf("scopes = %#v, want %#v", cfg.OIDCScopes, want)
+	}
+}
+
+func TestLoadOIDCDefaultScopes(t *testing.T) {
+	t.Setenv("PICI_AUTH_PROVIDER", "oidc")
+	t.Setenv("PICI_OIDC_ISSUER", "https://keycloak.example.com/realms/pici")
+	t.Setenv("PICI_OIDC_CLIENT_ID", "id")
+	t.Setenv("PICI_OIDC_CLIENT_SECRET", "secret")
+	t.Setenv("PICI_OIDC_USERS", "alice")
+	t.Setenv("PICI_SECRET_KEY", "x")
+	t.Setenv("PICI_PUBLIC_URL", "https://pici.example.com")
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"openid", "profile", "email", "offline_access"}
+	if !slices.Equal(cfg.OIDCScopes, want) {
+		t.Fatalf("scopes = %#v, want %#v", cfg.OIDCScopes, want)
+	}
+}
+
 func TestValidateGitLabOK(t *testing.T) {
 	if err := validGitLabConfig().Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -266,6 +314,97 @@ func TestValidateGitLabGroup(t *testing.T) {
 		cfg.GitLabGroups = []string{group}
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("unexpected error for GitLab group %q: %v", group, err)
+		}
+	}
+}
+
+func validOIDCConfig() Config {
+	return Config{
+		SecretKey:        "x",
+		PublicBaseURL:    "https://pici.example.com",
+		AuthProvider:     "oidc",
+		OIDCIssuer:       "https://keycloak.example.com/realms/pici",
+		OIDCClientID:     "id",
+		OIDCClientSecret: "secret",
+		OIDCGroups:       []string{"acme/pici-users"},
+		OIDCScopes:       []string{"openid", "profile", "email"},
+		OIDCDisplayName:  "Keycloak",
+		SessionTTL:       1,
+		MaxSnapshotSize:  1,
+	}
+}
+
+func TestValidateOIDCOK(t *testing.T) {
+	if err := validOIDCConfig().Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateOIDCUsersOnly(t *testing.T) {
+	cfg := validOIDCConfig()
+	cfg.OIDCGroups = nil
+	cfg.OIDCUsers = []string{"alice", "alice@example.com"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateOIDCMissingAccessList(t *testing.T) {
+	cfg := validOIDCConfig()
+	cfg.OIDCGroups = nil
+	cfg.OIDCUsers = nil
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when neither users nor groups are configured")
+	}
+}
+
+func TestValidateOIDCMissingCredentials(t *testing.T) {
+	cases := map[string]func(*Config){
+		"issuer":        func(c *Config) { c.OIDCIssuer = "" },
+		"client id":     func(c *Config) { c.OIDCClientID = "" },
+		"client secret": func(c *Config) { c.OIDCClientSecret = "" },
+	}
+	for name, mutate := range cases {
+		cfg := validOIDCConfig()
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestValidateOIDCIssuerURL(t *testing.T) {
+	for _, value := range []string{"not a url", "ftp://keycloak.example.com", "https://", "https://keycloak.example.com?x=1"} {
+		cfg := validOIDCConfig()
+		cfg.OIDCIssuer = value
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected error for OIDC issuer %q", value)
+		}
+	}
+	for _, value := range []string{"https://keycloak.example.com/realms/pici", "http://localhost:8081/realms/pici"} {
+		cfg := validOIDCConfig()
+		cfg.OIDCIssuer = value
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error for OIDC issuer %q: %v", value, err)
+		}
+	}
+}
+
+func TestValidateOIDCScopes(t *testing.T) {
+	cfg := validOIDCConfig()
+	cfg.OIDCScopes = []string{"profile", "email"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected an error when the openid scope is missing")
+	}
+}
+
+func TestValidateOIDCInvalidUser(t *testing.T) {
+	for _, user := range []string{"", "alice/bob", "ali ce"} {
+		cfg := validOIDCConfig()
+		cfg.OIDCGroups = nil
+		cfg.OIDCUsers = []string{user}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected error for OIDC user %q", user)
 		}
 	}
 }
