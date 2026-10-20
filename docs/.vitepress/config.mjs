@@ -37,13 +37,19 @@ export default defineConfig({
         ],
       },
       {
+        text: 'Deployment',
+        items: [
+          { text: 'Docker', link: '/guide/docker' },
+          { text: 'Fly.io', link: '/guide/fly' },
+        ],
+      },
+      {
         text: 'Reference',
         items: [
           { text: 'API', link: '/guide/api' },
           { text: 'API reference (Swagger)', link: '/guide/api-reference' },
           { text: 'CLI', link: '/guide/cli' },
           { text: 'Configuration', link: '/guide/configuration' },
-          { text: 'Docker', link: '/guide/docker' },
         ],
       },
     ],

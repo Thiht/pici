@@ -2,6 +2,8 @@
 
 A minimal, self-hosted CI system. It focuses on _running_ workflows (build/test) and stays out of the way of your runtime.
 
+[![Deploy to Fly.io](https://img.shields.io/badge/Deploy%20to-Fly.io-8B5CF6?logo=flydotio&logoColor=white)](docs/guide/fly.md)
+
 The server exposes a small HTTP API, and execution happens in Docker. Each repository describes its workflows in a `.ci` directory at the root of the repo.
 
 ## Concepts
@@ -95,6 +97,19 @@ instance at `/static/ci.schema.json`, for editor validation and completion.
 | `PICI_WORKFLOW_DIR` | mount path of the workflow folder             |
 
 The mounted repo is trusted automatically (`safe.directory`), so `git` and Go's VCS stamping work without any setup in your steps.
+
+## Deploy
+
+The recommended hosted target is [Fly.io](docs/guide/fly.md), which can run pici's
+Docker-in-Docker setup. The deploy script creates the app, volume and secrets,
+then prompts for the sign-in settings:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/Thiht/pici/main/scripts/deploy-fly.sh)"
+```
+
+See [Deploying on Fly.io](docs/guide/fly.md) for the OAuth setup, costs and
+limits.
 
 ## Configuration
 

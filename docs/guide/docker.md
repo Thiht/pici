@@ -2,7 +2,7 @@
 
 pici ships with a self-contained [Docker-in-Docker](https://hub.docker.com/_/docker) image: it starts its own Docker daemon and runs pici on top of it.
 
-For a hosted one-command deployment, see [Fly.io](/guide/fly). Railway, Render and similar platforms cannot run pici because they do not allow privileged containers.
+For a hosted one-command deployment, see [Fly.io](/guide/fly).
 
 ## docker-compose
 

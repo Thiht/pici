@@ -214,6 +214,11 @@ tasks:
     cmds:
       - docker compose -f docker/docker-compose.yml down
 
+  deploy:fly:
+    desc: Deploy pici on Fly.io
+    cmds:
+      - ./scripts/deploy-fly.sh {{.CLI_ARGS}}
+
   docs:install:
     desc: Install docs dependencies
     dir: docs
