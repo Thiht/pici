@@ -303,7 +303,8 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
+	retryID := id
+	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
 	switch {
 	case errors.Is(err, ci.ErrWorkspaceGone):
 		setFlash(w, "error", "The workspace is no longer available.")
@@ -314,8 +315,9 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		setFlash(w, "success", "Retry queued.")
+		retryID = execution.ID
 	}
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(retryID, 10))
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {

@@ -84,13 +84,14 @@ type Variable struct {
 }
 
 type StepResult struct {
-	Name       string     `json:"name"`
-	Status     StepStatus `json:"status"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	ExitCode   int        `json:"exit_code"`
-	Error      string     `json:"error,omitempty"`
-	Env        []string   `json:"env,omitempty"`
+	Name       string        `json:"name"`
+	Status     StepStatus    `json:"status"`
+	StartedAt  *time.Time    `json:"started_at,omitempty"`
+	FinishedAt *time.Time    `json:"finished_at,omitempty"`
+	Timeout    time.Duration `json:"timeout,omitempty"`
+	ExitCode   int           `json:"exit_code"`
+	Error      string        `json:"error,omitempty"`
+	Env        []string      `json:"env,omitempty"`
 }
 
 // Steps is a JSON-serialized list of step results, stored in a single column.

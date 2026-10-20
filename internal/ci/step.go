@@ -100,8 +100,12 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 			case ctx.Err() != nil:
 				res = stores.StepResult{Name: name, Status: stores.StepStatusCanceled, Error: "canceled"}
 			default:
+				timeout := time.Duration(step.Timeout)
+				if timeout <= 0 {
+					timeout = r.DefaultStepTimeout
+				}
 				mu.Lock()
-				progress[i] = stores.StepResult{Name: name, Status: stores.StepStatusRunning, StartedAt: new(time.Now())}
+				progress[i] = stores.StepResult{Name: name, Status: stores.StepStatusRunning, StartedAt: new(time.Now()), Timeout: timeout}
 				running := slices.Clone(progress)
 				mu.Unlock()
 				notify(running)
@@ -224,6 +228,7 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	if timeout <= 0 {
 		timeout = r.DefaultStepTimeout
 	}
+	res.Timeout = timeout
 
 	binds := append([]string{repoDir + ":" + r.MountPath}, cacheBinds...)
 	if step.Docker {

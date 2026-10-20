@@ -23,9 +23,12 @@ type streamStatus struct {
 }
 
 type streamStepStatus struct {
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	ExitCode int    `json:"exit_code"`
+	Name       string        `json:"name"`
+	Status     string        `json:"status"`
+	ExitCode   int           `json:"exit_code"`
+	StartedAt  *time.Time    `json:"started_at,omitempty"`
+	FinishedAt *time.Time    `json:"finished_at,omitempty"`
+	Timeout    time.Duration `json:"timeout,omitempty"`
 }
 
 // StreamLogs follows an execution's log files and emits Server-Sent Events
@@ -86,7 +89,14 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 	emitState := func(execution stores.Execution) {
 		state := streamStatus{Status: string(execution.Status), Steps: make([]streamStepStatus, 0, len(execution.Steps))}
 		for _, s := range execution.Steps {
-			state.Steps = append(state.Steps, streamStepStatus{Name: s.Name, Status: string(s.Status), ExitCode: s.ExitCode})
+			state.Steps = append(state.Steps, streamStepStatus{
+				Name:       s.Name,
+				Status:     string(s.Status),
+				ExitCode:   s.ExitCode,
+				StartedAt:  s.StartedAt,
+				FinishedAt: s.FinishedAt,
+				Timeout:    s.Timeout,
+			})
 		}
 		data, err := json.Marshal(state)
 		if err != nil || string(data) == lastState {

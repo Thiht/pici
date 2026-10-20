@@ -1057,6 +1057,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        timeout:
+          type: integer
+          format: int64
+          description: Effective step timeout in nanoseconds (omitted when unbounded).
         exit_code:
           type: integer
         error:

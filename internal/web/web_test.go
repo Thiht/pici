@@ -258,6 +258,33 @@ func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	}
 }
 
+func TestExecutionTemplateRunningStepTimer(t *testing.T) {
+	started := time.Now().Add(-30 * time.Second)
+	data := executionPage{
+		Title: "Execution", Active: "projects", Version: "dev",
+		Execution: stores.Execution{
+			ID: 42, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+			Workflow: "build", Ref: "main", Status: stores.StatusRunning,
+			CreatedAt: started, StartedAt: &started,
+		},
+		Steps: []stepView{
+			{Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started, Timeout: 5 * time.Minute},
+		},
+		Running: true,
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `data-step-time`) || !strings.Contains(out, `data-timeout="300000"`) {
+		t.Fatalf("expected the running step timer and timeout in the header, got:\n%s", out)
+	}
+	if strings.Contains(out, " open>") {
+		t.Fatalf("expected step blocks to be collapsed by default, got:\n%s", out)
+	}
+}
+
 func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 	started := time.Now()
 	data := executionPage{

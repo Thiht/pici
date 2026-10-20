@@ -147,6 +147,8 @@ A public SVG badge for a project, embeddable in a README. It does not require a 
 
 Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
+Each step exposes `timeout`, the effective timeout in nanoseconds, when it is bounded.
+
 - `status`: `pending`, `running`, `success`, `failed`, `canceled`.
 - `trigger`: `manual`, `webhook`, `cron`, `rebuild`, `retry`.
 - `source`: `git`, `snapshot`.

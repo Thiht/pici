@@ -100,7 +100,7 @@
     <section class="mt-6" aria-labelledby="steps-heading">
       <h2 id="steps-heading" class="text-lg font-semibold">Steps</h2>
       {{if or .SetupLog .Running}}
-        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100" {{if .Running}} open{{end}}>
+        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100">
           <summary class="collapse-title flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>Setup</span>
             <span class="ml-auto text-xs opacity-60">{{duration .Execution.StartedAt .Execution.SetupFinishedAt}}</span>
@@ -111,16 +111,19 @@
         </details>
       {{end}}
       {{range .Steps}}
-        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100"
-                 data-step="{{.Name}}"
-                 {{if eq (printf "%s" .Status) "failed"}}
-                 open{{end}}>
+        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100" data-step="{{.Name}}">
           <summary class="collapse-title flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>{{.Name}}</span>
             <span class="ml-auto flex items-center gap-2">
               <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
               {{if and .StartedAt (ne .ExitCode 0)}}<span class="text-xs opacity-60">exit {{.ExitCode}}</span>{{end}}
-              <span class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</span>
+              <span class="text-xs opacity-60"
+                    data-step-time
+                    {{with .StartedAt}}data-started="{{.UnixMilli}}"
+                    {{end}}
+                    {{with .FinishedAt}}data-finished="{{.UnixMilli}}"
+                    {{end}}
+                    data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}</span>
             </span>
           </summary>
           <div class="collapse-content">
@@ -206,6 +209,36 @@
         pending: "badge badge-soft badge-warning"
       })[status] || "badge badge-soft badge-neutral";
       const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      const parseTime = (s) => {
+        if (!s) return 0;
+        // RFC 3339 with nanoseconds is not universally parseable: keep at most
+        // three fractional digits for the Date parser.
+        const normalized = s.replace(/\.(\d+)/, (_, fraction) => "." + (fraction + "000").slice(0, 3));
+        return Date.parse(normalized) || 0;
+      };
+      const formatDuration = (ms) => {
+        const total = Math.max(0, Math.round(ms / 1000));
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const seconds = total % 60;
+        if (hours) return hours + "h" + minutes + "m" + seconds + "s";
+        if (minutes) return minutes + "m" + seconds + "s";
+        return seconds + "s";
+      };
+      const updateTimes = () => {
+        const now = Date.now();
+        document.querySelectorAll("[data-step-time]").forEach((el) => {
+          const started = Number(el.dataset.started);
+          if (!started) return;
+          const finished = Number(el.dataset.finished);
+          const timeout = Number(el.dataset.timeout);
+          let text = formatDuration((finished || now) - started);
+          if (!finished && timeout > 0) text += " / " + formatDuration(timeout);
+          el.textContent = text;
+        });
+      };
+      updateTimes();
+      setInterval(updateTimes, 1000);
 
       const targets = {};
       document.querySelectorAll("pre.logs[data-source]").forEach((el) => {
@@ -254,8 +287,14 @@
             badge.className = classFor(s.status);
             badge.textContent = capitalize(s.status);
           }
-          if (s.status === "running" && !details.open) details.open = true;
+          const time = details.querySelector("[data-step-time]");
+          if (time) {
+            if (s.started_at) time.dataset.started = parseTime(s.started_at);
+            if (s.finished_at) time.dataset.finished = parseTime(s.finished_at);
+            if (s.timeout) time.dataset.timeout = Math.round(s.timeout / 1e6);
+          }
         });
+        updateTimes();
       });
 
       stream.addEventListener("done", () => {
