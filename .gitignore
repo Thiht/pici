@@ -9,6 +9,9 @@
 # Generated from internal/ci/ci.schema.json by the docs build
 /docs/public/ci.schema.json
 
+# Local Fly deployment state (app name, region, provider)
+/.pici-fly
+
 # Local agent tooling
 /.agents/
 /.claude/

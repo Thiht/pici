@@ -1,5 +1,6 @@
 .git
 dist
+.pici-fly
 docs/node_modules
 docs/.vitepress/dist
 docs/.vitepress/cache
