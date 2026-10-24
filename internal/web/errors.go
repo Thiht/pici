@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/Thiht/pici/internal/app"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -31,7 +32,7 @@ func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error)
 }
 
 func (h *Handler) storeError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, stores.ErrNotFound) {
+	if errors.Is(err, stores.ErrNotFound) || errors.Is(err, app.ErrNotFound) {
 		h.notFound(w, r)
 		return
 	}

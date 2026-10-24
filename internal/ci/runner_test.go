@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 func TestImagePrefix(t *testing.T) {
@@ -88,7 +89,7 @@ func TestMaterializeSnapshot(t *testing.T) {
 	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 	snapshotID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
 	ws := t.TempDir()
-	r := &Runner{WorkspaceDir: ws, MaxSnapshotSize: 1 << 20}
+	r := &Runner{Workspace: workspace.New(ws, filepath.Join(ws, "logs")), MaxSnapshotSize: 1 << 20}
 
 	dir := filepath.Join(ws, "uploads", projectID.String())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -128,7 +129,7 @@ func TestMaterializeSnapshotKeepsArchiveOnFailure(t *testing.T) {
 	projectID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
 	snapshotID := uuid.MustParse("88888888-8888-8888-8888-888888888888")
 	ws := t.TempDir()
-	r := &Runner{WorkspaceDir: ws, MaxSnapshotSize: 1 << 20}
+	r := &Runner{Workspace: workspace.New(ws, filepath.Join(ws, "logs")), MaxSnapshotSize: 1 << 20}
 
 	dir := filepath.Join(ws, "uploads", projectID.String())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -191,7 +192,7 @@ func TestEnqueueRetry(t *testing.T) {
 	}
 
 	ws := t.TempDir()
-	r := &Runner{Store: store, WorkspaceDir: ws}
+	r := &Runner{Store: store, Workspace: workspace.New(ws, filepath.Join(ws, "logs"))}
 
 	previous := stores.Execution{
 		ProjectID: projectID, Workflow: "build", Ref: "main", CommitSHA: "abc",

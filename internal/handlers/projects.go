@@ -8,21 +8,24 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 type ProjectsHandler struct {
-	store        stores.Store
-	runner       *ci.Runner
-	workspaceDir string
+	store     stores.Store
+	runner    *ci.Runner
+	workspace *workspace.Workspace
+	projects  *projects.Module
 }
 
-func NewProjectsHandler(store stores.Store, runner *ci.Runner, workspaceDir string) *ProjectsHandler {
-	return &ProjectsHandler{store: store, runner: runner, workspaceDir: workspaceDir}
+func NewProjectsHandler(store stores.Store, runner *ci.Runner, ws *workspace.Workspace, projects *projects.Module) *ProjectsHandler {
+	return &ProjectsHandler{store: store, runner: runner, workspace: ws, projects: projects}
 }
 
 type projectRequest struct {
@@ -102,7 +105,7 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -111,7 +114,7 @@ func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -160,7 +163,7 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -185,13 +188,13 @@ func detectDefaultBranch(ctx context.Context, repoURL string, authType stores.Au
 }
 
 func (h *ProjectsHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
 	}
 
-	dir := h.workspaceDir + "/" + project.ID.String() + "/_discovery"
+	dir := h.workspace.DiscoveryDir(project.ID)
 	workflows, err := ci.DiscoverProjectWorkflows(r.Context(), project, dir, project.DefaultBranch)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)

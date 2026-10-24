@@ -24,7 +24,7 @@ func (h *Handler) GlobalVariables(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -58,7 +58,7 @@ func (h *Handler) ProjectVariableSet(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -100,7 +100,7 @@ func (h *Handler) ProjectVariableDelete(w http.ResponseWriter, r *http.Request) 
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return

@@ -1,8 +1,6 @@
 package web
 
 import (
-	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -148,7 +146,7 @@ func (h *Handler) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ProjectShow(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -203,7 +201,7 @@ func distinctWorkflows(executions []stores.Execution) []string {
 }
 
 func (h *Handler) ProjectEdit(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -217,7 +215,7 @@ func (h *Handler) ProjectUpdate(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -244,7 +242,7 @@ func (h *Handler) ProjectDelete(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -258,12 +256,12 @@ func (h *Handler) ProjectDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ProjectConfigs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	dir := h.workspaceDir + "/" + project.ID.String() + "/_discovery"
+	dir := h.workspace.DiscoveryDir(project.ID)
 	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
 	if ref == "" {
 		ref = project.DefaultBranch
@@ -279,7 +277,7 @@ func (h *Handler) ProjectConfigs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ProjectRefs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -389,17 +387,6 @@ func defaultAuthUser(authType stores.AuthType) string {
 	default:
 		return ""
 	}
-}
-
-func resolveProject(ctx context.Context, store stores.Store, idOrName string) (stores.Project, error) {
-	if id, err := uuid.Parse(idOrName); err == nil {
-		if p, err := store.GetProject(ctx, id); err == nil {
-			return p, nil
-		} else if !errors.Is(err, stores.ErrNotFound) {
-			return stores.Project{}, err
-		}
-	}
-	return store.GetProjectByName(ctx, idOrName)
 }
 
 func maskVariables(variables []stores.Variable) []stores.Variable {

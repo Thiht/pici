@@ -11,22 +11,43 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/app/executions"
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 type ExecutionsHandler struct {
 	store           stores.Store
 	runner          *ci.Runner
-	workspaceDir    string
+	workspace       *workspace.Workspace
 	maxSnapshotSize int64
+	projects        *projects.Module
+	executions      *executions.Module
 }
 
-func NewExecutionsHandler(store stores.Store, runner *ci.Runner, workspaceDir string, maxSnapshotSize int64) *ExecutionsHandler {
-	return &ExecutionsHandler{store: store, runner: runner, workspaceDir: workspaceDir, maxSnapshotSize: maxSnapshotSize}
+type ExecutionsDeps struct {
+	Store           stores.Store
+	Runner          *ci.Runner
+	Workspace       *workspace.Workspace
+	MaxSnapshotSize int64
+	Projects        *projects.Module
+	Executions      *executions.Module
+}
+
+func NewExecutionsHandler(d ExecutionsDeps) *ExecutionsHandler {
+	return &ExecutionsHandler{
+		store:           d.Store,
+		runner:          d.Runner,
+		workspace:       d.Workspace,
+		maxSnapshotSize: d.MaxSnapshotSize,
+		projects:        d.Projects,
+		executions:      d.Executions,
+	}
 }
 
 type executionRequest struct {
@@ -35,7 +56,7 @@ type executionRequest struct {
 }
 
 func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -96,7 +117,7 @@ func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Reques
 	defer file.Close()
 
 	snapshotID := uuid.New()
-	dir := filepath.Join(h.workspaceDir, "uploads", project.ID.String())
+	dir := h.workspace.UploadsDir(project.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
@@ -135,7 +156,7 @@ func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -165,7 +186,7 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -209,7 +230,7 @@ func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) List(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -224,7 +245,7 @@ func (h *ExecutionsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) ListAttempts(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -251,7 +272,7 @@ func (h *ExecutionsHandler) ListAttempts(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -266,16 +287,16 @@ func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	view, err := h.executions.Get(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	render.JSON(w, http.StatusOK, execution)
+	render.JSON(w, http.StatusOK, view.Execution)
 }
 
 func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -290,24 +311,19 @@ func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	view, err := h.executions.Get(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
-	for _, path := range h.runner.LogPaths(project.ID, execution.ID) {
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		_, _ = io.Copy(w, f)
-		_ = f.Close()
-	}
+	logs := h.executions.Logs(view.Execution)
+	defer logs.Close()
+	_, _ = io.Copy(w, logs)
 }
 
 func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -324,35 +340,23 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	step := r.PathValue("step")
 
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	view, err := h.executions.Get(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	index := -1
-	for i, sr := range execution.Steps {
-		if sr.Name == step {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
-		render.Error(w, http.StatusNotFound, errors.New("step not found"))
-		return
-	}
-
-	f, err := os.Open(h.runner.StepLogPath(project.ID, execution.ID, index, step))
+	logs, err := h.executions.StepLog(view.Execution, step)
 	if err != nil {
-		render.Error(w, http.StatusNotFound, errors.New("step logs not found"))
+		storeError(w, err)
 		return
 	}
-	defer f.Close()
+	defer logs.Close()
 	w.Header().Set("Content-Type", "text/plain")
-	_, _ = io.Copy(w, f)
+	_, _ = io.Copy(w, logs)
 }
 
 func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -376,7 +380,7 @@ func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -391,7 +395,7 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	view, err := h.executions.Get(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -407,5 +411,5 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	h.runner.StreamLogs(r.Context(), project.ID, execution.ID, w, flusher.Flush)
+	h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, w, flusher.Flush)
 }

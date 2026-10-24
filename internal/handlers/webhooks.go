@@ -15,29 +15,32 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	gl "gitlab.com/gitlab-org/api/client-go"
 
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 type WebhooksHandler struct {
-	store        stores.Store
-	runner       *ci.Runner
-	workspaceDir string
+	store     stores.Store
+	runner    *ci.Runner
+	workspace *workspace.Workspace
+	projects  *projects.Module
 }
 
-func NewWebhooksHandler(store stores.Store, runner *ci.Runner, workspaceDir string) *WebhooksHandler {
-	return &WebhooksHandler{store: store, runner: runner, workspaceDir: workspaceDir}
+func NewWebhooksHandler(store stores.Store, runner *ci.Runner, ws *workspace.Workspace, projects *projects.Module) *WebhooksHandler {
+	return &WebhooksHandler{store: store, runner: runner, workspace: ws, projects: projects}
 }
 
 // zeroSHA is the "after" SHA GitHub and GitLab send when a push deletes a ref.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
 func (h *WebhooksHandler) GitHub(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -139,7 +142,7 @@ func (h *WebhooksHandler) handlePullRequest(ctx context.Context, w http.Response
 }
 
 func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, project stores.Project, event, ref, sha, baseBranch string, changed []string, isTag bool) {
-	dir := filepath.Join(h.workspaceDir, project.ID.String(), "_discovery")
+	dir := h.workspace.DiscoveryDir(project.ID)
 	cloneRef := ref
 	if sha != "" {
 		cloneRef = sha
@@ -190,7 +193,7 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 }
 
 func (h *WebhooksHandler) GitLab(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return

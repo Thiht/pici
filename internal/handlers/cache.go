@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -14,12 +15,13 @@ import (
 )
 
 type CacheHandler struct {
-	store  stores.Store
-	engine *docker.Engine
+	store    stores.Store
+	engine   *docker.Engine
+	projects *projects.Module
 }
 
-func NewCacheHandler(store stores.Store, engine *docker.Engine) *CacheHandler {
-	return &CacheHandler{store: store, engine: engine}
+func NewCacheHandler(store stores.Store, engine *docker.Engine, projects *projects.Module) *CacheHandler {
+	return &CacheHandler{store: store, engine: engine, projects: projects}
 }
 
 type cacheImageResponse struct {
@@ -44,7 +46,7 @@ type cacheResponse struct {
 }
 
 func (h *CacheHandler) Get(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -98,7 +100,7 @@ func (h *CacheHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CacheHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -120,7 +122,7 @@ func (h *CacheHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CacheHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return

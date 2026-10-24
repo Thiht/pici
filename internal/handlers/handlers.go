@@ -3,11 +3,15 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/executions"
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 type Handler struct {
@@ -22,16 +26,38 @@ type Handler struct {
 	auth *auth.Service
 }
 
-func New(store stores.Store, runner *ci.Runner, engine *docker.Engine, workspaceDir, mountPath string, maxSnapshotSize int64, authSvc *auth.Service, buildVersion string) *Handler {
+// Deps are what the JSON surface serves with. Main builds them once and hands
+// the same instances to the web UI.
+type Deps struct {
+	Store           stores.Store
+	Runner          *ci.Runner
+	Engine          *docker.Engine
+	Workspace       *workspace.Workspace
+	Projects        *projects.Module
+	Executions      *executions.Module
+	Artifacts       *artifacts.Module
+	MaxSnapshotSize int64
+	Auth            *auth.Service
+	BuildVersion    string
+}
+
+func New(d Deps) *Handler {
 	return &Handler{
-		projects:   NewProjectsHandler(store, runner, workspaceDir),
-		variables:  NewVariablesHandler(store),
-		executions: NewExecutionsHandler(store, runner, workspaceDir, maxSnapshotSize),
-		webhooks:   NewWebhooksHandler(store, runner, workspaceDir),
-		artifacts:  NewArtifactsHandler(store, runner),
-		system:     NewSystemHandler(store, engine, buildVersion),
-		cache:      NewCacheHandler(store, engine),
-		auth:       authSvc,
+		projects:  NewProjectsHandler(d.Store, d.Runner, d.Workspace, d.Projects),
+		variables: NewVariablesHandler(d.Store, d.Projects),
+		executions: NewExecutionsHandler(ExecutionsDeps{
+			Store:           d.Store,
+			Runner:          d.Runner,
+			Workspace:       d.Workspace,
+			MaxSnapshotSize: d.MaxSnapshotSize,
+			Projects:        d.Projects,
+			Executions:      d.Executions,
+		}),
+		webhooks:  NewWebhooksHandler(d.Store, d.Runner, d.Workspace, d.Projects),
+		artifacts: NewArtifactsHandler(d.Projects, d.Executions, d.Artifacts),
+		system:    NewSystemHandler(d.Store, d.Engine, d.BuildVersion),
+		cache:     NewCacheHandler(d.Store, d.Engine, d.Projects),
+		auth:      d.Auth,
 	}
 }
 

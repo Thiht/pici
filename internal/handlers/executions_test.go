@@ -15,6 +15,7 @@ import (
 
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 func newExecServer(t *testing.T, maxSnapshotSize int64) (*Handler, stores.Store, string, uuid.UUID) {
@@ -37,7 +38,7 @@ func newExecServer(t *testing.T, maxSnapshotSize int64) (*Handler, stores.Store,
 	}
 
 	ws := t.TempDir()
-	s := New(store, &ci.Runner{Store: store, WorkspaceDir: ws}, nil, ws, "/workspace", maxSnapshotSize, svc, "dev")
+	s := newTestHandler(store, &ci.Runner{Store: store, Workspace: workspace.New(ws, filepath.Join(ws, "logs"))}, nil, ws, maxSnapshotSize, svc)
 	return s, store, ws, projectID
 }
 

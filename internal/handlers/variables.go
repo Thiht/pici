@@ -5,17 +5,19 @@ import (
 	"net/http"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
 )
 
 type VariablesHandler struct {
-	store stores.Store
+	store    stores.Store
+	projects *projects.Module
 }
 
-func NewVariablesHandler(store stores.Store) *VariablesHandler {
-	return &VariablesHandler{store: store}
+func NewVariablesHandler(store stores.Store, projects *projects.Module) *VariablesHandler {
+	return &VariablesHandler{store: store, projects: projects}
 }
 
 type variableRequest struct {
@@ -25,7 +27,7 @@ type variableRequest struct {
 }
 
 func (h *VariablesHandler) SetProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -57,7 +59,7 @@ func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID
 }
 
 func (h *VariablesHandler) ListProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -83,7 +85,7 @@ func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectI
 }
 
 func (h *VariablesHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return

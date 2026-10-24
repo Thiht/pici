@@ -2,18 +2,20 @@ package web
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/Thiht/pici/internal/app"
+	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 type stepView struct {
@@ -43,7 +45,7 @@ type executionPage struct {
 	base
 	Execution stores.Execution
 	Project   stores.Project
-	Artifacts []ci.Artifact
+	Artifacts []artifacts.Artifact
 	Steps     []stepView
 	SetupLog  string
 	Running   bool
@@ -57,7 +59,7 @@ func (h *Handler) ExecutionCreate(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -90,70 +92,70 @@ func (h *Handler) ExecutionShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executionPage, bool) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return executionPage{}, false
 	}
-	execution, ok := h.resolveAttempt(w, r, project)
+	view, ok := h.resolveAttempt(w, r, project)
 	if !ok {
 		return executionPage{}, false
 	}
-	attempts, err := h.store.ListAttempts(r.Context(), project.ID, execution.ExecutionID)
-	if err != nil {
-		h.storeError(w, r, err)
-		return executionPage{}, false
-	}
+	execution := view.Execution
 	running := execution.Status == stores.StatusRunning || execution.Status == stores.StatusPending
 	steps := make([]stepView, len(execution.Steps))
 	for i, sr := range execution.Steps {
-		path := h.runner.StepLogPath(project.ID, execution.ID, i, sr.Name)
-		sv := stepView{Index: i, LogSource: ci.LogSource(path), StepResult: sr}
+		sv := stepView{Index: i, LogSource: workspace.Source(sr.Name), StepResult: sr}
 		if !running {
-			sv.Logs = readFile(path)
+			if logs, err := h.executions.StepLog(execution, sr.Name); err == nil {
+				sv.Logs = readAll(logs)
+			}
 		}
 		steps[i] = sv
 	}
 	var setupLog string
 	if !running {
-		setupLog = readFile(h.runner.SetupLogPath(project.ID, execution.ID))
+		if logs, err := h.executions.SetupLog(execution); err == nil {
+			setupLog = readAll(logs)
+		}
 	}
 	return executionPage{
 		base:      h.base(w, r, "Execution #"+strconv.FormatInt(execution.ExecutionID, 10), "projects"),
 		Execution: execution,
 		Project:   project,
-		Artifacts: h.runner.ListArtifacts(execution),
+		Artifacts: h.artifacts.List(execution),
 		Steps:     steps,
 		SetupLog:  setupLog,
 		Running:   running,
-		Attempts:  attempts,
-		IsLatest:  execution.Attempt == execution.AttemptsCount,
+		Attempts:  view.Attempts,
+		IsLatest:  view.Latest,
 	}, true
 }
 
-// resolveAttempt resolves the execution id from the path and the optional
-// ?attempt= selector to the concrete attempt row.
-func (h *Handler) resolveAttempt(w http.ResponseWriter, r *http.Request, project stores.Project) (stores.Execution, bool) {
+// resolveAttempt resolves the Execution id from the path and the optional
+// ?attempt= selector to the Attempt the request is about.
+func (h *Handler) resolveAttempt(w http.ResponseWriter, r *http.Request, project stores.Project) (executions.View, bool) {
 	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		h.notFound(w, r)
-		return stores.Execution{}, false
+		return executions.View{}, false
 	}
 	attempt, err := bind.Attempt(r)
 	if err != nil {
 		h.notFound(w, r)
-		return stores.Execution{}, false
+		return executions.View{}, false
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	view, err := h.executions.Get(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		h.storeError(w, r, err)
-		return stores.Execution{}, false
+		return executions.View{}, false
 	}
-	return execution, true
+	return view, true
 }
 
-func readFile(path string) string {
-	b, err := os.ReadFile(path)
+func readAll(logs io.ReadCloser) string {
+	defer logs.Close()
+	b, err := io.ReadAll(logs)
 	if err != nil {
 		return ""
 	}
@@ -161,33 +163,28 @@ func readFile(path string) string {
 }
 
 func (h *Handler) ExecutionLogs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	execution, ok := h.resolveAttempt(w, r, project)
+	view, ok := h.resolveAttempt(w, r, project)
 	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	for _, path := range h.runner.LogPaths(project.ID, execution.ID) {
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		_, _ = io.Copy(w, f)
-		_ = f.Close()
-	}
+	logs := h.executions.Logs(view.Execution)
+	defer logs.Close()
+	_, _ = io.Copy(w, logs)
 }
 
 func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	execution, ok := h.resolveAttempt(w, r, project)
+	view, ok := h.resolveAttempt(w, r, project)
 	if !ok {
 		return
 	}
@@ -199,33 +196,28 @@ func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	h.runner.StreamLogs(r.Context(), project.ID, execution.ID, w, flusher.Flush)
+	h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, w, flusher.Flush)
 }
 
 func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	execution, ok := h.resolveAttempt(w, r, project)
+	view, ok := h.resolveAttempt(w, r, project)
 	if !ok {
 		return
 	}
 	step := r.PathValue("step")
-	index := stepIndex(execution, step)
-	if index < 0 {
-		h.notFound(w, r)
-		return
-	}
-	f, err := os.Open(h.runner.StepLogPath(project.ID, execution.ID, index, step))
+	logs, err := h.executions.StepLog(view.Execution, step)
 	if err != nil {
-		h.notFound(w, r)
+		h.storeError(w, r, err)
 		return
 	}
-	defer f.Close()
+	defer logs.Close()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = io.Copy(w, f)
+	_, _ = io.Copy(w, logs)
 }
 
 func (h *Handler) ExecutionCancel(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +225,7 @@ func (h *Handler) ExecutionCancel(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -262,7 +254,7 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -296,7 +288,7 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -333,47 +325,27 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	execution, ok := h.resolveAttempt(w, r, project)
+	view, ok := h.resolveAttempt(w, r, project)
 	if !ok {
 		return
 	}
-	index := stepIndex(execution, r.PathValue("step"))
-	if index < 0 {
-		h.notFound(w, r)
-		return
-	}
-	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execution.ID), fmt.Sprintf("%03d", index))
-	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(r.PathValue("path"))))
-	if full != dir && !strings.HasPrefix(full, dir+string(filepath.Separator)) {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-	info, err := os.Stat(full)
-	if err != nil || info.IsDir() {
-		h.notFound(w, r)
-		return
-	}
-	relPath, err := filepath.Rel(dir, full)
+	file, err := h.artifacts.Open(view.Execution, r.PathValue("step"), r.PathValue("path"))
 	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		if errors.Is(err, app.ErrInvalid) {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		h.notFound(w, r)
 		return
 	}
-	if etag := h.runner.ArtifactETag(execution, index, filepath.ToSlash(relPath)); etag != "" {
-		w.Header().Set("ETag", etag)
+	defer file.Close()
+	if file.ETag != "" {
+		w.Header().Set("ETag", file.ETag)
 	}
-	http.ServeFile(w, r, full)
-}
-
-func stepIndex(execution stores.Execution, name string) int {
-	for i, sr := range execution.Steps {
-		if sr.Name == name {
-			return i
-		}
-	}
-	return -1
+	http.ServeContent(w, r, filepath.Base(r.PathValue("path")), file.Info.ModTime(), file)
 }

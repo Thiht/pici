@@ -95,7 +95,7 @@ func newAuthedServer(t *testing.T, token string) *Handler {
 	svc := newTestAuthService(t, store)
 	user := newTestUser(t, store)
 	newTestAPIToken(t, store, user.ID, token)
-	return New(store, &ci.Runner{Store: store}, nil, t.TempDir(), "/workspace", 512<<20, svc, "dev")
+	return newTestHandler(store, &ci.Runner{Store: store}, nil, t.TempDir(), 512<<20, svc)
 }
 
 func doReq(t *testing.T, s *Handler, method, path, header, value string) *httptest.ResponseRecorder {

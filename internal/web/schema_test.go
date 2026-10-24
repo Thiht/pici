@@ -14,7 +14,7 @@ import (
 
 func TestSchemaRoute(t *testing.T) {
 	svc := auth.NewService(nil, &fakeProvider{}, nil, nil, time.Hour, false)
-	handler := New(nil, nil, "", svc, "https://pici.test", "test").Routes()
+	handler := newTestHandler(nil, nil, "", svc, "https://pici.test", "test").Routes()
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/ci.schema.json", nil))

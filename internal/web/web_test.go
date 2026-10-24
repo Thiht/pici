@@ -19,9 +19,11 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/Thiht/pici/internal/app/artifacts"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 func newTestServer(t *testing.T, _ string) (*httptest.Server, *http.Client) {
@@ -372,8 +374,8 @@ func TestExecutionTemplateShowsArtifactHashes(t *testing.T) {
 			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
 			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started, FinishedAt: &started,
 		},
-		Artifacts: []ci.Artifact{
-			{Step: "build", Path: "dist/app", Size: 5, Hash: &ci.ArtifactHash{Algorithm: "sha256", Value: full}},
+		Artifacts: []artifacts.Artifact{
+			{Step: "build", Path: "dist/app", Size: 5, Hash: &artifacts.Hash{Algorithm: "sha256", Value: full}},
 			{Step: "build", Path: "dist/old", Size: 3},
 		},
 	}
@@ -1356,7 +1358,7 @@ func TestArtifactDownloadSetsETag(t *testing.T) {
 	const helloHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 	store := newWebTestStore(t)
 	ws := t.TempDir()
-	h := New(store, &ci.Runner{Store: store, WorkspaceDir: ws}, ws, nil, "", "dev")
+	h := newTestHandler(store, &ci.Runner{Store: store, Workspace: workspace.New(ws, filepath.Join(ws, "logs"))}, ws, nil, "", "dev")
 
 	projectID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
 	if _, err := store.CreateProject(t.Context(), stores.Project{

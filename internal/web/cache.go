@@ -36,7 +36,7 @@ type projectCachePage struct {
 }
 
 func (h *Handler) ProjectCache(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -99,7 +99,7 @@ func (h *Handler) ProjectCacheImageDelete(w http.ResponseWriter, r *http.Request
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return
@@ -130,7 +130,7 @@ func (h *Handler) ProjectCacheVolumeDelete(w http.ResponseWriter, r *http.Reques
 		h.csrfError(w, r)
 		return
 	}
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
 		return

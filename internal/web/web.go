@@ -17,10 +17,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/executions"
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 //go:embed templates/*.html
@@ -71,20 +75,40 @@ func mustSub(fsys fs.FS, dir string) fs.FS {
 type Handler struct {
 	store         stores.Store
 	runner        *ci.Runner
-	workspaceDir  string
+	workspace     *workspace.Workspace
+	projects      *projects.Module
+	executions    *executions.Module
+	artifacts     *artifacts.Module
 	publicBaseURL string
 	buildVersion  string
 	auth          *auth.Service
 }
 
-func New(store stores.Store, runner *ci.Runner, workspaceDir string, authSvc *auth.Service, publicBaseURL, buildVersion string) *Handler {
+// Deps are what the web UI serves with. Main builds them once and hands the
+// same instances to the JSON surface.
+type Deps struct {
+	Store         stores.Store
+	Runner        *ci.Runner
+	Workspace     *workspace.Workspace
+	Projects      *projects.Module
+	Executions    *executions.Module
+	Artifacts     *artifacts.Module
+	Auth          *auth.Service
+	PublicBaseURL string
+	BuildVersion  string
+}
+
+func New(d Deps) *Handler {
 	return &Handler{
-		store:         store,
-		runner:        runner,
-		workspaceDir:  workspaceDir,
-		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
-		buildVersion:  buildVersion,
-		auth:          authSvc,
+		store:         d.Store,
+		runner:        d.Runner,
+		workspace:     d.Workspace,
+		projects:      d.Projects,
+		executions:    d.Executions,
+		artifacts:     d.Artifacts,
+		publicBaseURL: strings.TrimRight(d.PublicBaseURL, "/"),
+		buildVersion:  d.BuildVersion,
+		auth:          d.Auth,
 	}
 }
 

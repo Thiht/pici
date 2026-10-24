@@ -13,6 +13,7 @@ import (
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 func TestExecutionStream(t *testing.T) {
@@ -39,14 +40,15 @@ func TestExecutionStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner := &ci.Runner{Store: store, LogsDir: filepath.Join(dir, "logs")}
-	if err := os.MkdirAll(filepath.Dir(runner.StepLogPath(projectID, exec.ID, 0, "compile")), 0o755); err != nil {
+	ws := workspace.New(dir, filepath.Join(dir, "logs"))
+	runner := &ci.Runner{Store: store, Workspace: ws}
+	if err := os.MkdirAll(filepath.Dir(ws.StepLog(projectID, exec.ID, 0, "compile")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(runner.SetupLogPath(projectID, exec.ID), []byte("cloning\n"), 0o644); err != nil {
+	if err := os.WriteFile(ws.SetupLog(projectID, exec.ID), []byte("cloning\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(runner.StepLogPath(projectID, exec.ID, 0, "compile"), []byte("building\n"), 0o644); err != nil {
+	if err := os.WriteFile(ws.StepLog(projectID, exec.ID, 0, "compile"), []byte("building\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,7 +58,7 @@ func TestExecutionStream(t *testing.T) {
 	}, []string{"acme/pici"}, nil)
 	user := newWebTestUser(t, store)
 	session, _ := newWebTestSession(t, svc, user.ID)
-	h := New(store, runner, dir, svc, "https://pici.test", "dev")
+	h := newTestHandler(store, runner, dir, svc, "https://pici.test", "dev")
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
 

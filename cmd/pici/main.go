@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/executions"
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/config"
@@ -24,6 +27,7 @@ import (
 	"github.com/Thiht/pici/internal/secrets"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/web"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 var buildVersion = "dev"
@@ -67,12 +71,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	ws := workspace.New(cfg.WorkspaceDir, filepath.Join(cfg.WorkspaceDir, "logs"))
+
 	runner := &ci.Runner{
 		Store:              store,
 		Engine:             engine,
-		WorkspaceDir:       cfg.WorkspaceDir,
+		Workspace:          ws,
 		MountPath:          cfg.RepoMountPath,
-		LogsDir:            filepath.Join(cfg.WorkspaceDir, "logs"),
 		DefaultStepTimeout: cfg.StepTimeout,
 		MaxSnapshotSize:    cfg.MaxSnapshotSize,
 		PublicBaseURL:      cfg.PublicBaseURL,
@@ -147,8 +152,33 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	apiHandler := handlers.New(store, runner, engine, cfg.WorkspaceDir, cfg.RepoMountPath, cfg.MaxSnapshotSize, authSvc, buildVersion).Routes()
-	webHandler := web.New(store, runner, cfg.WorkspaceDir, authSvc, cfg.PublicBaseURL, buildVersion).Routes()
+	appProjects := projects.New(store)
+	appExecutions := executions.New(store, ws)
+	appArtifacts := artifacts.New(ws)
+
+	apiHandler := handlers.New(handlers.Deps{
+		Store:           store,
+		Runner:          runner,
+		Engine:          engine,
+		Workspace:       ws,
+		Projects:        appProjects,
+		Executions:      appExecutions,
+		Artifacts:       appArtifacts,
+		MaxSnapshotSize: cfg.MaxSnapshotSize,
+		Auth:            authSvc,
+		BuildVersion:    buildVersion,
+	}).Routes()
+	webHandler := web.New(web.Deps{
+		Store:         store,
+		Runner:        runner,
+		Workspace:     ws,
+		Projects:      appProjects,
+		Executions:    appExecutions,
+		Artifacts:     appArtifacts,
+		Auth:          authSvc,
+		PublicBaseURL: cfg.PublicBaseURL,
+		BuildVersion:  buildVersion,
+	}).Routes()
 
 	root := http.NewServeMux()
 	root.Handle("/", webHandler)

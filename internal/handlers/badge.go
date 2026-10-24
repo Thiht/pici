@@ -15,7 +15,7 @@ import (
 // and can be overridden with ?label=. The endpoint is public so badges can be
 // embedded in READMEs.
 func (h *ProjectsHandler) Badge(w http.ResponseWriter, r *http.Request) {
-	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return

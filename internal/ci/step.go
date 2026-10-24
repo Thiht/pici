@@ -170,7 +170,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 }
 
 func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, index int, secrets, cacheBinds []string) stores.StepResult {
-	logPath := r.StepLogPath(projectID, execID, index, step.Name)
+	logPath := r.Workspace.StepLog(projectID, execID, index, step.Name)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}

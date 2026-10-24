@@ -24,6 +24,7 @@ import (
 	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/mask"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 const maxParallelSteps = 8
@@ -41,9 +42,8 @@ type execKey struct {
 type Runner struct {
 	Store              stores.Store
 	Engine             *docker.Engine
-	WorkspaceDir       string
+	Workspace          *workspace.Workspace
 	MountPath          string
-	LogsDir            string
 	DefaultStepTimeout time.Duration
 	MaxSnapshotSize    int64
 	PublicBaseURL      string
@@ -224,7 +224,7 @@ func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previ
 	if previous.WorkspaceID != nil {
 		workspaceID = *previous.WorkspaceID
 	}
-	dir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(workspaceID, 10))
+	dir := r.Workspace.RepoDir(project.ID, workspaceID)
 	if _, err := os.Stat(dir); err != nil {
 		return stores.Execution{}, fmt.Errorf("%w: %s", ErrWorkspaceGone, dir)
 	}
@@ -291,12 +291,12 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	vars := r.loadVariables(ctx, project.ID)
 	secrets := collectSecrets(vars, project)
 
-	logDir := r.LogDir(project.ID, exec.ID)
+	logDir := r.Workspace.LogDir(project.ID, exec.ID)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		r.fail(ctx, exec, err)
 		return
 	}
-	setupFile, err := os.OpenFile(r.SetupLogPath(project.ID, exec.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	setupFile, err := os.OpenFile(r.Workspace.SetupLog(project.ID, exec.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		r.fail(ctx, exec, err)
 		return
@@ -313,7 +313,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	if exec.WorkspaceID != nil {
 		workspaceID = *exec.WorkspaceID
 	}
-	repoDir := filepath.Join(r.WorkspaceDir, project.ID.String(), strconv.FormatInt(workspaceID, 10))
+	repoDir := r.Workspace.RepoDir(project.ID, workspaceID)
 	isRetry := exec.Trigger == stores.TriggerRetry
 	if isRetry {
 		if _, err := os.Stat(repoDir); err != nil {
@@ -384,8 +384,8 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 				if _, ok := carry[name]; !ok {
 					continue
 				}
-				src := r.StepLogPath(project.ID, *exec.PreviousAttemptID, stepIndexByName(parent.Steps, name), name)
-				dst := r.StepLogPath(project.ID, exec.ID, i, name)
+				src := r.Workspace.StepLog(project.ID, *exec.PreviousAttemptID, stepIndexByName(parent.Steps, name), name)
+				dst := r.Workspace.StepLog(project.ID, exec.ID, i, name)
 				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err == nil {
 					_ = copyFile(src, dst)
 				}
@@ -507,7 +507,7 @@ func (r *Runner) materializeSource(ctx context.Context, project stores.Project, 
 	if exec.SnapshotID == nil {
 		return errors.New("snapshot execution is missing its snapshot id")
 	}
-	src := r.snapshotPath(project.ID, *exec.SnapshotID)
+	src := r.Workspace.Snapshot(project.ID, *exec.SnapshotID)
 	f, err := os.Open(src)
 	if err != nil {
 		return err
@@ -532,10 +532,6 @@ func (r *Runner) materializeSource(ctx context.Context, project stores.Project, 
 	}
 
 	return nil
-}
-
-func (r *Runner) snapshotPath(projectID, snapshotID uuid.UUID) string {
-	return filepath.Join(r.WorkspaceDir, "uploads", projectID.String(), snapshotID.String()+".tar.gz")
 }
 
 func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, projectID uuid.UUID, execID int64) {
@@ -583,7 +579,7 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.
 	// The execution is terminal: its snapshot archive is no longer needed and
 	// can be dropped. GC also cleans up stale uploads as a backstop.
 	if exec.Source == stores.SourceSnapshot && exec.SnapshotID != nil {
-		_ = os.Remove(r.snapshotPath(exec.ProjectID, *exec.SnapshotID))
+		_ = os.Remove(r.Workspace.Snapshot(exec.ProjectID, *exec.SnapshotID))
 	}
 
 	if setupLog != nil {
@@ -798,18 +794,10 @@ func (r *Runner) detailsURL(projectID uuid.UUID, execID int64) *string {
 
 func (r *Runner) readLogs(projectID uuid.UUID, execID int64) string {
 	const max = 60000
-	var b strings.Builder
-	for _, path := range r.LogPaths(projectID, execID) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		b.Write(data)
-		if b.Len() >= max {
-			break
-		}
-	}
-	s := b.String()
+	logs := r.Workspace.ReadLogs(projectID, execID)
+	defer logs.Close()
+	data, _ := io.ReadAll(io.LimitReader(logs, max+1))
+	s := string(data)
 	if len(s) > max {
 		s = s[:max] + "\n... (truncated)"
 	}

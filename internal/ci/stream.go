@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 	"uuid"
 
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 // streamStatus is sent as the "state" event so clients can follow the
@@ -48,7 +47,7 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", source, line)
 	}
 	sweep := func() {
-		for _, path := range r.LogPaths(projectID, execID) {
+		for _, path := range r.Workspace.LogPaths(projectID, execID) {
 			state := states[path]
 			if state == nil {
 				state = &streamState{}
@@ -77,7 +76,7 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 				}
 				line := state.partial[:idx]
 				state.partial = state.partial[idx+1:]
-				emit(LogSource(path), line)
+				emit(workspace.LogSource(path), line)
 			}
 		}
 	}
@@ -119,7 +118,7 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 			sweep()
 			for path, state := range states {
 				if len(state.partial) > 0 {
-					emit(LogSource(path), state.partial)
+					emit(workspace.LogSource(path), state.partial)
 				}
 			}
 			fmt.Fprintf(w, "event: done\ndata: %s\n\n", execution.Status)
@@ -135,16 +134,4 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 		case <-ticker.C:
 		}
 	}
-}
-
-func LogSource(path string) string {
-	base := filepath.Base(path)
-	if base == "setup.log" {
-		return "setup"
-	}
-	name := strings.TrimSuffix(base, ".log")
-	if idx := strings.IndexByte(name, '_'); idx >= 0 {
-		name = name[idx+1:]
-	}
-	return name
 }
