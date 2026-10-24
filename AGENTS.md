@@ -19,3 +19,5 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 ### Grilling
 
 `grilling`, `grill-me`, and `grill-with-docs` ask each round through the `question` tool — one call per round, every frontier question in it, recommendations first and labelled "(Recommended)" — so answers arrive as selections rather than prose.
+
+The `question` tool renders its text verbatim: no Markdown, and line breaks collapse. Keep the header short and the question a single plain-text sentence; put each candidate answer in an option label of a few words, with its rationale in the option description (also plain text).
