@@ -1,8 +1,10 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/handlers/bind"
+	"github.com/Thiht/pici/internal/sse"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
 )
@@ -190,7 +193,10 @@ func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, w, flusher.Flush)
+	stream := sse.New(w, flusher.Flush)
+	if err := h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, stream.Send); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Warn("stream execution logs", "error", err)
+	}
 }
 
 func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {

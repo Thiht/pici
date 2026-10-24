@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
+	"github.com/Thiht/pici/internal/sse"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -318,5 +321,8 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, w, flusher.Flush)
+	stream := sse.New(w, flusher.Flush)
+	if err := h.runner.StreamLogs(r.Context(), project.ID, view.Execution.ID, stream.Send); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Warn("stream execution logs", "error", err)
+	}
 }
