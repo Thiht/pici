@@ -56,11 +56,29 @@ var classes = map[string]string{
 	"skipped":  "badge badge-soft badge-neutral",
 }
 
+var dotClasses = map[string]string{
+	"success":  "bg-success text-success-content",
+	"failed":   "bg-error text-error-content",
+	"running":  "bg-info text-info-content",
+	"pending":  "bg-warning text-warning-content",
+	"canceled": "bg-neutral text-neutral-content",
+	"skipped":  "bg-neutral text-neutral-content",
+}
+
 func Class(status string) string {
 	if class, ok := classes[status]; ok {
 		return class
 	}
 	return "badge badge-soft badge-neutral"
+}
+
+// DotClass is the class set of a filled status dot, with the status symbol
+// drawn in the contrasting content color.
+func DotClass(status string) string {
+	if class, ok := dotClasses[status]; ok {
+		return class
+	}
+	return "bg-neutral text-neutral-content"
 }
 
 // Classes is the status-to-class map, so a page can hand it to its own

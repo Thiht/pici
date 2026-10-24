@@ -37,10 +37,13 @@ const flashCookie = "pici_flash"
 
 var funcs = template.FuncMap{
 	"statusClass":    func(v any) string { return present.Class(fmt.Sprint(v)) },
+	"statusDot":      func(v any) string { return present.DotClass(fmt.Sprint(v)) },
 	"statusLabel":    func(v any) string { return present.Label(fmt.Sprint(v)) },
+	"statusSymbol":   func(v any) string { return present.Symbol(fmt.Sprint(v)) },
 	"statusClasses":  present.Classes,
 	"formatTime":     formatTime,
 	"formatTimePtr":  formatTimePtr,
+	"formatDate":     formatDate,
 	"duration":       duration,
 	"formatDuration": present.Duration,
 	"since":          since,
@@ -262,6 +265,15 @@ func formatTimePtr(t *time.Time) string {
 		return "—"
 	}
 	return formatTime(*t)
+}
+
+// formatDate is the short form used where space is tight, such as the attempt
+// picker.
+func formatDate(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("Jan 02")
 }
 
 func duration(start, end any) string {
