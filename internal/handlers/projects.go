@@ -19,13 +19,12 @@ import (
 
 type ProjectsHandler struct {
 	store     stores.Store
-	runner    *ci.Runner
 	workspace *workspace.Workspace
 	projects  *projects.Module
 }
 
-func NewProjectsHandler(store stores.Store, runner *ci.Runner, ws *workspace.Workspace, projects *projects.Module) *ProjectsHandler {
-	return &ProjectsHandler{store: store, runner: runner, workspace: ws, projects: projects}
+func NewProjectsHandler(store stores.Store, ws *workspace.Workspace, projects *projects.Module) *ProjectsHandler {
+	return &ProjectsHandler{store: store, workspace: ws, projects: projects}
 }
 
 type projectRequest struct {

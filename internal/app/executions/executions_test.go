@@ -6,21 +6,68 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
 
 	"github.com/Thiht/pici/internal/app"
+	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
 )
 
 type fixture struct {
 	module  *Module
+	store   stores.Store
 	ws      *workspace.Workspace
+	runner  *fakeRunner
 	project stores.Project
 	first   stores.Execution
 	second  stores.Execution
+	snap    stores.Execution
+}
+
+// fakeRunner records what the module asks of the runner. The zero value
+// queues nothing, so callers that only read never need it.
+type fakeRunner struct {
+	enqueue        []any
+	snapshotID     uuid.UUID
+	retryErr       error
+	cancelled      []int64
+	rebuilt        bool
+	rebuiltFor     stores.Execution
+	enqueuedReturn stores.Execution
+}
+
+func (f *fakeRunner) Enqueue(_ context.Context, _ stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger, createdBy *uuid.UUID) (stores.Execution, error) {
+	f.enqueue = append(f.enqueue, workflow, ref, trigger, createdBy)
+	if f.enqueuedReturn.ID == 0 {
+		return stores.Execution{ID: 9, ExecutionID: 9, Attempt: 1, AttemptsCount: 1}, nil
+	}
+	return f.enqueuedReturn, nil
+}
+
+func (f *fakeRunner) EnqueueSnapshot(_ context.Context, _ stores.Project, _, _, _ string, snapshotID uuid.UUID, _ *uuid.UUID) (stores.Execution, error) {
+	f.snapshotID = snapshotID
+	return stores.Execution{ID: 10, ExecutionID: 10, Attempt: 1, AttemptsCount: 1}, nil
+}
+
+func (f *fakeRunner) EnqueueRebuild(_ context.Context, _ stores.Project, previous stores.Execution, _ *uuid.UUID) (stores.Execution, error) {
+	f.rebuilt = true
+	f.rebuiltFor = previous
+	return stores.Execution{ID: 11, ExecutionID: 11, Attempt: 1, AttemptsCount: 1}, nil
+}
+
+func (f *fakeRunner) EnqueueRetry(_ context.Context, _ stores.Project, _ stores.Execution, _ *uuid.UUID) (stores.Execution, error) {
+	if f.retryErr != nil {
+		return stores.Execution{}, f.retryErr
+	}
+	return stores.Execution{ID: 12, ExecutionID: 3, Attempt: 3, AttemptsCount: 3}, nil
+}
+
+func (f *fakeRunner) Cancel(_ uuid.UUID, execID int64) {
+	f.cancelled = append(f.cancelled, execID)
 }
 
 func newFixture(t *testing.T) fixture {
@@ -66,14 +113,25 @@ func newFixture(t *testing.T) fixture {
 	if err := store.CreateExecution(ctx, &second); err != nil {
 		t.Fatal(err)
 	}
+	snap := stores.Execution{
+		ProjectID: project.ID, Workflow: "build", Ref: "main", Status: stores.StatusFailed,
+		Source: stores.SourceSnapshot, SnapshotID: new(uuid.New()), CreatedAt: time.Now(),
+	}
+	if err := store.CreateExecution(ctx, &snap); err != nil {
+		t.Fatal(err)
+	}
 
 	ws := workspace.New(dir, filepath.Join(dir, "logs"))
+	runner := &fakeRunner{}
 	return fixture{
-		module:  New(store, ws),
+		module:  New(store, ws, ws, runner),
+		store:   store,
 		ws:      ws,
+		runner:  runner,
 		project: project,
 		first:   first,
 		second:  second,
+		snap:    snap,
 	}
 }
 
@@ -88,11 +146,8 @@ func TestGet(t *testing.T) {
 	if latest.Execution.ID != f.second.ID {
 		t.Fatalf("attempt 0 should resolve to the latest attempt, got %d", latest.Execution.ID)
 	}
-	if len(latest.Attempts) != 2 {
-		t.Fatalf("expected 2 attempts, got %d", len(latest.Attempts))
-	}
-	if !latest.Latest {
-		t.Fatal("the latest attempt should be marked as such")
+	if len(latest.Attempts) != 2 || !latest.Latest {
+		t.Fatalf("unexpected view: %+v", latest)
 	}
 
 	first, err := f.module.Get(ctx, f.project.ID, f.first.ExecutionID, 1)
@@ -102,13 +157,112 @@ func TestGet(t *testing.T) {
 	if first.Execution.ID != f.first.ID || first.Latest {
 		t.Fatalf("unexpected first attempt: %+v", first)
 	}
+
+	if _, err := f.module.Get(ctx, f.project.ID, 9999, 0); !errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
 }
 
-func TestGetNotFound(t *testing.T) {
+func TestCreate(t *testing.T) {
 	f := newFixture(t)
+	ctx := context.Background()
 
-	if _, err := f.module.Get(context.Background(), f.project.ID, 9999, 0); !errors.Is(err, app.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+	execution, err := f.module.Create(ctx, f.project, "build", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if execution.ID == 0 {
+		t.Fatalf("expected the queued execution, got %+v", execution)
+	}
+	want := []any{"build", "main", stores.TriggerManual, (*uuid.UUID)(nil)}
+	if len(f.runner.enqueue) != len(want) {
+		t.Fatalf("unexpected enqueue call: %v", f.runner.enqueue)
+	}
+	for i := range want {
+		if f.runner.enqueue[i] != want[i] {
+			t.Fatalf("enqueue[%d] = %v, want %v", i, f.runner.enqueue[i], want[i])
+		}
+	}
+
+	if _, err := f.module.Create(ctx, f.project, "  ", "main", nil); !errors.Is(err, app.ErrInvalid) {
+		t.Fatalf("expected ErrInvalid for an empty workflow, got %v", err)
+	}
+}
+
+func TestCreateSnapshotStoresArchive(t *testing.T) {
+	f := newFixture(t)
+	archive := "archive-bytes"
+
+	if _, err := f.module.CreateSnapshot(context.Background(), f.project, "build", "", "", strings.NewReader(archive), nil); err != nil {
+		t.Fatal(err)
+	}
+	path := f.ws.Snapshot(f.project.ID, f.runner.snapshotID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected the archive at %s: %v", path, err)
+	}
+	if string(data) != archive {
+		t.Fatalf("archive content = %q", data)
+	}
+}
+
+func TestCancel(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if err := f.module.Cancel(ctx, f.project.ID, f.first.ExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.runner.cancelled) != 1 || f.runner.cancelled[0] != f.second.ID {
+		t.Fatalf("expected the latest attempt to be cancelled, got %v", f.runner.cancelled)
+	}
+	canceled, err := f.store.IsCancelRequested(ctx, f.project.ID, f.second.ID)
+	if err != nil || !canceled {
+		t.Fatalf("cancel was not requested: %v %v", canceled, err)
+	}
+}
+
+func TestRebuild(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if _, err := f.module.Rebuild(ctx, f.project, f.first.ExecutionID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !f.runner.rebuilt || f.runner.rebuiltFor.ID != f.second.ID {
+		t.Fatalf("expected a rebuild of the latest attempt, got %+v", f.runner.rebuiltFor)
+	}
+
+	if _, err := f.module.Rebuild(ctx, f.project, f.snap.ExecutionID, nil); !errors.Is(err, app.ErrConflict) {
+		t.Fatalf("expected ErrConflict for a snapshot execution, got %v", err)
+	}
+}
+
+func TestRetryMapsRunnerErrors(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	f.runner.retryErr = ci.ErrNotRetryable
+	if _, err := f.module.Retry(ctx, f.project, f.first.ExecutionID, 0, nil); !errors.Is(err, app.ErrNotRetryable) {
+		t.Fatalf("expected ErrNotRetryable, got %v", err)
+	}
+
+	f.runner.retryErr = ci.ErrWorkspaceGone
+	if _, err := f.module.Retry(ctx, f.project, f.first.ExecutionID, 0, nil); !errors.Is(err, app.ErrWorkspaceGone) {
+		t.Fatalf("expected ErrWorkspaceGone, got %v", err)
+	}
+}
+
+func TestRetryReturnsLatestAttempt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	execution, err := f.module.Retry(ctx, f.project, f.first.ExecutionID, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if execution.ExecutionID != f.first.ExecutionID || execution.Attempt != 2 {
+		t.Fatalf("expected the execution with its latest attempt, got %+v", execution)
 	}
 }
 
@@ -143,9 +297,6 @@ func TestStepLog(t *testing.T) {
 
 	if _, err := f.module.StepLog(f.first, "missing"); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for an unknown step, got %v", err)
-	}
-	if _, err := f.module.StepLog(f.first, "test"); !errors.Is(err, app.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound for a step without a log, got %v", err)
 	}
 }
 

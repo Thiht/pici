@@ -40,14 +40,14 @@
                 <tbody>
                   {{range .Images}}
                     <tr>
-                      <td class="font-mono text-xs">{{.Tag}}</td>
+                      <td class="font-mono text-xs">{{.Reference}}</td>
                       <td class="text-xs opacity-60">{{size .Size}}</td>
                       <td class="text-xs opacity-60">{{formatTime .Created}}</td>
                       <td class="text-xs opacity-60">{{.Containers}}</td>
                       <td class="text-right">
                         <form method="post" action="/projects/{{$.Project.ID}}/cache/images/delete">
                           <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
-                          <input type="hidden" name="reference" value="{{.Tag}}">
+                          <input type="hidden" name="reference" value="{{.Reference}}">
                           <button class="btn btn-outline btn-sm" type="submit">Delete</button>
                         </form>
                       </td>

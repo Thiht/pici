@@ -12,7 +12,6 @@ import (
 	"github.com/Thiht/pici/internal/app/artifacts"
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/auth"
-	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
@@ -64,17 +63,12 @@ func (h *Handler) ExecutionCreate(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	workflow := strings.TrimSpace(r.FormValue("workflow"))
-	if workflow == "" {
+	execution, err := h.executions.Create(r.Context(), project, r.FormValue("workflow"), r.FormValue("ref"), auth.UserID(r.Context()))
+	if errors.Is(err, app.ErrInvalid) {
 		setFlash(w, "error", "Workflow is required.")
 		redirect(w, r, "/projects/"+project.ID.String())
 		return
 	}
-	ref := strings.TrimSpace(r.FormValue("ref"))
-	if ref == "" {
-		ref = project.DefaultBranch
-	}
-	execution, err := h.runner.Enqueue(r.Context(), project, workflow, ref, "", stores.TriggerManual, auth.UserID(r.Context()))
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -235,18 +229,12 @@ func (h *Handler) ExecutionCancel(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
-	if err != nil {
+	if err := h.executions.Cancel(r.Context(), project.ID, id); err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), project.ID, execution.ID); err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	h.runner.Cancel(project.ID, execution.ID)
 	setFlash(w, "success", "Cancellation requested.")
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ExecutionID, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 }
 
 func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
@@ -264,18 +252,16 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
-	if err != nil {
-		h.storeError(w, r, err)
-		return
-	}
-	if previous.Source == stores.SourceSnapshot {
+	execution, err := h.executions.Rebuild(r.Context(), project, id, auth.UserID(r.Context()))
+	switch {
+	case errors.Is(err, app.ErrConflict):
 		setFlash(w, "error", "Snapshot executions cannot be rebuilt.")
-		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(previous.ExecutionID, 10))
+		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 		return
-	}
-	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous, auth.UserID(r.Context()))
-	if err != nil {
+	case errors.Is(err, app.ErrNotFound):
+		h.notFound(w, r)
+		return
+	case err != nil:
 		h.serverError(w, r, err)
 		return
 	}
@@ -303,25 +289,22 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
-	if err != nil {
-		h.storeError(w, r, err)
-		return
-	}
-
-	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
+	_, err = h.executions.Retry(r.Context(), project, id, attempt, auth.UserID(r.Context()))
 	switch {
-	case errors.Is(err, ci.ErrWorkspaceGone):
+	case errors.Is(err, app.ErrWorkspaceGone):
 		setFlash(w, "error", "The workspace is no longer available.")
-	case errors.Is(err, ci.ErrNotRetryable):
+	case errors.Is(err, app.ErrNotRetryable):
 		setFlash(w, "error", "This execution cannot be retried.")
+	case errors.Is(err, app.ErrNotFound):
+		h.notFound(w, r)
+		return
 	case err != nil:
 		h.serverError(w, r, err)
 		return
 	default:
 		setFlash(w, "success", "Retry queued.")
 	}
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(previous.ExecutionID, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {

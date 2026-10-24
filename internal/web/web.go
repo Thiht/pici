@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/app/projects"
+	"github.com/Thiht/pici/internal/app/variables"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
@@ -79,6 +81,8 @@ type Handler struct {
 	projects      *projects.Module
 	executions    *executions.Module
 	artifacts     *artifacts.Module
+	cache         *cache.Module
+	variables     *variables.Module
 	publicBaseURL string
 	buildVersion  string
 	auth          *auth.Service
@@ -93,6 +97,8 @@ type Deps struct {
 	Projects      *projects.Module
 	Executions    *executions.Module
 	Artifacts     *artifacts.Module
+	Cache         *cache.Module
+	Variables     *variables.Module
 	Auth          *auth.Service
 	PublicBaseURL string
 	BuildVersion  string
@@ -106,6 +112,8 @@ func New(d Deps) *Handler {
 		projects:      d.Projects,
 		executions:    d.Executions,
 		artifacts:     d.Artifacts,
+		cache:         d.Cache,
+		variables:     d.Variables,
 		publicBaseURL: strings.TrimRight(d.PublicBaseURL, "/"),
 		buildVersion:  d.BuildVersion,
 		auth:          d.Auth,

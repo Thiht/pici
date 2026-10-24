@@ -1,23 +1,23 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"uuid"
 
 	"github.com/Thiht/pici/internal/app/projects"
+	"github.com/Thiht/pici/internal/app/variables"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
 )
 
 type VariablesHandler struct {
-	store    stores.Store
-	projects *projects.Module
+	projects  *projects.Module
+	variables *variables.Module
 }
 
-func NewVariablesHandler(store stores.Store, projects *projects.Module) *VariablesHandler {
-	return &VariablesHandler{store: store, projects: projects}
+func NewVariablesHandler(projects *projects.Module, variables *variables.Module) *VariablesHandler {
+	return &VariablesHandler{projects: projects, variables: variables}
 }
 
 type variableRequest struct {
@@ -45,17 +45,17 @@ func (h *VariablesHandler) set(w http.ResponseWriter, r *http.Request, projectID
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Key == "" {
-		render.Error(w, http.StatusBadRequest, errors.New("key is required"))
+	saved, err := h.variables.Set(r.Context(), stores.Variable{
+		ProjectID: projectID,
+		Key:       req.Key,
+		Value:     req.Value,
+		Secret:    req.Secret,
+	})
+	if err != nil {
+		storeError(w, err)
 		return
 	}
-
-	variable := stores.Variable{ProjectID: projectID, Key: req.Key, Value: req.Value, Secret: req.Secret}
-	if err := h.store.SetVariable(r.Context(), variable); err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	render.JSON(w, http.StatusOK, maskVariable(variable))
+	render.JSON(w, http.StatusOK, saved)
 }
 
 func (h *VariablesHandler) ListProject(w http.ResponseWriter, r *http.Request) {
@@ -72,16 +72,12 @@ func (h *VariablesHandler) ListGlobal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *VariablesHandler) list(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID) {
-	variables, err := h.store.ListVariables(r.Context(), projectID)
+	variables, err := h.variables.List(r.Context(), projectID)
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
-	out := make([]stores.Variable, 0, len(variables))
-	for _, v := range variables {
-		out = append(out, maskVariable(v))
-	}
-	render.JSON(w, http.StatusOK, out)
+	render.JSON(w, http.StatusOK, variables)
 }
 
 func (h *VariablesHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
@@ -98,16 +94,9 @@ func (h *VariablesHandler) DeleteGlobal(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *VariablesHandler) delete(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID, key string) {
-	if err := h.store.DeleteVariable(r.Context(), projectID, key); err != nil {
+	if err := h.variables.Delete(r.Context(), projectID, key); err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func maskVariable(v stores.Variable) stores.Variable {
-	if v.Secret {
-		v.Value = ""
-	}
-	return v
 }

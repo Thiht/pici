@@ -388,14 +388,3 @@ func defaultAuthUser(authType stores.AuthType) string {
 		return ""
 	}
 }
-
-func maskVariables(variables []stores.Variable) []stores.Variable {
-	out := make([]stores.Variable, len(variables))
-	copy(out, variables)
-	for i := range out {
-		if out[i].Secret {
-			out[i].Value = ""
-		}
-	}
-	return out
-}

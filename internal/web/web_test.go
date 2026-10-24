@@ -20,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
@@ -1299,8 +1300,8 @@ func TestProjectCacheTemplateRenders(t *testing.T) {
 	data := projectCachePage{
 		Title: "Cache", Active: "projects", Version: "dev",
 		Project:     stores.Project{Name: "demo"},
-		Images:      []cacheImage{{Tag: "pici/x-build", Size: 2048, Created: time.Now()}},
-		Volumes:     []cacheVolume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
+		Images:      []cache.Image{{Reference: "pici/x-build", Size: 2048, Created: time.Now()}},
+		Volumes:     []cache.Volume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
 		ImagesSize:  2048,
 		VolumesSize: 4096,
 		TotalSize:   6144,

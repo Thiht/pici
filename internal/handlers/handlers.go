@@ -4,8 +4,10 @@ import (
 	"net/http"
 
 	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/app/projects"
+	"github.com/Thiht/pici/internal/app/variables"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/docker"
@@ -36,6 +38,8 @@ type Deps struct {
 	Projects        *projects.Module
 	Executions      *executions.Module
 	Artifacts       *artifacts.Module
+	Cache           *cache.Module
+	Variables       *variables.Module
 	MaxSnapshotSize int64
 	Auth            *auth.Service
 	BuildVersion    string
@@ -43,12 +47,11 @@ type Deps struct {
 
 func New(d Deps) *Handler {
 	return &Handler{
-		projects:  NewProjectsHandler(d.Store, d.Runner, d.Workspace, d.Projects),
-		variables: NewVariablesHandler(d.Store, d.Projects),
+		projects:  NewProjectsHandler(d.Store, d.Workspace, d.Projects),
+		variables: NewVariablesHandler(d.Projects, d.Variables),
 		executions: NewExecutionsHandler(ExecutionsDeps{
 			Store:           d.Store,
 			Runner:          d.Runner,
-			Workspace:       d.Workspace,
 			MaxSnapshotSize: d.MaxSnapshotSize,
 			Projects:        d.Projects,
 			Executions:      d.Executions,
@@ -56,7 +59,7 @@ func New(d Deps) *Handler {
 		webhooks:  NewWebhooksHandler(d.Store, d.Runner, d.Workspace, d.Projects),
 		artifacts: NewArtifactsHandler(d.Projects, d.Executions, d.Artifacts),
 		system:    NewSystemHandler(d.Store, d.Engine, d.BuildVersion),
-		cache:     NewCacheHandler(d.Store, d.Engine, d.Projects),
+		cache:     NewCacheHandler(d.Cache, d.Projects),
 		auth:      d.Auth,
 	}
 }

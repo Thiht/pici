@@ -1,34 +1,19 @@
 package web
 
 import (
+	"errors"
 	"net/http"
-	"sort"
-	"strings"
-	"time"
 
-	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/app"
+	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/stores"
 )
-
-type cacheImage struct {
-	Tag        string
-	Size       int64
-	Created    time.Time
-	Containers int64
-}
-
-type cacheVolume struct {
-	Cache   string
-	Name    string
-	Size    int64
-	Created time.Time
-}
 
 type projectCachePage struct {
 	base
 	Project     stores.Project
-	Images      []cacheImage
-	Volumes     []cacheVolume
+	Images      []cache.Image
+	Volumes     []cache.Volume
 	ImagesSize  int64
 	VolumesSize int64
 	TotalSize   int64
@@ -42,55 +27,21 @@ func (h *Handler) ProjectCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := projectCachePage{base: h.base(w, r, project.Name+" cache", "projects"), Project: project}
-
-	if h.runner == nil || h.runner.Engine == nil {
+	summary, err := h.cache.Get(r.Context(), project)
+	if errors.Is(err, app.ErrUnavailable) {
 		data.Unavailable = true
 		h.render(w, r, http.StatusOK, "project_cache", data)
 		return
 	}
-
-	imagePrefix := ci.ImagePrefix(project.ID.String())
-	images, err := h.runner.Engine.Images(r.Context(), imagePrefix+"*")
 	if err != nil {
-		data.Unavailable = true
-		h.render(w, r, http.StatusOK, "project_cache", data)
+		h.serverError(w, r, err)
 		return
 	}
-	for _, img := range images {
-		var tag string
-		for _, t := range img.Tags {
-			if strings.HasPrefix(t, imagePrefix) {
-				tag = t
-				break
-			}
-		}
-		if tag == "" {
-			continue
-		}
-		data.Images = append(data.Images, cacheImage{Tag: tag, Size: img.Size, Created: img.Created, Containers: img.Containers})
-		data.ImagesSize += img.Size
-	}
-	sort.Slice(data.Images, func(i, j int) bool { return data.Images[i].Tag < data.Images[j].Tag })
-
-	volumePrefix := ci.VolumePrefix(project.ID.String())
-	volumes, err := h.runner.Engine.Volumes(r.Context(), volumePrefix)
-	if err != nil {
-		data.Unavailable = true
-		h.render(w, r, http.StatusOK, "project_cache", data)
-		return
-	}
-	for _, v := range volumes {
-		data.Volumes = append(data.Volumes, cacheVolume{
-			Cache:   strings.TrimPrefix(v.Name, volumePrefix),
-			Name:    v.Name,
-			Size:    v.Size,
-			Created: v.Created,
-		})
-		data.VolumesSize += v.Size
-	}
-	sort.Slice(data.Volumes, func(i, j int) bool { return data.Volumes[i].Cache < data.Volumes[j].Cache })
-
-	data.TotalSize = data.ImagesSize + data.VolumesSize
+	data.Images = summary.Images
+	data.Volumes = summary.Volumes
+	data.ImagesSize = summary.ImagesSize
+	data.VolumesSize = summary.VolumesSize
+	data.TotalSize = summary.TotalSize
 	h.render(w, r, http.StatusOK, "project_cache", data)
 }
 
@@ -105,19 +56,15 @@ func (h *Handler) ProjectCacheImageDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 	back := "/projects/" + project.ID.String() + "/cache"
-	reference := strings.TrimSpace(r.FormValue("reference"))
-	if !strings.HasPrefix(reference, ci.ImagePrefix(project.ID.String())) {
-		setFlash(w, "error", "Unknown image.")
-		redirect(w, r, back)
-		return
-	}
-	if h.runner == nil || h.runner.Engine == nil {
-		setFlash(w, "error", "Docker is unavailable.")
-		redirect(w, r, back)
-		return
-	}
-	if err := h.runner.Engine.RemoveImage(r.Context(), reference); err != nil {
-		setFlash(w, "error", "Could not delete image: "+err.Error())
+	if err := h.cache.RemoveImage(r.Context(), project, r.FormValue("reference")); err != nil {
+		switch {
+		case errors.Is(err, app.ErrInvalid):
+			setFlash(w, "error", "Unknown image.")
+		case errors.Is(err, app.ErrUnavailable):
+			setFlash(w, "error", "Docker is unavailable.")
+		default:
+			setFlash(w, "error", "Could not delete image: "+err.Error())
+		}
 		redirect(w, r, back)
 		return
 	}
@@ -136,19 +83,15 @@ func (h *Handler) ProjectCacheVolumeDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	back := "/projects/" + project.ID.String() + "/cache"
-	name := strings.TrimSpace(r.FormValue("name"))
-	if !strings.HasPrefix(name, ci.VolumePrefix(project.ID.String())) {
-		setFlash(w, "error", "Unknown cache volume.")
-		redirect(w, r, back)
-		return
-	}
-	if h.runner == nil || h.runner.Engine == nil {
-		setFlash(w, "error", "Docker is unavailable.")
-		redirect(w, r, back)
-		return
-	}
-	if err := h.runner.Engine.RemoveVolume(r.Context(), name); err != nil {
-		setFlash(w, "error", "Could not delete cache volume: "+err.Error())
+	if err := h.cache.RemoveVolume(r.Context(), project, r.FormValue("name")); err != nil {
+		switch {
+		case errors.Is(err, app.ErrInvalid):
+			setFlash(w, "error", "Unknown cache volume.")
+		case errors.Is(err, app.ErrUnavailable):
+			setFlash(w, "error", "Docker is unavailable.")
+		default:
+			setFlash(w, "error", "Could not delete cache volume: "+err.Error())
+		}
 		redirect(w, r, back)
 		return
 	}

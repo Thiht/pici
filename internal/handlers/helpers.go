@@ -15,6 +15,12 @@ func storeError(w http.ResponseWriter, err error) {
 		render.Error(w, http.StatusNotFound, err)
 	case errors.Is(err, app.ErrInvalid):
 		render.Error(w, http.StatusBadRequest, err)
+	case errors.Is(err, app.ErrConflict), errors.Is(err, app.ErrNotRetryable):
+		render.Error(w, http.StatusConflict, err)
+	case errors.Is(err, app.ErrWorkspaceGone):
+		render.Error(w, http.StatusGone, err)
+	case errors.Is(err, app.ErrUnavailable):
+		render.Error(w, http.StatusServiceUnavailable, err)
 	default:
 		render.Error(w, http.StatusInternalServerError, err)
 	}

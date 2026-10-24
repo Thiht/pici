@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/Thiht/pici/internal/app/artifacts"
+	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/app/projects"
+	"github.com/Thiht/pici/internal/app/variables"
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/config"
@@ -152,9 +154,16 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
+	var cacheEngine cache.Engine
+	if engine != nil {
+		cacheEngine = engine
+	}
+
 	appProjects := projects.New(store)
-	appExecutions := executions.New(store, ws)
+	appExecutions := executions.New(store, ws, ws, runner)
 	appArtifacts := artifacts.New(ws)
+	appCache := cache.New(cacheEngine)
+	appVariables := variables.New(store)
 
 	apiHandler := handlers.New(handlers.Deps{
 		Store:           store,
@@ -164,6 +173,8 @@ func main() {
 		Projects:        appProjects,
 		Executions:      appExecutions,
 		Artifacts:       appArtifacts,
+		Cache:           appCache,
+		Variables:       appVariables,
 		MaxSnapshotSize: cfg.MaxSnapshotSize,
 		Auth:            authSvc,
 		BuildVersion:    buildVersion,
@@ -175,6 +186,8 @@ func main() {
 		Projects:      appProjects,
 		Executions:    appExecutions,
 		Artifacts:     appArtifacts,
+		Cache:         appCache,
+		Variables:     appVariables,
 		Auth:          authSvc,
 		PublicBaseURL: cfg.PublicBaseURL,
 		BuildVersion:  buildVersion,

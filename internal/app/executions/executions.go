@@ -1,22 +1,27 @@
-// Package executions serves the read side of an Execution: the selected
-// Attempt, its siblings, and the logs of its setup phase and Steps.
 package executions
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"uuid"
 
 	"github.com/Thiht/pici/internal/app"
+	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/workspace"
 )
 
 // Store is the part of the store this module needs.
 type Store interface {
 	GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (stores.Execution, error)
 	ListAttempts(ctx context.Context, projectID uuid.UUID, executionID int64) ([]stores.Execution, error)
+	SetCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) error
 }
 
 // Logs opens an Execution's logs. *workspace.Workspace satisfies it.
@@ -24,6 +29,15 @@ type Logs interface {
 	ReadLogs(projectID uuid.UUID, execID int64) io.ReadCloser
 	ReadSetupLog(projectID uuid.UUID, execID int64) (io.ReadCloser, error)
 	ReadStepLog(projectID uuid.UUID, execID int64, index int, step string) (io.ReadCloser, error)
+}
+
+// Runner queues and cancels Executions. *ci.Runner satisfies it.
+type Runner interface {
+	Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger, createdBy *uuid.UUID) (stores.Execution, error)
+	EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID, createdBy *uuid.UUID) (stores.Execution, error)
+	EnqueueRebuild(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error)
+	EnqueueRetry(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error)
+	Cancel(projectID uuid.UUID, execID int64)
 }
 
 // View is one Attempt of an Execution with the Attempts around it. It is what
@@ -34,23 +48,22 @@ type View struct {
 	Latest    bool
 }
 
-// Module reads Executions.
+// Module reads, queues and cancels Executions.
 type Module struct {
-	store Store
-	logs  Logs
+	store     Store
+	logs      Logs
+	workspace *workspace.Workspace
+	runner    Runner
 }
 
-func New(store Store, logs Logs) *Module {
-	return &Module{store: store, logs: logs}
+func New(store Store, logs Logs, workspace *workspace.Workspace, runner Runner) *Module {
+	return &Module{store: store, logs: logs, workspace: workspace, runner: runner}
 }
 
 // Get returns the requested Attempt, or the latest one when attempt is 0.
 func (m *Module) Get(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (View, error) {
-	execution, err := m.store.GetExecutionAttempt(ctx, projectID, executionID, attempt)
+	execution, err := m.attempt(ctx, projectID, executionID, attempt)
 	if err != nil {
-		if errors.Is(err, stores.ErrNotFound) {
-			return View{}, app.ErrNotFound
-		}
 		return View{}, err
 	}
 	attempts, err := m.store.ListAttempts(ctx, projectID, execution.ExecutionID)
@@ -62,6 +75,109 @@ func (m *Module) Get(ctx context.Context, projectID uuid.UUID, executionID int64
 		Attempts:  attempts,
 		Latest:    execution.Attempt == execution.AttemptsCount,
 	}, nil
+}
+
+// Create queues a manual run of a Workflow.
+func (m *Module) Create(ctx context.Context, project stores.Project, workflow, ref string, createdBy *uuid.UUID) (stores.Execution, error) {
+	workflow = strings.TrimSpace(workflow)
+	if workflow == "" {
+		return stores.Execution{}, fmt.Errorf("%w: workflow is required", app.ErrInvalid)
+	}
+	if ref = strings.TrimSpace(ref); ref == "" {
+		ref = project.DefaultBranch
+	}
+	return m.runner.Enqueue(ctx, project, workflow, ref, "", stores.TriggerManual, createdBy)
+}
+
+// CreateSnapshot stores an uploaded archive and queues a manual run whose
+// source is that archive instead of a clone.
+func (m *Module) CreateSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, archive io.Reader, createdBy *uuid.UUID) (stores.Execution, error) {
+	workflow = strings.TrimSpace(workflow)
+	if workflow == "" {
+		return stores.Execution{}, fmt.Errorf("%w: workflow is required", app.ErrInvalid)
+	}
+	if ref = strings.TrimSpace(ref); ref == "" {
+		ref = project.DefaultBranch
+	}
+
+	snapshotID := uuid.New()
+	path := m.workspace.Snapshot(project.ID, snapshotID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return stores.Execution{}, err
+	}
+	tmp := path + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	if _, err := io.Copy(out, archive); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return stores.Execution{}, err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return stores.Execution{}, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return stores.Execution{}, err
+	}
+
+	execution, err := m.runner.EnqueueSnapshot(ctx, project, workflow, ref, commitSHA, snapshotID, createdBy)
+	if err != nil {
+		_ = os.Remove(path)
+		return stores.Execution{}, err
+	}
+	return execution, nil
+}
+
+// Cancel asks the runner to stop an Execution's latest Attempt.
+func (m *Module) Cancel(ctx context.Context, projectID uuid.UUID, executionID int64) error {
+	execution, err := m.attempt(ctx, projectID, executionID, 0)
+	if err != nil {
+		return err
+	}
+	if err := m.store.SetCancelRequested(ctx, projectID, execution.ID); err != nil {
+		return err
+	}
+	m.runner.Cancel(projectID, execution.ID)
+	return nil
+}
+
+// Rebuild queues a new Execution from the same source as an earlier one.
+func (m *Module) Rebuild(ctx context.Context, project stores.Project, executionID int64, createdBy *uuid.UUID) (stores.Execution, error) {
+	previous, err := m.attempt(ctx, project.ID, executionID, 0)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	if previous.Source == stores.SourceSnapshot {
+		return stores.Execution{}, fmt.Errorf("%w: snapshot executions cannot be rebuilt", app.ErrConflict)
+	}
+	return m.runner.EnqueueRebuild(ctx, project, previous, createdBy)
+}
+
+// Retry adds an Attempt to a failed Execution and returns the Execution as the
+// surfaces show it: origin metadata with the new Attempt selected.
+func (m *Module) Retry(ctx context.Context, project stores.Project, executionID int64, attempt int, createdBy *uuid.UUID) (stores.Execution, error) {
+	previous, err := m.attempt(ctx, project.ID, executionID, attempt)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	if _, err := m.runner.EnqueueRetry(ctx, project, previous, createdBy); err != nil {
+		switch {
+		case errors.Is(err, ci.ErrWorkspaceGone):
+			return stores.Execution{}, fmt.Errorf("%w: %s", app.ErrWorkspaceGone, err)
+		case errors.Is(err, ci.ErrNotRetryable):
+			return stores.Execution{}, fmt.Errorf("%w: %s", app.ErrNotRetryable, err)
+		}
+		return stores.Execution{}, err
+	}
+	view, err := m.Get(ctx, project.ID, executionID, 0)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	return view.Execution, nil
 }
 
 // Logs opens the whole log of an Attempt, setup included, as one stream.
@@ -95,4 +211,12 @@ func (m *Module) StepLog(execution stores.Execution, step string) (io.ReadCloser
 		return nil, app.ErrNotFound
 	}
 	return logs, err
+}
+
+func (m *Module) attempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (stores.Execution, error) {
+	execution, err := m.store.GetExecutionAttempt(ctx, projectID, executionID, attempt)
+	if errors.Is(err, stores.ErrNotFound) {
+		return stores.Execution{}, app.ErrNotFound
+	}
+	return execution, err
 }

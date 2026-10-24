@@ -5,11 +5,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
-	"uuid"
 
 	"github.com/Thiht/pici/internal/app/executions"
 	"github.com/Thiht/pici/internal/app/projects"
@@ -18,13 +14,11 @@ import (
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
-	"github.com/Thiht/pici/internal/workspace"
 )
 
 type ExecutionsHandler struct {
 	store           stores.Store
 	runner          *ci.Runner
-	workspace       *workspace.Workspace
 	maxSnapshotSize int64
 	projects        *projects.Module
 	executions      *executions.Module
@@ -33,7 +27,6 @@ type ExecutionsHandler struct {
 type ExecutionsDeps struct {
 	Store           stores.Store
 	Runner          *ci.Runner
-	Workspace       *workspace.Workspace
 	MaxSnapshotSize int64
 	Projects        *projects.Module
 	Executions      *executions.Module
@@ -43,7 +36,6 @@ func NewExecutionsHandler(d ExecutionsDeps) *ExecutionsHandler {
 	return &ExecutionsHandler{
 		store:           d.Store,
 		runner:          d.Runner,
-		workspace:       d.Workspace,
 		maxSnapshotSize: d.MaxSnapshotSize,
 		projects:        d.Projects,
 		executions:      d.Executions,
@@ -72,17 +64,10 @@ func (h *ExecutionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Workflow == "" {
-		render.Error(w, http.StatusBadRequest, errors.New("workflow is required"))
-		return
-	}
-	if req.Ref == "" {
-		req.Ref = project.DefaultBranch
-	}
 
-	execution, err := h.runner.Enqueue(r.Context(), project, req.Workflow, req.Ref, "", stores.TriggerManual, auth.UserID(r.Context()))
+	execution, err := h.executions.Create(r.Context(), project, req.Workflow, req.Ref, auth.UserID(r.Context()))
 	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
+		storeError(w, err)
 		return
 	}
 	render.JSON(w, http.StatusAccepted, execution)
@@ -99,16 +84,6 @@ func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	workflow := strings.TrimSpace(r.FormValue("workflow"))
-	if workflow == "" {
-		render.Error(w, http.StatusBadRequest, errors.New("workflow is required"))
-		return
-	}
-	ref := r.FormValue("ref")
-	if ref == "" {
-		ref = project.DefaultBranch
-	}
-
 	file, _, err := r.FormFile("snapshot")
 	if err != nil {
 		render.Error(w, http.StatusBadRequest, errors.New("snapshot file is required"))
@@ -116,40 +91,9 @@ func (h *ExecutionsHandler) createSnapshot(w http.ResponseWriter, r *http.Reques
 	}
 	defer file.Close()
 
-	snapshotID := uuid.New()
-	dir := h.workspace.UploadsDir(project.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	tmp := filepath.Join(dir, snapshotID.String()+".tar.gz.tmp")
-	dst := filepath.Join(dir, snapshotID.String()+".tar.gz")
-	out, err := os.Create(tmp)
+	execution, err := h.executions.CreateSnapshot(r.Context(), project, r.FormValue("workflow"), r.FormValue("ref"), r.FormValue("commit_sha"), file, auth.UserID(r.Context()))
 	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	if _, err := io.Copy(out, file); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	execution, err := h.runner.EnqueueSnapshot(r.Context(), project, workflow, ref, r.FormValue("commit_sha"), snapshotID, auth.UserID(r.Context()))
-	if err != nil {
-		_ = os.Remove(dst)
-		render.Error(w, http.StatusInternalServerError, err)
+		storeError(w, err)
 		return
 	}
 	render.JSON(w, http.StatusAccepted, execution)
@@ -166,20 +110,9 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
+	execution, err := h.executions.Rebuild(r.Context(), project, id, auth.UserID(r.Context()))
 	if err != nil {
 		storeError(w, err)
-		return
-	}
-
-	if previous.Source == stores.SourceSnapshot {
-		render.Error(w, http.StatusConflict, errors.New("snapshot executions cannot be rebuilt"))
-		return
-	}
-
-	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous, auth.UserID(r.Context()))
-	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 	render.JSON(w, http.StatusAccepted, execution)
@@ -201,29 +134,9 @@ func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	execution, err := h.executions.Retry(r.Context(), project, id, attempt, auth.UserID(r.Context()))
 	if err != nil {
 		storeError(w, err)
-		return
-	}
-
-	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
-	switch {
-	case errors.Is(err, ci.ErrWorkspaceGone):
-		render.Error(w, http.StatusGone, err)
-		return
-	case errors.Is(err, ci.ErrNotRetryable):
-		render.Error(w, http.StatusConflict, err)
-		return
-	case err != nil:
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	// Return the Execution as seen by the API: origin metadata plus the new
-	// latest attempt, not the raw attempt row that was just inserted.
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, previous.ExecutionID, 0)
-	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 	render.JSON(w, http.StatusAccepted, execution)
@@ -366,16 +279,10 @@ func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
-	if err != nil {
+	if err := h.executions.Cancel(r.Context(), project.ID, id); err != nil {
 		storeError(w, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), project.ID, execution.ID); err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-	h.runner.Cancel(project.ID, execution.ID)
 	render.JSON(w, http.StatusOK, map[string]string{"status": "canceling"})
 }
 

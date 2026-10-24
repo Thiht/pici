@@ -1,10 +1,11 @@
 package web
 
 import (
+	"errors"
 	"net/http"
-	"strings"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/app"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -14,12 +15,12 @@ type variablesPage struct {
 }
 
 func (h *Handler) GlobalVariables(w http.ResponseWriter, r *http.Request) {
-	variables, err := h.store.ListVariables(r.Context(), nil)
+	variables, err := h.variables.List(r.Context(), nil)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	data := variablesPage{base: h.base(w, r, "Variables", "variables"), Variables: maskVariables(variables)}
+	data := variablesPage{base: h.base(w, r, "Variables", "variables"), Variables: variables}
 	h.render(w, r, http.StatusOK, "variables_list", data)
 }
 
@@ -29,12 +30,12 @@ func (h *Handler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	variables, err := h.store.ListVariables(r.Context(), &project.ID)
+	variables, err := h.variables.List(r.Context(), &project.ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	global, err := h.store.ListVariables(r.Context(), nil)
+	global, err := h.variables.List(r.Context(), nil)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -46,8 +47,8 @@ func (h *Handler) ProjectVariables(w http.ResponseWriter, r *http.Request) {
 	data := projectVariablesPage{
 		base:            h.base(w, r, project.Name+" variables", "projects"),
 		Project:         project,
-		Variables:       maskVariables(variables),
-		GlobalVariables: maskVariables(global),
+		Variables:       variables,
+		GlobalVariables: global,
 		Overridden:      overridden,
 	}
 	h.render(w, r, http.StatusOK, "project_variables", data)
@@ -75,19 +76,18 @@ func (h *Handler) GlobalVariableSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setVariable(w http.ResponseWriter, r *http.Request, projectID *uuid.UUID, back string) {
-	key := strings.TrimSpace(r.FormValue("key"))
-	if key == "" {
-		setFlash(w, "error", "Key is required.")
-		redirect(w, r, back)
-		return
-	}
 	variable := stores.Variable{
 		ProjectID: projectID,
-		Key:       key,
+		Key:       r.FormValue("key"),
 		Value:     r.FormValue("value"),
 		Secret:    r.FormValue("secret") != "",
 	}
-	if err := h.store.SetVariable(r.Context(), variable); err != nil {
+	if _, err := h.variables.Set(r.Context(), variable); err != nil {
+		if errors.Is(err, app.ErrInvalid) {
+			setFlash(w, "error", "Key is required.")
+			redirect(w, r, back)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}
@@ -105,7 +105,7 @@ func (h *Handler) ProjectVariableDelete(w http.ResponseWriter, r *http.Request) 
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.store.DeleteVariable(r.Context(), &project.ID, r.PathValue("key")); err != nil {
+	if err := h.variables.Delete(r.Context(), &project.ID, r.PathValue("key")); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -118,7 +118,7 @@ func (h *Handler) GlobalVariableDelete(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	if err := h.store.DeleteVariable(r.Context(), nil, r.PathValue("key")); err != nil {
+	if err := h.variables.Delete(r.Context(), nil, r.PathValue("key")); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
