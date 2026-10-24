@@ -302,7 +302,10 @@
 
     {{if .Running}}
       <dl id="status-presentation" hidden>
-        {{range $status, $class := statusClasses}}<dd data-status="{{$status}}" data-class="{{$class}}" data-label="{{statusLabel $status}}"></dd>{{end}}
+        {{range $status, $class := statusClasses}}
+          <dd data-status="{{$status}}" data-class="{{$class}}" data-label="{{statusLabel $status}}">
+          </dd>
+        {{end}}
       </dl>
       <script>
     (() => {
