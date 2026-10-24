@@ -17,7 +17,7 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, secrets, cacheBinds []string, carryOver map[string]stores.StepResult, onUpdate func(stores.Steps)) (stores.Steps, bool, bool) {
+func (r *Runner) executeSteps(ctx context.Context, cfg Config, se stepExec, carryOver map[string]stores.StepResult, onUpdate func(stores.Steps)) (stores.Steps, bool, bool) {
 	steps := cfg.Steps
 	order, err := orderSteps(steps)
 	if err != nil {
@@ -109,7 +109,7 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 				running := slices.Clone(progress)
 				mu.Unlock()
 				notify(running)
-				res = r.runStep(ctx, step, baseEnv, image, repoDir, wfDir, projectID, execID, i, secrets, cacheBinds)
+				res = r.runStep(ctx, step, se, i)
 			}
 
 			mu.Lock()
@@ -169,8 +169,28 @@ func (r *Runner) executeSteps(ctx context.Context, cfg Config, baseEnv []string,
 	return out, failed, canceled
 }
 
-func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, projectID uuid.UUID, execID int64, index int, secrets, cacheBinds []string) stores.StepResult {
-	logPath := r.Workspace.StepLog(projectID, execID, index, step.Name)
+type stepRunner interface {
+	Run(ctx context.Context, opts docker.RunOptions) (int, error)
+}
+
+// stepExec is what every step of an execution shares: the engine its container
+// runs on, the image it runs, and the mounts and environment common to all
+// steps.
+type stepExec struct {
+	engine     stepRunner
+	image      string
+	repoDir    string
+	wfDir      string
+	binds      []string
+	env        []string
+	dockerHost string
+	secrets    []string
+	projectID  uuid.UUID
+	execID     int64
+}
+
+func (r *Runner) runStep(ctx context.Context, step Step, se stepExec, index int) stores.StepResult {
+	logPath := r.Workspace.StepLog(se.projectID, se.execID, index, step.Name)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}
@@ -178,7 +198,7 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 	if err != nil {
 		return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: err.Error(), FinishedAt: new(time.Now())}
 	}
-	mw := mask.NewWriter(file, secrets)
+	mw := mask.NewWriter(file, se.secrets)
 	defer func() {
 		_ = mw.Flush()
 		file.Close()
@@ -189,10 +209,10 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 		if attempt > 1 {
 			fmt.Fprintf(mw, "\nretrying (%d/%d)...\n", attempt, attempts)
 		}
-		res := r.runStepOnce(ctx, step, baseEnv, image, repoDir, wfDir, mw, secrets, cacheBinds)
+		res := r.runStepOnce(ctx, step, se, mw)
 		if res.Status == stores.StepStatusSuccess || attempt == attempts || ctx.Err() != nil {
 			if res.Status == stores.StepStatusSuccess {
-				r.collectArtifacts(projectID, execID, index, step.Artifacts, repoDir, mw)
+				r.collectArtifacts(se.projectID, se.execID, index, step.Artifacts, se.repoDir, mw)
 			}
 			return res
 		}
@@ -200,10 +220,10 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 	return stores.StepResult{Name: step.Name, Status: stores.StepStatusFailed, Error: "unreachable", FinishedAt: new(time.Now())}
 }
 
-func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, image, repoDir, wfDir string, logW *mask.Writer, secrets, cacheBinds []string) stores.StepResult {
+func (r *Runner) runStepOnce(ctx context.Context, step Step, se stepExec, logW *mask.Writer) stores.StepResult {
 	res := stores.StepResult{Name: step.Name, Status: stores.StepStatusRunning, StartedAt: new(time.Now())}
 
-	cmd, err := r.stepCommand(wfDir, step)
+	cmd, err := r.stepCommand(se.wfDir, step)
 	if err != nil {
 		fmt.Fprintf(logW, "command error: %v\n", err)
 		res.Status = stores.StepStatusFailed
@@ -212,16 +232,16 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 		return res
 	}
 
-	stepEnv := append([]string{}, baseEnv...)
-	if step.Docker {
-		stepEnv = append(stepEnv, "DOCKER_HOST="+r.Engine.Host())
+	stepEnv := append([]string{}, se.env...)
+	if se.dockerHost != "" {
+		stepEnv = append(stepEnv, "DOCKER_HOST="+se.dockerHost)
 	}
 	for k, v := range step.Env {
 		stepEnv = append(stepEnv, k+"="+v)
 	}
 	res.Env = make([]string, len(stepEnv))
 	for i, kv := range stepEnv {
-		res.Env[i] = mask.Redact(kv, secrets)
+		res.Env[i] = mask.Redact(kv, se.secrets)
 	}
 
 	timeout := time.Duration(step.Timeout)
@@ -230,18 +250,11 @@ func (r *Runner) runStepOnce(ctx context.Context, step Step, baseEnv []string, i
 	}
 	res.Timeout = timeout
 
-	binds := append([]string{repoDir + ":" + r.MountPath}, cacheBinds...)
-	if step.Docker {
-		if path, ok := strings.CutPrefix(r.Engine.Host(), "unix://"); ok {
-			binds = append(binds, path+":"+path)
-		}
-	}
-
-	code, err := r.Engine.Run(ctx, docker.RunOptions{
-		Image:      image,
+	code, err := se.engine.Run(ctx, docker.RunOptions{
+		Image:      se.image,
 		Command:    cmd,
 		Env:        stepEnv,
-		Binds:      binds,
+		Binds:      se.binds,
 		WorkingDir: r.MountPath,
 		Logs:       logW,
 		Timeout:    timeout,

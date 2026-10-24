@@ -11,13 +11,14 @@ import (
 
 type projectCachePage struct {
 	base
-	Project     stores.Project
-	Images      []cache.Image
-	Volumes     []cache.Volume
-	ImagesSize  int64
-	VolumesSize int64
-	TotalSize   int64
-	Unavailable bool
+	Project      stores.Project
+	Images       []cache.Image
+	Volumes      []cache.Volume
+	ImagesSize   int64
+	VolumesSize  int64
+	TotalSize    int64
+	RegistrySize int64
+	Unavailable  bool
 }
 
 func (h *Handler) ProjectCache(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,12 @@ func (h *Handler) ProjectCache(w http.ResponseWriter, r *http.Request) {
 	data.ImagesSize = summary.ImagesSize
 	data.VolumesSize = summary.VolumesSize
 	data.TotalSize = summary.TotalSize
+	registrySize, err := h.cache.RegistrySize(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	data.RegistrySize = registrySize
 	h.render(w, r, http.StatusOK, "project_cache", data)
 }
 
@@ -96,5 +103,29 @@ func (h *Handler) ProjectCacheVolumeDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	setFlash(w, "success", "Cache volume deleted.")
+	redirect(w, r, back)
+}
+
+func (h *Handler) ProjectCacheRegistryPurge(w http.ResponseWriter, r *http.Request) {
+	if !h.validCSRF(r) {
+		h.csrfError(w, r)
+		return
+	}
+	project, err := h.projects.Resolve(r.Context(), r.FormValue("project"))
+	if err != nil {
+		h.storeError(w, r, err)
+		return
+	}
+	back := "/projects/" + project.ID.String() + "/cache"
+	if err := h.cache.PurgeRegistry(r.Context()); err != nil {
+		if errors.Is(err, app.ErrUnavailable) {
+			setFlash(w, "error", "Docker is unavailable.")
+		} else {
+			setFlash(w, "error", "Could not purge the image cache: "+err.Error())
+		}
+		redirect(w, r, back)
+		return
+	}
+	setFlash(w, "success", "Image cache purged.")
 	redirect(w, r, back)
 }

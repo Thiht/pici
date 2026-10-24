@@ -2,6 +2,7 @@ package gc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,13 +14,22 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
+type Engine interface {
+	PruneImages(ctx context.Context) error
+	Sandboxes(ctx context.Context) ([]docker.SandboxRef, error)
+	RemoveSandbox(ctx context.Context, id string) error
+	RegistryUsage(ctx context.Context) (int64, error)
+	PurgeRegistry(ctx context.Context) error
+}
+
 type Collector struct {
-	Store        stores.Store
-	Engine       *docker.Engine
-	WorkspaceDir string
-	LogsDir      string
-	Keep         time.Duration
-	Interval     time.Duration
+	Store                stores.Store
+	Engine               Engine
+	WorkspaceDir         string
+	LogsDir              string
+	Keep                 time.Duration
+	Interval             time.Duration
+	RegistryCacheMaxSize int64
 }
 
 func (c *Collector) Run(ctx context.Context) {
@@ -29,6 +39,7 @@ func (c *Collector) Run(ctx context.Context) {
 	if c.Keep <= 0 {
 		c.Keep = 24 * time.Hour
 	}
+	c.tick(ctx)
 	ticker := time.NewTicker(c.Interval)
 	defer ticker.Stop()
 	for {
@@ -46,9 +57,58 @@ func (c *Collector) tick(ctx context.Context) {
 	c.cleanupLogs(ctx)
 	c.cleanupUploads()
 	if c.Engine != nil {
+		c.cleanupSandboxes(ctx)
+		c.cleanupRegistryCache(ctx)
 		if err := c.Engine.PruneImages(ctx); err != nil {
 			slog.WarnContext(ctx, "prune images", "error", err)
 		}
+	}
+}
+
+// cleanupSandboxes removes the sandboxes of executions that are no longer
+// running: terminal ones, and requeued ones whose attempt went back to pending
+// after a pici restart.
+func (c *Collector) cleanupSandboxes(ctx context.Context) {
+	sandboxes, err := c.Engine.Sandboxes(ctx)
+	if err != nil {
+		return
+	}
+	for _, sb := range sandboxes {
+		projectID, err := uuid.Parse(sb.ProjectID)
+		if err != nil {
+			continue
+		}
+		exec, err := c.Store.GetAttempt(ctx, projectID, sb.Attempt)
+		if errors.Is(err, stores.ErrNotFound) {
+			c.reapSandbox(ctx, sb, "execution no longer exists")
+			continue
+		}
+		if err != nil || exec.Status == stores.StatusRunning {
+			continue
+		}
+		c.reapSandbox(ctx, sb, "execution is "+string(exec.Status))
+	}
+}
+
+func (c *Collector) reapSandbox(ctx context.Context, sb docker.SandboxRef, reason string) {
+	slog.WarnContext(ctx, "removing orphaned sandbox", "id", sb.ID, "project", sb.ProjectID, "attempt", sb.Attempt, "reason", reason)
+	if err := c.Engine.RemoveSandbox(ctx, sb.ID); err != nil {
+		slog.WarnContext(ctx, "remove orphaned sandbox", "id", sb.ID, "error", err)
+	}
+}
+
+// cleanupRegistryCache purges the image cache once it grows past its cap.
+func (c *Collector) cleanupRegistryCache(ctx context.Context) {
+	if c.RegistryCacheMaxSize <= 0 {
+		return
+	}
+	usage, err := c.Engine.RegistryUsage(ctx)
+	if err != nil || usage <= c.RegistryCacheMaxSize {
+		return
+	}
+	slog.WarnContext(ctx, "purging image cache over its size cap", "size", usage, "max", c.RegistryCacheMaxSize)
+	if err := c.Engine.PurgeRegistry(ctx); err != nil {
+		slog.WarnContext(ctx, "purge image cache", "error", err)
 	}
 }
 

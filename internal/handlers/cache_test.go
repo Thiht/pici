@@ -71,3 +71,11 @@ func TestCacheDeleteUnavailableWithValidPrefix(t *testing.T) {
 		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestRegistryCacheUnavailableWithoutDocker(t *testing.T) {
+	s := newAuthedServer(t, "")
+	rr := doAuthedReq(t, s, http.MethodGet, "/api/cache/registry")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
+	}
+}

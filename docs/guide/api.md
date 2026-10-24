@@ -87,12 +87,16 @@ Docker resources tied to a project: workflow images built by pici and cross-run 
 | `GET`    | `/api/projects/{id}/cache`         | list images and cache volumes        |
 | `DELETE` | `/api/projects/{id}/cache/images`  | remove a built image (`?reference=`) |
 | `DELETE` | `/api/projects/{id}/cache/volumes` | remove a cache volume (`?name=`)     |
+| `GET`    | `/api/cache/registry`              | shared image cache size (bytes)      |
+| `DELETE` | `/api/cache/registry`              | purge the shared image cache         |
 
 ```sh
 pici-cli cache demo
 pici-cli cache rm-image demo pici/<project-id>-build
 pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 ```
+
+The shared image cache holds the workflow images pushed for docker steps and the images pulled from Docker Hub; unlike the project cache, it is not scoped to a project. The collector purges it once it exceeds `-registry-cache-max-size`.
 
 ## Streaming logs (SSE)
 

@@ -103,6 +103,23 @@
           {{end}}
         </div>
       </section>
+
+      <section class="mt-6" aria-labelledby="cache-registry-heading">
+        <div class="flex items-center justify-between gap-3">
+          <h2 id="cache-registry-heading" class="text-lg font-semibold">Shared image cache</h2>
+          <span class="text-sm opacity-70">{{size .RegistrySize}}</span>
+        </div>
+        <div class="card mt-3 border border-base-300">
+          <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+            <p class="text-sm opacity-70">Workflow images and images pulled from Docker Hub by docker steps, shared by every project. Purging drops both; the next runs rebuild and pull them again.</p>
+            <form method="post" action="/cache/registry/purge">
+              <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+              <input type="hidden" name="project" value="{{.Project.ID}}">
+              <button class="btn btn-outline btn-sm" type="submit">Purge</button>
+            </form>
+          </div>
+        </div>
+      </section>
     {{end}}
   </main>
   {{template "foot" .}}

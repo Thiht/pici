@@ -18,6 +18,8 @@ type Engine interface {
 	Volumes(ctx context.Context, namePrefix string) ([]docker.Volume, error)
 	RemoveImage(ctx context.Context, reference string) error
 	RemoveVolume(ctx context.Context, name string) error
+	RegistryUsage(ctx context.Context) (int64, error)
+	PurgeRegistry(ctx context.Context) error
 }
 
 type Image struct {
@@ -106,6 +108,22 @@ func (m *Module) RemoveImage(ctx context.Context, project stores.Project, refere
 		return app.ErrUnavailable
 	}
 	return m.engine.RemoveImage(ctx, reference)
+}
+
+// RegistrySize is the on-disk size of the shared Docker Hub image cache.
+func (m *Module) RegistrySize(ctx context.Context) (int64, error) {
+	if m.engine == nil {
+		return 0, app.ErrUnavailable
+	}
+	return m.engine.RegistryUsage(ctx)
+}
+
+// PurgeRegistry empties the shared Docker Hub image cache.
+func (m *Module) PurgeRegistry(ctx context.Context) error {
+	if m.engine == nil {
+		return app.ErrUnavailable
+	}
+	return m.engine.PurgeRegistry(ctx)
 }
 
 func (m *Module) RemoveVolume(ctx context.Context, project stores.Project, name string) error {

@@ -9,6 +9,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -95,5 +96,77 @@ func TestCleanupWorkspacesRetainsReferenced(t *testing.T) {
 	c.cleanupWorkspaces(ctx)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("workspace should be removed once all references are expired")
+	}
+}
+
+type fakeEngine struct {
+	sandboxes []docker.SandboxRef
+	removed   []string
+	usage     int64
+	purged    bool
+}
+
+func (f *fakeEngine) PruneImages(context.Context) error { return nil }
+
+func (f *fakeEngine) Sandboxes(context.Context) ([]docker.SandboxRef, error) { return f.sandboxes, nil }
+
+func (f *fakeEngine) RemoveSandbox(_ context.Context, id string) error {
+	f.removed = append(f.removed, id)
+	return nil
+}
+
+func (f *fakeEngine) RegistryUsage(context.Context) (int64, error) { return f.usage, nil }
+
+func (f *fakeEngine) PurgeRegistry(context.Context) error {
+	f.purged = true
+	return nil
+}
+
+func TestCleanupSandboxesReapsNonRunningAttempts(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
+	if _, err := store.CreateProject(ctx, stores.Project{ID: projectID, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses := []stores.Status{stores.StatusRunning, stores.StatusSuccess, stores.StatusPending, stores.StatusCanceled}
+	sandboxes := make([]docker.SandboxRef, 0, len(statuses)+1)
+	for _, status := range statuses {
+		exec := stores.Execution{ProjectID: projectID, Workflow: "build", Status: status, CreatedAt: time.Now()}
+		if err := store.CreateExecution(ctx, &exec); err != nil {
+			t.Fatal(err)
+		}
+		sandboxes = append(sandboxes, docker.SandboxRef{ID: "sandbox-" + string(status), ProjectID: projectID.String(), Attempt: exec.ID})
+	}
+	sandboxes = append(sandboxes, docker.SandboxRef{ID: "sandbox-gone", ProjectID: projectID.String(), Attempt: 9999})
+
+	engine := &fakeEngine{sandboxes: sandboxes}
+	c := &Collector{Store: store, Engine: engine}
+	c.cleanupSandboxes(ctx)
+
+	if len(engine.removed) != 4 {
+		t.Fatalf("expected four sandboxes removed, got %v", engine.removed)
+	}
+	for _, id := range engine.removed {
+		if id == "sandbox-running" {
+			t.Fatal("a running attempt's sandbox must be kept")
+		}
+	}
+}
+
+func TestCleanupRegistryCachePurgesOverCap(t *testing.T) {
+	engine := &fakeEngine{usage: 2048}
+	c := &Collector{Engine: engine, RegistryCacheMaxSize: 1024}
+	c.cleanupRegistryCache(context.Background())
+	if !engine.purged {
+		t.Fatal("expected the image cache to be purged over its cap")
+	}
+
+	engine = &fakeEngine{usage: 512}
+	c = &Collector{Engine: engine, RegistryCacheMaxSize: 1024}
+	c.cleanupRegistryCache(context.Background())
+	if engine.purged {
+		t.Fatal("expected the image cache to be kept under its cap")
 	}
 }

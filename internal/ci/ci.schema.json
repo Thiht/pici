@@ -153,7 +153,7 @@
         },
         "docker": {
           "type": "boolean",
-          "description": "Give the step access to the Docker daemon pici uses (sets `DOCKER_HOST`, mounts the socket when applicable). Defaults to false."
+          "description": "Declare that the workflow needs Docker. The whole workflow then runs in a throwaway sandbox daemon, removed when the execution ends. Defaults to false."
         }
       }
     },

@@ -82,7 +82,7 @@ steps:
 - `retry` is the number of additional attempts after the first failure.
 - `depends_on` controls ordering. Independent steps run **in parallel**; a failed step skips its dependents.
 - `artifacts` collects matching files after a successful step; each file is hashed with SHA-256. Download them via the [API](/guide/api#artifacts).
-- `docker: true` gives the step access to the Docker daemon pici uses: it sets `DOCKER_HOST` and, for a Unix socket, bind-mounts it into the step. Images built by a step are visible to the other steps of the run. With a `tcp://` daemon, the step must reach it over the network.
+- `docker: true` declares that the workflow needs Docker. pici then runs the **whole workflow** in a throwaway sandbox: a dedicated `docker:dind` daemon started for the execution, with every step running inside it and `DOCKER_HOST` pointing at it. Containers, networks, volumes, images built by steps and their build cache are destroyed with the sandbox at the end of the execution, so only caches and artifacts survive a run. A service started by a step stays reachable by the following steps of the same execution on the sandbox bridge, but not by later executions. The workflow image is built on pici's daemon, pushed to pici's local registry and pulled by the sandbox; Docker Hub images come from a pull-through cache.
 
 ## Triggers
 

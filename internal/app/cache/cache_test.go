@@ -14,9 +14,11 @@ import (
 )
 
 type fakeEngine struct {
-	images  []docker.Image
-	volumes []docker.Volume
-	removed []string
+	images       []docker.Image
+	volumes      []docker.Volume
+	removed      []string
+	registrySize int64
+	purged       bool
 }
 
 func (f *fakeEngine) Images(context.Context, string) ([]docker.Image, error) { return f.images, nil }
@@ -38,6 +40,13 @@ func (f *fakeEngine) RemoveImage(_ context.Context, reference string) error {
 
 func (f *fakeEngine) RemoveVolume(_ context.Context, name string) error {
 	f.removed = append(f.removed, name)
+	return nil
+}
+
+func (f *fakeEngine) RegistryUsage(context.Context) (int64, error) { return f.registrySize, nil }
+
+func (f *fakeEngine) PurgeRegistry(context.Context) error {
+	f.purged = true
 	return nil
 }
 
@@ -116,5 +125,27 @@ func TestRemoveForeignResource(t *testing.T) {
 	}
 	if err := module.RemoveVolume(ctx, project(), "pici-cache-other-node_modules"); !errors.Is(err, app.ErrInvalid) {
 		t.Fatalf("expected ErrInvalid for a foreign volume, got %v", err)
+	}
+}
+
+func TestRegistry(t *testing.T) {
+	ctx := context.Background()
+	engine := &fakeEngine{registrySize: 4096}
+	m := New(engine)
+
+	size, err := m.RegistrySize(ctx)
+	if err != nil || size != 4096 {
+		t.Fatalf("RegistrySize = %d, %v", size, err)
+	}
+	if err := m.PurgeRegistry(ctx); err != nil || !engine.purged {
+		t.Fatalf("PurgeRegistry: purged=%v, err=%v", engine.purged, err)
+	}
+
+	unavailable := New(nil)
+	if _, err := unavailable.RegistrySize(ctx); !errors.Is(err, app.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable, got %v", err)
+	}
+	if err := unavailable.PurgeRegistry(ctx); !errors.Is(err, app.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable, got %v", err)
 	}
 }

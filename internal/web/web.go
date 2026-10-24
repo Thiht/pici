@@ -151,6 +151,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /projects/{id}/cache", h.ProjectCache)
 	mux.HandleFunc("POST /projects/{id}/cache/images/delete", h.ProjectCacheImageDelete)
 	mux.HandleFunc("POST /projects/{id}/cache/volumes/delete", h.ProjectCacheVolumeDelete)
+	mux.HandleFunc("POST /cache/registry/purge", h.ProjectCacheRegistryPurge)
 
 	mux.HandleFunc("GET /projects/{id}/variables", h.ProjectVariables)
 	mux.HandleFunc("POST /projects/{id}/variables", h.ProjectVariableSet)

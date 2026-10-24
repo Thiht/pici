@@ -15,6 +15,7 @@ import (
 	"github.com/peterbourgon/ff/v3"
 
 	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/docker"
 )
 
 const oidcScope = "openid"
@@ -31,30 +32,33 @@ type Config struct {
 	ConfigFile      string
 	LogFormat       string
 
-	SecretKey          string
-	PublicBaseURL      string
-	AuthProvider       string
-	GitHubClientID     string
-	GitHubClientSecret string
-	GitHubTeams        []string
-	GitHubUsers        []string
-	GitLabURL          string
-	GitLabClientID     string
-	GitLabClientSecret string
-	GitLabGroups       []string
-	GitLabUsers        []string
-	OIDCIssuer         string
-	OIDCClientID       string
-	OIDCClientSecret   string
-	OIDCGroups         []string
-	OIDCUsers          []string
-	OIDCScopes         []string
-	OIDCDisplayName    string
-	SessionTTL         time.Duration
-	GCInterval         time.Duration
-	GCKeepDuration     time.Duration
-	SchedulerInterval  time.Duration
-	ShutdownTimeout    time.Duration
+	SecretKey            string
+	PublicBaseURL        string
+	AuthProvider         string
+	GitHubClientID       string
+	GitHubClientSecret   string
+	GitHubTeams          []string
+	GitHubUsers          []string
+	GitLabURL            string
+	GitLabClientID       string
+	GitLabClientSecret   string
+	GitLabGroups         []string
+	GitLabUsers          []string
+	OIDCIssuer           string
+	OIDCClientID         string
+	OIDCClientSecret     string
+	OIDCGroups           []string
+	OIDCUsers            []string
+	OIDCScopes           []string
+	OIDCDisplayName      string
+	SessionTTL           time.Duration
+	GCInterval           time.Duration
+	GCKeepDuration       time.Duration
+	SchedulerInterval    time.Duration
+	ShutdownTimeout      time.Duration
+	SandboxImage         string
+	SandboxAddr          string
+	RegistryCacheMaxSize int64
 }
 
 func Load(args []string) (Config, error) {
@@ -98,6 +102,9 @@ func Load(args []string) (Config, error) {
 	fs.DurationVar(&cfg.GCKeepDuration, "gc-keep", 24*time.Hour, "how long to keep finished workspaces and logs")
 	fs.DurationVar(&cfg.SchedulerInterval, "scheduler-interval", time.Minute, "scheduled build polling interval")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "grace period for in-flight steps on shutdown")
+	fs.StringVar(&cfg.SandboxImage, "sandbox-image", docker.DefaultSandboxImage, "image of the throwaway Docker daemon used by docker steps")
+	fs.StringVar(&cfg.SandboxAddr, "sandbox-addr", "", "host pici dials to reach sandbox daemons (derived from DOCKER_HOST by default)")
+	fs.Int64Var(&cfg.RegistryCacheMaxSize, "registry-cache-max-size", 10<<30, "maximum size in bytes of the shared image cache before it is purged")
 
 	if err := ff.Parse(fs, args,
 		ff.WithEnvVarPrefix("PICI"),
