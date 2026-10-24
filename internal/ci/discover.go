@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -15,7 +16,7 @@ func projectCloneConfig(p stores.Project, dir, ref string) git.CloneConfig {
 		URL:  p.RepoURL,
 		Dir:  dir,
 		Ref:  ref,
-		Auth: git.Auth{Type: p.AuthType.String(), User: p.AuthUser, Secret: p.AuthSecret},
+		Auth: projects.Auth(p),
 	}
 }
 

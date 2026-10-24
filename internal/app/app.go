@@ -4,7 +4,10 @@
 // store or the runner spells its own errors.
 package app
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// ErrNotFound means the requested Project, Execution, Step or Artifact
@@ -26,3 +29,18 @@ var (
 	// engine, is not reachable.
 	ErrUnavailable = errors.New("unavailable")
 )
+
+// InvalidError is rejected input with a message a surface can show as is. It
+// matches errors.Is(err, ErrInvalid).
+type InvalidError struct {
+	Message string
+}
+
+func (e InvalidError) Error() string { return e.Message }
+
+func (e InvalidError) Is(target error) bool { return target == ErrInvalid }
+
+// Invalidf reports rejected input with a message written for a human.
+func Invalidf(format string, args ...any) error {
+	return InvalidError{Message: fmt.Sprintf(format, args...)}
+}

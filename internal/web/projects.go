@@ -1,14 +1,15 @@
 package web
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
-	"time"
-	"uuid"
 
+	"github.com/Thiht/pici/internal/app"
+	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
@@ -107,7 +108,7 @@ type projectVariablesPage struct {
 }
 
 func (h *Handler) ProjectsList(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.store.ListProjects(r.Context())
+	projects, err := h.projects.List(r.Context())
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -126,17 +127,15 @@ func (h *Handler) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 		h.csrfError(w, r)
 		return
 	}
-	project, errMsg := projectFromForm(r, stores.Project{})
-	if errMsg != "" {
-		fields := h.fieldsFromProject(project)
-		fields.Secret = project.AuthSecret
-		data := projectFormPage{base: h.base(w, r, "New project", "projects"), Project: project, Fields: fields, Error: errMsg}
+	draft := projectFromForm(r, stores.Project{})
+	created, err := h.projects.Create(r.Context(), draft)
+	if errors.Is(err, app.ErrInvalid) {
+		fields := h.fieldsFromProject(draft)
+		fields.Secret = draft.AuthSecret
+		data := projectFormPage{base: h.base(w, r, "New project", "projects"), Project: draft, Fields: fields, Error: err.Error()}
 		h.render(w, r, http.StatusBadRequest, "project_form", data)
 		return
 	}
-	project.ID = uuid.New()
-	project.CreatedAt = time.Now()
-	created, err := h.store.CreateProject(r.Context(), project)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -220,16 +219,15 @@ func (h *Handler) ProjectUpdate(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	updated, errMsg := projectFromForm(r, project)
-	if errMsg != "" {
-		fields := h.fieldsFromProject(updated)
-		fields.Secret = updated.AuthSecret
-		data := projectFormPage{base: h.base(w, r, "Edit "+project.Name, "projects"), Project: updated, Fields: fields, Editing: true, Error: errMsg}
-		h.render(w, r, http.StatusBadRequest, "project_form", data)
-		return
-	}
-	updated.UpdatedAt = time.Now()
-	if _, err := h.store.UpdateProject(r.Context(), updated); err != nil {
+	draft := projectFromForm(r, project)
+	if _, err := h.projects.Update(r.Context(), draft); err != nil {
+		if errors.Is(err, app.ErrInvalid) {
+			fields := h.fieldsFromProject(draft)
+			fields.Secret = draft.AuthSecret
+			data := projectFormPage{base: h.base(w, r, "Edit "+project.Name, "projects"), Project: draft, Fields: fields, Editing: true, Error: err.Error()}
+			h.render(w, r, http.StatusBadRequest, "project_form", data)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}
@@ -247,7 +245,7 @@ func (h *Handler) ProjectDelete(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.store.DeleteProject(r.Context(), project.ID); err != nil {
+	if err := h.projects.Delete(r.Context(), project.ID); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -282,11 +280,7 @@ func (h *Handler) ProjectRefs(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	refs, err := git.ListRefs(r.Context(), project.RepoURL, git.Auth{
-		Type:   project.AuthType.String(),
-		User:   project.AuthUser,
-		Secret: project.AuthSecret,
-	})
+	refs, err := git.ListRefs(r.Context(), project.RepoURL, projects.Auth(project))
 	h.render(w, r, http.StatusOK, "refs", struct {
 		ProjectID string
 		Branches  []string
@@ -308,30 +302,27 @@ func (h *Handler) ProjectDetect(w http.ResponseWriter, r *http.Request) {
 		AuthUser:      strings.TrimSpace(r.FormValue("auth_user")),
 		Secret:        r.FormValue("auth_secret"),
 	}
-	if fields.RepoURL != "" {
-		fields.Provider = inferProvider(fields.RepoURL)
-	}
-	fields.WebhookPayloadURL = h.webhookPayloadURL(fields.Provider, strings.TrimSpace(r.FormValue("name")))
-	fields.WebhookSetupURL = webhookSetupURL(fields.Provider, fields.RepoURL)
-	if fields.AuthUser == "" || fields.AuthUser == "oauth2" || fields.AuthUser == "git" {
-		fields.AuthUser = defaultAuthUser(fields.AuthType)
-	}
-	if fields.DefaultBranch == "" && fields.RepoURL != "" {
-		refs, err := git.ListRefs(r.Context(), fields.RepoURL, git.Auth{
-			Type:   fields.AuthType.String(),
-			User:   fields.AuthUser,
-			Secret: fields.Secret,
-		})
-		if err == nil {
-			fields.DefaultBranch = refs.Head
-		}
-	}
+	detected := h.projects.Detect(r.Context(), stores.Project{
+		Name:          strings.TrimSpace(r.FormValue("name")),
+		RepoURL:       fields.RepoURL,
+		Provider:      fields.Provider,
+		AuthType:      fields.AuthType,
+		AuthUser:      fields.AuthUser,
+		AuthSecret:    fields.Secret,
+		DefaultBranch: fields.DefaultBranch,
+	})
+	fields.Provider = detected.Provider
+	fields.AuthUser = detected.AuthUser
+	fields.DefaultBranch = detected.DefaultBranch
+	fields.WebhookPayloadURL = h.webhookPayloadURL(detected.Provider, detected.Name)
+	fields.WebhookSetupURL = webhookSetupURL(detected.Provider, detected.RepoURL)
 	h.render(w, r, http.StatusOK, "project_detect", fields)
 }
 
-// projectFromForm applies the submitted fields on top of a base project and
-// validates them, returning a human-readable message on failure.
-func projectFromForm(r *http.Request, p stores.Project) (stores.Project, string) {
+// projectFromForm applies the submitted fields on top of a base project. It
+// only reads the form: deriving and validating the identity is the Project
+// module's job.
+func projectFromForm(r *http.Request, p stores.Project) stores.Project {
 	p.Name = strings.TrimSpace(r.FormValue("name"))
 	p.RepoURL = strings.TrimSpace(r.FormValue("repo_url"))
 	p.Provider = stores.Provider(r.FormValue("provider"))
@@ -352,39 +343,5 @@ func projectFromForm(r *http.Request, p stores.Project) (stores.Project, string)
 		p.WebhookSecret = secret
 	}
 
-	if p.Name == "" {
-		return p, "Name is required."
-	}
-	if p.RepoURL == "" {
-		return p, "Repository URL is required."
-	}
-	if p.Provider == "" || !p.Provider.IsValid() {
-		p.Provider = inferProvider(p.RepoURL)
-	}
-	if p.AuthType == "" || !p.AuthType.IsValid() {
-		p.AuthType = stores.AuthTypeNone
-	}
-	return p, ""
-}
-
-func inferProvider(repoURL string) stores.Provider {
-	switch {
-	case strings.Contains(repoURL, "github.com"):
-		return stores.ProviderGithub
-	case strings.Contains(repoURL, "gitlab"):
-		return stores.ProviderGitlab
-	default:
-		return stores.ProviderGeneric
-	}
-}
-
-func defaultAuthUser(authType stores.AuthType) string {
-	switch authType {
-	case stores.AuthTypeToken:
-		return "oauth2"
-	case stores.AuthTypeSsh:
-		return "git"
-	default:
-		return ""
-	}
+	return p
 }

@@ -112,10 +112,11 @@ func TestProjectsListEmpty(t *testing.T) {
 func TestProjectCreateAndShow(t *testing.T) {
 	srv, client := newTestServer(t, "")
 	resp := postForm(t, client, srv.URL+"/projects", url.Values{
-		"name":      {"demo"},
-		"repo_url":  {"https://github.com/acme/demo.git"},
-		"provider":  {"github"},
-		"auth_type": {"none"},
+		"name":           {"demo"},
+		"repo_url":       {"https://github.com/acme/demo.git"},
+		"provider":       {"github"},
+		"auth_type":      {"none"},
+		"default_branch": {"main"},
 	})
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", resp.StatusCode, body(t, resp))
@@ -169,10 +170,11 @@ func TestGlobalVariableSetAndDelete(t *testing.T) {
 func TestProjectVariablesShowInheritedGlobals(t *testing.T) {
 	srv, client := newTestServer(t, "")
 	created := postForm(t, client, srv.URL+"/projects", url.Values{
-		"name":      {"demo"},
-		"repo_url":  {"https://github.com/acme/demo.git"},
-		"provider":  {"github"},
-		"auth_type": {"none"},
+		"name":           {"demo"},
+		"repo_url":       {"https://github.com/acme/demo.git"},
+		"provider":       {"github"},
+		"auth_type":      {"none"},
+		"default_branch": {"main"},
 	})
 	if created.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", created.StatusCode, body(t, created))
@@ -827,7 +829,7 @@ func TestCSRFRequiredForMutations(t *testing.T) {
 	}
 
 	valid := postForm(t, env.client, env.srv.URL+"/projects", url.Values{
-		"name": {"demo"}, "repo_url": {"https://x/y.git"},
+		"name": {"demo"}, "repo_url": {"https://x/y.git"}, "default_branch": {"main"},
 	})
 	defer valid.Body.Close()
 	if valid.StatusCode != http.StatusSeeOther {
@@ -1067,18 +1069,6 @@ func TestProjectDetect(t *testing.T) {
 	}
 }
 
-func TestDefaultAuthUser(t *testing.T) {
-	if got := defaultAuthUser(stores.AuthTypeToken); got != "oauth2" {
-		t.Errorf("token auth user = %q", got)
-	}
-	if got := defaultAuthUser(stores.AuthTypeSsh); got != "git" {
-		t.Errorf("ssh auth user = %q", got)
-	}
-	if got := defaultAuthUser(stores.AuthTypeNone); got != "" {
-		t.Errorf("none auth user = %q", got)
-	}
-}
-
 func TestWebhookSetupURL(t *testing.T) {
 	cases := []struct {
 		provider stores.Provider
@@ -1171,7 +1161,7 @@ func TestProjectCreateWithKeyFile(t *testing.T) {
 	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	for k, v := range map[string]string{"_csrf": env.session.CSRFToken, "name": "demo", "repo_url": "https://example.com/x/y.git", "auth_type": "ssh"} {
+	for k, v := range map[string]string{"_csrf": env.session.CSRFToken, "name": "demo", "repo_url": "https://example.com/x/y.git", "auth_type": "ssh", "default_branch": "main"} {
 		if err := mw.WriteField(k, v); err != nil {
 			t.Fatal(err)
 		}
@@ -1270,10 +1260,11 @@ func TestProjectShowExecutionShowsShortCommit(t *testing.T) {
 func createProject(t *testing.T, client *http.Client, baseURL string) string {
 	t.Helper()
 	resp := postForm(t, client, baseURL+"/projects", url.Values{
-		"name":      {"demo"},
-		"repo_url":  {"https://github.com/acme/demo.git"},
-		"provider":  {"github"},
-		"auth_type": {"none"},
+		"name":           {"demo"},
+		"repo_url":       {"https://github.com/acme/demo.git"},
+		"provider":       {"github"},
+		"auth_type":      {"none"},
+		"default_branch": {"main"},
 	})
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("create project: expected 303, got %d", resp.StatusCode)
@@ -1341,7 +1332,7 @@ func TestProjectCacheDeleteRejectsForeignResource(t *testing.T) {
 func TestProjectCacheDeleteRequiresCSRF(t *testing.T) {
 	env := newTestEnv(t)
 	created := postForm(t, env.client, env.srv.URL+"/projects", url.Values{
-		"name": {"demo"}, "repo_url": {"https://github.com/acme/demo.git"}, "auth_type": {"none"},
+		"name": {"demo"}, "repo_url": {"https://github.com/acme/demo.git"}, "auth_type": {"none"}, "default_branch": {"main"},
 	})
 	id := strings.TrimPrefix(created.Header.Get("Location"), "/projects/")
 

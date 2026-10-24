@@ -1,16 +1,10 @@
 package handlers
 
 import (
-	"context"
-	"errors"
 	"net/http"
-	"strings"
-	"time"
-	"uuid"
 
 	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
-	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
@@ -44,38 +38,7 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Name == "" {
-		render.Error(w, http.StatusBadRequest, errors.New("name is required"))
-		return
-	}
-	if req.RepoURL == "" {
-		render.Error(w, http.StatusBadRequest, errors.New("repo_url is required"))
-		return
-	}
-	if req.Provider == "" {
-		switch {
-		case strings.Contains(req.RepoURL, "github.com"):
-			req.Provider = stores.ProviderGithub
-		case strings.Contains(req.RepoURL, "gitlab"):
-			req.Provider = stores.ProviderGitlab
-		default:
-			req.Provider = stores.ProviderGeneric
-		}
-	}
-	if req.AuthType == "" {
-		if req.AuthSecret != "" {
-			req.AuthType = stores.AuthTypeToken
-		} else {
-			req.AuthType = stores.AuthTypeNone
-		}
-	}
-	if req.DefaultBranch == "" {
-		req.DefaultBranch = detectDefaultBranch(r.Context(), req.RepoURL, req.AuthType, req.AuthUser, req.AuthSecret)
-	}
-
-	now := time.Now()
-	project, err := h.store.CreateProject(r.Context(), stores.Project{
-		ID:            uuid.New(),
+	project, err := h.projects.Create(r.Context(), stores.Project{
 		Name:          req.Name,
 		RepoURL:       req.RepoURL,
 		Provider:      req.Provider,
@@ -84,18 +47,16 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AuthSecret:    req.AuthSecret,
 		WebhookSecret: req.WebhookSecret,
 		DefaultBranch: req.DefaultBranch,
-		CreatedAt:     now,
-		UpdatedAt:     now,
 	})
 	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
+		storeError(w, err)
 		return
 	}
 	render.JSON(w, http.StatusCreated, project)
 }
 
 func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.store.ListProjects(r.Context())
+	projects, err := h.projects.List(r.Context())
 	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
@@ -148,14 +109,9 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultBranch != "" {
 		project.DefaultBranch = req.DefaultBranch
 	}
-	if project.DefaultBranch == "" {
-		project.DefaultBranch = detectDefaultBranch(r.Context(), project.RepoURL, project.AuthType, project.AuthUser, project.AuthSecret)
-	}
-	project.UpdatedAt = time.Now()
-
-	updated, err := h.store.UpdateProject(r.Context(), project)
+	updated, err := h.projects.Update(r.Context(), project)
 	if err != nil {
-		render.Error(w, http.StatusInternalServerError, err)
+		storeError(w, err)
 		return
 	}
 	render.JSON(w, http.StatusOK, updated)
@@ -167,23 +123,11 @@ func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	if err := h.store.DeleteProject(r.Context(), project.ID); err != nil {
+	if err := h.projects.Delete(r.Context(), project.ID); err != nil {
 		storeError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func detectDefaultBranch(ctx context.Context, repoURL string, authType stores.AuthType, authUser, authSecret string) string {
-	refs, err := git.ListRefs(ctx, repoURL, git.Auth{
-		Type:   authType.String(),
-		User:   authUser,
-		Secret: authSecret,
-	})
-	if err != nil {
-		return ""
-	}
-	return refs.Head
 }
 
 func (h *ProjectsHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {

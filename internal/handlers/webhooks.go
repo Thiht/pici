@@ -17,7 +17,6 @@ import (
 
 	"github.com/Thiht/pici/internal/app/projects"
 	"github.com/Thiht/pici/internal/ci"
-	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/handlers/render"
@@ -148,16 +147,7 @@ func (h *WebhooksHandler) trigger(ctx context.Context, w http.ResponseWriter, pr
 		cloneRef = sha
 	}
 
-	defaultBranch := project.DefaultBranch
-	if defaultBranch == "" {
-		if refs, err := git.ListRefs(ctx, project.RepoURL, git.Auth{
-			Type:   project.AuthType.String(),
-			User:   project.AuthUser,
-			Secret: project.AuthSecret,
-		}); err == nil {
-			defaultBranch = refs.Head
-		}
-	}
+	defaultBranch := h.projects.Detect(ctx, project).DefaultBranch
 
 	workflows, err := ci.DiscoverProjectWorkflows(ctx, project, dir, cloneRef)
 	if err != nil {
