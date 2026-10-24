@@ -123,7 +123,7 @@
                     {{end}}
                     {{with .FinishedAt}}data-finished="{{.UnixMilli}}"
                     {{end}}
-                    data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}{{if .TimeoutExceeded}} / {{.Timeout}}{{end}}</span>
+                    data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}{{if .TimeoutExceeded}} / {{formatDuration .Timeout}}{{end}}</span>
               <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
             </span>
           </summary>
@@ -222,8 +222,8 @@
         const hours = Math.floor(total / 3600);
         const minutes = Math.floor((total % 3600) / 60);
         const seconds = total % 60;
-        if (hours) return hours + "h" + minutes + "m" + seconds + "s";
-        if (minutes) return minutes + "m" + seconds + "s";
+        if (hours) return hours + "h" + (minutes || seconds ? minutes + "m" : "") + (seconds ? seconds + "s" : "");
+        if (minutes) return minutes + "m" + (seconds ? seconds + "s" : "");
         return seconds + "s";
       };
       const updateTimes = () => {

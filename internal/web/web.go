@@ -32,17 +32,18 @@ var staticFS embed.FS
 const flashCookie = "pici_flash"
 
 var funcs = template.FuncMap{
-	"statusClass":   statusClass,
-	"formatTime":    formatTime,
-	"formatTimePtr": formatTimePtr,
-	"duration":      duration,
-	"since":         since,
-	"size":          humanSize,
-	"joined":        strings.Join,
-	"ansi":          ansiToHTML,
-	"capitalize":    capitalize,
-	"splitEnv":      splitEnv,
-	"shortSHA":      shortSHA,
+	"statusClass":    statusClass,
+	"formatTime":     formatTime,
+	"formatTimePtr":  formatTimePtr,
+	"duration":       duration,
+	"formatDuration": formatDuration,
+	"since":          since,
+	"size":           humanSize,
+	"joined":         strings.Join,
+	"ansi":           ansiToHTML,
+	"capitalize":     capitalize,
+	"splitEnv":       splitEnv,
+	"shortSHA":       shortSHA,
 }
 
 var templates = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
@@ -284,7 +285,20 @@ func duration(start, end any) string {
 		}
 		e = *p
 	}
-	return e.Sub(s).Round(time.Second).String()
+	return formatDuration(e.Sub(s).Round(time.Second))
+}
+
+// formatDuration renders a duration without trailing zero units, so 15m0s
+// reads as 15m.
+func formatDuration(d time.Duration) string {
+	s := d.String()
+	if d >= time.Minute && strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+		if strings.HasSuffix(s, "h0m") {
+			s = strings.TrimSuffix(s, "0m")
+		}
+	}
+	return s
 }
 
 func since(t *time.Time) string {

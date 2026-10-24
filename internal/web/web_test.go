@@ -236,6 +236,23 @@ func TestExecutionTemplateHidesZeroExitCode(t *testing.T) {
 	}
 }
 
+func TestFormatDuration(t *testing.T) {
+	cases := map[time.Duration]string{
+		0:                          "0s",
+		10 * time.Second:           "10s",
+		90 * time.Second:           "1m30s",
+		15 * time.Minute:           "15m",
+		time.Hour:                  "1h",
+		90 * time.Minute:           "1h30m",
+		time.Hour + 30*time.Second: "1h0m30s",
+	}
+	for d, want := range cases {
+		if got := formatDuration(d); got != want {
+			t.Errorf("formatDuration(%s) = %q, want %q", d, got, want)
+		}
+	}
+}
+
 func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	started := time.Now()
 	setupFinished := started.Add(10 * time.Second)
@@ -304,10 +321,10 @@ func TestExecutionTemplateFailedStepShowsExceededTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "6m0s / 5m0s") {
+	if !strings.Contains(out, "6m / 5m") {
 		t.Fatalf("expected the failed step to show its timeout, got:\n%s", out)
 	}
-	if n := strings.Count(out, "/ 5m0s"); n != 1 {
+	if n := strings.Count(out, "/ 5m"); n != 1 {
 		t.Fatalf("expected the timeout on the failed step only, got %d occurrences:\n%s", n, out)
 	}
 }
