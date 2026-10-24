@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -16,30 +15,37 @@ import (
 // GitLabProvider implements Provider for gitlab.com and self-hosted GitLab
 // instances.
 type GitLabProvider struct {
-	config *oauth2.Config
+	flow   *flow
 	apiURL string
-	client *http.Client
 }
 
 // NewGitLabProvider builds a provider for the given GitLab base URL.
 func NewGitLabProvider(baseURL, clientID, clientSecret, redirectURL string) *GitLabProvider {
 	base := strings.TrimRight(baseURL, "/")
 	return &GitLabProvider{
-		config: &oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			RedirectURL:  redirectURL,
-			// read_api is enough to read the user profile and list groups.
-			// offline_access makes GitLab issue a refresh token: access tokens
-			// expire after two hours by default.
-			Scopes: []string{"read_api", "offline_access"},
-			Endpoint: oauth2.Endpoint{
-				AuthURL:  base + "/oauth/authorize",
-				TokenURL: base + "/oauth/token",
+		flow: newFlow(
+			&oauth2.Config{
+				ClientID:     clientID,
+				ClientSecret: clientSecret,
+				RedirectURL:  redirectURL,
+				// read_api is enough to read the user profile and list groups.
+				// offline_access makes GitLab issue a refresh token: access
+				// tokens expire after two hours by default.
+				Scopes: []string{"read_api", "offline_access"},
+				Endpoint: oauth2.Endpoint{
+					AuthURL:  base + "/oauth/authorize",
+					TokenURL: base + "/oauth/token",
+				},
 			},
-		},
+			nil,
+			httpPolicy{
+				NotFoundInvalid: true,
+				Forbidden: func(*http.Response) error {
+					return ErrAccessDenied
+				},
+			},
+		),
 		apiURL: base + "/api/v4",
-		client: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -53,22 +59,11 @@ func (p *GitLabProvider) AccessNoun() string  { return "group" }
 func (p *GitLabProvider) RequiredScope() string { return "" }
 
 func (p *GitLabProvider) AuthCodeURL(state, _, verifier string) string {
-	var opts []oauth2.AuthCodeOption
-	if verifier != "" {
-		opts = append(opts, oauth2.S256ChallengeOption(verifier))
-	}
-	return p.config.AuthCodeURL(state, opts...)
+	return p.flow.AuthCodeURL(state, "", verifier)
 }
 
 func (p *GitLabProvider) Exchange(ctx context.Context, code, _, verifier string) (Identity, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	var opts []oauth2.AuthCodeOption
-	if verifier != "" {
-		opts = append(opts, oauth2.VerifierOption(verifier))
-	}
-	token, err := p.config.Exchange(ctx, code, opts...)
+	token, err := p.flow.Exchange(ctx, code, verifier)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -79,7 +74,7 @@ func (p *GitLabProvider) Exchange(ctx context.Context, code, _, verifier string)
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := p.getJSON(ctx, token.AccessToken, "/user", &user); err != nil {
+	if err := p.flow.getJSON(ctx, token.AccessToken, p.apiURL+"/user", &user); err != nil {
 		return Identity{}, err
 	}
 	if user.ID == 0 || user.Username == "" {
@@ -87,46 +82,18 @@ func (p *GitLabProvider) Exchange(ctx context.Context, code, _, verifier string)
 	}
 
 	scope, _ := token.Extra("scope").(string)
-	var expiresAt *time.Time
-	if !token.Expiry.IsZero() {
-		expiry := token.Expiry
-		expiresAt = &expiry
-	}
 	return Identity{
 		ProviderUserID: strconv.FormatInt(user.ID, 10),
 		Login:          user.Username,
 		Name:           user.Name,
 		AvatarURL:      user.AvatarURL,
-		Token: Token{
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			ExpiresAt:    expiresAt,
-		},
-		Scopes: parseScopes(scope),
+		Token:          tokenFromOAuth(token),
+		Scopes:         parseScopes(scope),
 	}, nil
 }
 
-// Refresh renews an expiring user token. GitLab rotates refresh tokens: the
-// returned pair replaces the previous one, and the refresh token it replaces
-// is invalidated as soon as this call succeeds.
 func (p *GitLabProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	token, err := p.config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
-	if err != nil {
-		return Token{}, refreshError(err)
-	}
-	var expiresAt *time.Time
-	if !token.Expiry.IsZero() {
-		expiry := token.Expiry
-		expiresAt = &expiry
-	}
-	return Token{
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
-		ExpiresAt:    expiresAt,
-	}, nil
+	return p.flow.Refresh(ctx, refreshToken)
 }
 
 // Teams lists the groups the user is a member of, including inherited
@@ -136,7 +103,7 @@ func (p *GitLabProvider) Teams(ctx context.Context, accessToken string) ([]Team,
 	var teams []Team
 	page := "1"
 	for page != "" {
-		resp, err := p.get(ctx, accessToken, p.apiURL+"/groups?min_access_level=10&per_page=100&page="+url.QueryEscape(page))
+		resp, err := p.flow.get(ctx, accessToken, p.apiURL+"/groups?min_access_level=10&per_page=100&page="+url.QueryEscape(page))
 		if err != nil {
 			return nil, err
 		}
@@ -158,47 +125,5 @@ func (p *GitLabProvider) Teams(ctx context.Context, accessToken string) ([]Team,
 
 func (p *GitLabProvider) Verify(ctx context.Context, accessToken string) error {
 	var user struct{}
-	return p.getJSON(ctx, accessToken, "/user", &user)
-}
-
-func (p *GitLabProvider) getJSON(ctx context.Context, accessToken, path string, dst any) error {
-	resp, err := p.get(ctx, accessToken, p.apiURL+path)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
-		return fmt.Errorf("decode GitLab %s: %w", path, err)
-	}
-	return nil
-}
-
-func (p *GitLabProvider) get(ctx context.Context, accessToken, rawURL string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
-	}
-	switch {
-	case resp.StatusCode == http.StatusOK:
-		return resp, nil
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusNotFound:
-		_ = resp.Body.Close()
-		return nil, ErrTokenInvalid
-	case resp.StatusCode == http.StatusForbidden:
-		_ = resp.Body.Close()
-		return nil, ErrAccessDenied
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
-	default:
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
-	}
+	return p.flow.getJSON(ctx, accessToken, p.apiURL+"/user", &user)
 }

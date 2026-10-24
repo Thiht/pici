@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -19,10 +18,9 @@ const oidcDiscoveryTimeout = 15 * time.Second
 type OIDCProvider struct {
 	provider    *oidc.Provider
 	verifier    *oidc.IDTokenVerifier
-	config      *oauth2.Config
+	flow        *flow
 	userInfoURL string
 	displayName string
-	client      *http.Client
 }
 
 // NewOIDCProvider discovers the issuer configuration and returns a provider.
@@ -41,19 +39,36 @@ func NewOIDCProvider(ctx context.Context, issuerURL, clientID, clientSecret, red
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "profile", "email", "offline_access"}
 	}
-	return &OIDCProvider{
-		provider: provider,
-		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
-		config: &oauth2.Config{
+	f := newFlow(
+		&oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
 			RedirectURL:  redirectURL,
 			Scopes:       scopes,
 			Endpoint:     provider.Endpoint(),
 		},
+		nil,
+		httpPolicy{
+			Forbidden: func(*http.Response) error {
+				// Usually a missing scope or a userinfo endpoint that requires
+				// more than read access: treat it as transient rather than
+				// disabling every user on the next revalidation.
+				return fmt.Errorf("%w: userinfo forbidden", ErrProviderUnavailable)
+			},
+		},
+	)
+	f.withNonce = true
+	f.authParams = []oauth2.AuthCodeOption{
+		// Google only returns a refresh token when access_type=offline. Other
+		// providers ignore the unknown parameter, per RFC 6749.
+		oauth2.SetAuthURLParam("access_type", "offline"),
+	}
+	return &OIDCProvider{
+		provider:    provider,
+		verifier:    provider.Verifier(&oidc.Config{ClientID: clientID}),
+		flow:        f,
 		userInfoURL: provider.UserInfoEndpoint(),
 		displayName: displayName,
-		client:      &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 
@@ -67,29 +82,14 @@ func (p *OIDCProvider) AccessNoun() string  { return "group" }
 func (p *OIDCProvider) RequiredScope() string { return "" }
 
 func (p *OIDCProvider) AuthCodeURL(state, nonce, verifier string) string {
-	opts := []oauth2.AuthCodeOption{
-		// Google only returns a refresh token when access_type=offline. Other
-		// providers ignore the unknown parameter, per RFC 6749.
-		oauth2.SetAuthURLParam("access_type", "offline"),
-	}
-	if nonce != "" {
-		opts = append(opts, oidc.Nonce(nonce))
-	}
-	if verifier != "" {
-		opts = append(opts, oauth2.S256ChallengeOption(verifier))
-	}
-	return p.config.AuthCodeURL(state, opts...)
+	return p.flow.AuthCodeURL(state, nonce, verifier)
 }
 
 func (p *OIDCProvider) Exchange(ctx context.Context, code, nonce, verifier string) (Identity, error) {
 	ctx, cancel := context.WithTimeout(ctx, oidcDiscoveryTimeout)
 	defer cancel()
 
-	var opts []oauth2.AuthCodeOption
-	if verifier != "" {
-		opts = append(opts, oauth2.VerifierOption(verifier))
-	}
-	token, err := p.config.Exchange(ctx, code, opts...)
+	token, err := p.flow.Exchange(ctx, code, verifier)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -132,45 +132,20 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, nonce, verifier strin
 	}
 
 	scope, _ := token.Extra("scope").(string)
-	var expiresAt *time.Time
-	if !token.Expiry.IsZero() {
-		expiry := token.Expiry
-		expiresAt = &expiry
-	}
 	return Identity{
 		ProviderUserID: idToken.Subject,
 		Login:          login,
 		Name:           name,
 		AvatarURL:      claims.Picture,
-		Token: Token{
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			ExpiresAt:    expiresAt,
-		},
-		Scopes: parseScopes(scope),
+		Token:          tokenFromOAuth(token),
+		Scopes:         parseScopes(scope),
 	}, nil
 }
 
 // Refresh renews an expiring user token when the provider issued a refresh
 // token (offline_access).
 func (p *OIDCProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
-	ctx, cancel := context.WithTimeout(ctx, oidcDiscoveryTimeout)
-	defer cancel()
-
-	token, err := p.config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
-	if err != nil {
-		return Token{}, refreshError(err)
-	}
-	var expiresAt *time.Time
-	if !token.Expiry.IsZero() {
-		expiry := token.Expiry
-		expiresAt = &expiry
-	}
-	return Token{
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
-		ExpiresAt:    expiresAt,
-	}, nil
+	return p.flow.Refresh(ctx, refreshToken)
 }
 
 // Teams returns the groups from the configured groups claim.
@@ -204,43 +179,10 @@ func (p *OIDCProvider) userInfo(ctx context.Context, accessToken string) (oidcCl
 		return oidcClaims{}, fmt.Errorf("%w: the provider has no userinfo endpoint", ErrProviderUnavailable)
 	}
 	var claims oidcClaims
-	if err := p.getJSON(ctx, accessToken, p.userInfoURL, &claims); err != nil {
+	if err := p.flow.getJSON(ctx, accessToken, p.userInfoURL, &claims); err != nil {
 		return oidcClaims{}, err
 	}
 	return claims, nil
-}
-
-func (p *OIDCProvider) getJSON(ctx context.Context, accessToken, rawURL string, dst any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
-	}
-	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusOK:
-	case resp.StatusCode == http.StatusUnauthorized:
-		return ErrTokenInvalid
-	case resp.StatusCode == http.StatusForbidden:
-		// Usually a missing scope or a userinfo endpoint that requires more
-		// than read access: treat it as transient rather than disabling every
-		// user on the next revalidation.
-		return fmt.Errorf("%w: userinfo forbidden", ErrProviderUnavailable)
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		return fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
-	default:
-		return fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
-		return fmt.Errorf("decode OIDC userinfo: %w", err)
-	}
-	return nil
 }
 
 type oidcClaims struct {
