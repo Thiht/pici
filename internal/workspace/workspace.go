@@ -1,6 +1,3 @@
-// Package workspace owns the layout of pici's on-disk state: clones,
-// snapshots, logs and artifacts. Callers ask it for a path or a reader instead
-// of joining path segments themselves, so the tree has one owner.
 package workspace
 
 import (
@@ -32,13 +29,10 @@ func (w *Workspace) RepoDir(projectID uuid.UUID, workspaceID int64) string {
 	return filepath.Join(w.root, projectID.String(), strconv.FormatInt(workspaceID, 10))
 }
 
-// DiscoveryDir is the clone used to read a Project's workflows, refs and
-// branches without creating an Execution.
 func (w *Workspace) DiscoveryDir(projectID uuid.UUID) string {
 	return filepath.Join(w.root, projectID.String(), "_discovery")
 }
 
-// UploadsDir holds the snapshot archives uploaded for a Project.
 func (w *Workspace) UploadsDir(projectID uuid.UUID) string {
 	return filepath.Join(w.root, "uploads", projectID.String())
 }
@@ -49,24 +43,18 @@ func (w *Workspace) Snapshot(projectID, snapshotID uuid.UUID) string {
 	return filepath.Join(w.UploadsDir(projectID), snapshotID.String()+".tar.gz")
 }
 
-// ArtifactDir holds every Step's artifacts for one Execution, one numbered
-// directory per Step plus its manifest.
 func (w *Workspace) ArtifactDir(projectID uuid.UUID, execID int64) string {
 	return filepath.Join(w.root, "artifacts", projectID.String(), strconv.FormatInt(execID, 10))
 }
 
-// StepArtifacts is the directory a Step's artifacts were collected into.
 func (w *Workspace) StepArtifacts(projectID uuid.UUID, execID int64, index int) string {
 	return filepath.Join(w.ArtifactDir(projectID, execID), fmt.Sprintf("%03d", index))
 }
 
-// StepManifest is the manifest recording the hash of each artifact a Step
-// collected.
 func (w *Workspace) StepManifest(projectID uuid.UUID, execID int64, index int) string {
 	return filepath.Join(w.ArtifactDir(projectID, execID), fmt.Sprintf("%03d.json", index))
 }
 
-// LogDir holds the setup log and the Step logs of one Execution.
 func (w *Workspace) LogDir(projectID uuid.UUID, execID int64) string {
 	return filepath.Join(w.logsRoot, projectID.String(), strconv.FormatInt(execID, 10))
 }
@@ -118,12 +106,10 @@ func (w *Workspace) ReadLogs(projectID uuid.UUID, execID int64) io.ReadCloser {
 	return &readCloser{Reader: io.MultiReader(readers...), files: opened}
 }
 
-// ReadSetupLog opens the log of an Execution's setup phase.
 func (w *Workspace) ReadSetupLog(projectID uuid.UUID, execID int64) (io.ReadCloser, error) {
 	return os.Open(w.SetupLog(projectID, execID))
 }
 
-// ReadStepLog opens the log of one Step.
 func (w *Workspace) ReadStepLog(projectID uuid.UUID, execID int64, index int, step string) (io.ReadCloser, error) {
 	return os.Open(w.StepLog(projectID, execID, index, step))
 }

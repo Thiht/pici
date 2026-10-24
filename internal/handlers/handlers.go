@@ -28,8 +28,6 @@ type Handler struct {
 	auth *auth.Service
 }
 
-// Deps are what the JSON surface serves with. Main builds them once and hands
-// the same instances to the web UI.
 type Deps struct {
 	Store           stores.Store
 	Runner          *ci.Runner

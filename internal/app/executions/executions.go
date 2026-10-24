@@ -17,21 +17,18 @@ import (
 	"github.com/Thiht/pici/internal/workspace"
 )
 
-// Store is the part of the store this module needs.
 type Store interface {
 	GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (stores.Execution, error)
 	ListAttempts(ctx context.Context, projectID uuid.UUID, executionID int64) ([]stores.Execution, error)
 	SetCancelRequested(ctx context.Context, projectID uuid.UUID, id int64) error
 }
 
-// Logs opens an Execution's logs. *workspace.Workspace satisfies it.
 type Logs interface {
 	ReadLogs(projectID uuid.UUID, execID int64) io.ReadCloser
 	ReadSetupLog(projectID uuid.UUID, execID int64) (io.ReadCloser, error)
 	ReadStepLog(projectID uuid.UUID, execID int64, index int, step string) (io.ReadCloser, error)
 }
 
-// Runner queues and cancels Executions. *ci.Runner satisfies it.
 type Runner interface {
 	Enqueue(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, trigger stores.Trigger, createdBy *uuid.UUID) (stores.Execution, error)
 	EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID, createdBy *uuid.UUID) (stores.Execution, error)
@@ -40,15 +37,12 @@ type Runner interface {
 	Cancel(projectID uuid.UUID, execID int64)
 }
 
-// View is one Attempt of an Execution with the Attempts around it. It is what
-// both the Execution page and the JSON surface render.
 type View struct {
 	Execution stores.Execution
 	Attempts  []stores.Execution
 	Latest    bool
 }
 
-// Module reads, queues and cancels Executions.
 type Module struct {
 	store     Store
 	logs      Logs
@@ -77,7 +71,6 @@ func (m *Module) Get(ctx context.Context, projectID uuid.UUID, executionID int64
 	}, nil
 }
 
-// Create queues a manual run of a Workflow.
 func (m *Module) Create(ctx context.Context, project stores.Project, workflow, ref string, createdBy *uuid.UUID) (stores.Execution, error) {
 	workflow = strings.TrimSpace(workflow)
 	if workflow == "" {
@@ -132,7 +125,6 @@ func (m *Module) CreateSnapshot(ctx context.Context, project stores.Project, wor
 	return execution, nil
 }
 
-// Cancel asks the runner to stop an Execution's latest Attempt.
 func (m *Module) Cancel(ctx context.Context, projectID uuid.UUID, executionID int64) error {
 	execution, err := m.attempt(ctx, projectID, executionID, 0)
 	if err != nil {
@@ -145,7 +137,6 @@ func (m *Module) Cancel(ctx context.Context, projectID uuid.UUID, executionID in
 	return nil
 }
 
-// Rebuild queues a new Execution from the same source as an earlier one.
 func (m *Module) Rebuild(ctx context.Context, project stores.Project, executionID int64, createdBy *uuid.UUID) (stores.Execution, error) {
 	previous, err := m.attempt(ctx, project.ID, executionID, 0)
 	if err != nil {
@@ -157,8 +148,6 @@ func (m *Module) Rebuild(ctx context.Context, project stores.Project, executionI
 	return m.runner.EnqueueRebuild(ctx, project, previous, createdBy)
 }
 
-// Retry adds an Attempt to a failed Execution and returns the Execution as the
-// surfaces show it: origin metadata with the new Attempt selected.
 func (m *Module) Retry(ctx context.Context, project stores.Project, executionID int64, attempt int, createdBy *uuid.UUID) (stores.Execution, error) {
 	previous, err := m.attempt(ctx, project.ID, executionID, attempt)
 	if err != nil {
@@ -180,12 +169,10 @@ func (m *Module) Retry(ctx context.Context, project stores.Project, executionID 
 	return view.Execution, nil
 }
 
-// Logs opens the whole log of an Attempt, setup included, as one stream.
 func (m *Module) Logs(execution stores.Execution) io.ReadCloser {
 	return m.logs.ReadLogs(execution.ProjectID, execution.ID)
 }
 
-// SetupLog opens the setup log of an Attempt.
 func (m *Module) SetupLog(execution stores.Execution) (io.ReadCloser, error) {
 	logs, err := m.logs.ReadSetupLog(execution.ProjectID, execution.ID)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -194,7 +181,6 @@ func (m *Module) SetupLog(execution stores.Execution) (io.ReadCloser, error) {
 	return logs, err
 }
 
-// StepLog opens the log of one Step, by name.
 func (m *Module) StepLog(execution stores.Execution, step string) (io.ReadCloser, error) {
 	index := -1
 	for i, s := range execution.Steps {

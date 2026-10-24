@@ -38,7 +38,6 @@ type execKey struct {
 	id        int64
 }
 
-// Engine runs the containers a Workflow needs. *docker.Engine satisfies it.
 type Engine interface {
 	Build(ctx context.Context, opts docker.BuildOptions) error
 	Run(ctx context.Context, opts docker.RunOptions) (int, error)
@@ -173,8 +172,6 @@ func (r *Runner) Enqueue(ctx context.Context, project stores.Project, workflow, 
 	})
 }
 
-// EnqueueSnapshot queues an execution whose code comes from a locally uploaded
-// archive instead of a git clone.
 func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, workflow, ref, commitSHA string, snapshotID uuid.UUID, createdBy *uuid.UUID) (stores.Execution, error) {
 	return r.enqueue(ctx, stores.Execution{
 		ProjectID:  project.ID,

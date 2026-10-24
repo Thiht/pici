@@ -1,6 +1,3 @@
-// Package variables owns a Project's and the instance's Variable set. Secrets
-// leave this module with their value stripped, so no surface can print one by
-// accident.
 package variables
 
 import (
@@ -13,14 +10,12 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-// Store is the part of the store this module needs.
 type Store interface {
 	SetVariable(ctx context.Context, v stores.Variable) error
 	ListVariables(ctx context.Context, projectID *uuid.UUID) ([]stores.Variable, error)
 	DeleteVariable(ctx context.Context, projectID *uuid.UUID, key string) error
 }
 
-// Module reads and writes Variables.
 type Module struct {
 	store Store
 }
@@ -46,7 +41,6 @@ func (m *Module) List(ctx context.Context, projectID *uuid.UUID) ([]stores.Varia
 	return out, nil
 }
 
-// Set stores a Variable and returns it as the surfaces show it.
 func (m *Module) Set(ctx context.Context, variable stores.Variable) (stores.Variable, error) {
 	variable.Key = strings.TrimSpace(variable.Key)
 	if variable.Key == "" {
@@ -61,7 +55,6 @@ func (m *Module) Set(ctx context.Context, variable stores.Variable) (stores.Vari
 	return variable, nil
 }
 
-// Delete removes a Variable.
 func (m *Module) Delete(ctx context.Context, projectID *uuid.UUID, key string) error {
 	return m.store.DeleteVariable(ctx, projectID, key)
 }

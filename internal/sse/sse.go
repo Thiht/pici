@@ -1,5 +1,3 @@
-// Package sse frames pici's Execution stream as Server-Sent Events: the wire
-// format a browser EventSource understands.
 package sse
 
 import (

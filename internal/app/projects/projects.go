@@ -1,6 +1,3 @@
-// Package projects owns the lifecycle and the identity of a Project: which
-// provider a repository URL names, what credentials a clone needs, and the
-// branch a run defaults to.
 package projects
 
 import (
@@ -16,7 +13,6 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-// Store is the part of the store this module needs.
 type Store interface {
 	CreateProject(ctx context.Context, p stores.Project) (stores.Project, error)
 	ListProjects(ctx context.Context) ([]stores.Project, error)
@@ -26,7 +22,6 @@ type Store interface {
 	DeleteProject(ctx context.Context, id uuid.UUID) error
 }
 
-// Module manages Projects.
 type Module struct {
 	store Store
 }
@@ -57,7 +52,6 @@ func (m *Module) List(ctx context.Context) ([]stores.Project, error) {
 	return m.store.ListProjects(ctx)
 }
 
-// Create derives what it can, validates the rest, and stores a new Project.
 func (m *Module) Create(ctx context.Context, draft stores.Project) (stores.Project, error) {
 	project, err := m.normalize(ctx, draft)
 	if err != nil {
@@ -69,7 +63,6 @@ func (m *Module) Create(ctx context.Context, draft stores.Project) (stores.Proje
 	return m.store.CreateProject(ctx, project)
 }
 
-// Update derives and validates an edited Project, then stores it.
 func (m *Module) Update(ctx context.Context, project stores.Project) (stores.Project, error) {
 	normalized, err := m.normalize(ctx, project)
 	if err != nil {
@@ -110,7 +103,6 @@ func (m *Module) Detect(ctx context.Context, draft stores.Project) stores.Projec
 	return draft
 }
 
-// Auth is the credentials a Project's repository needs.
 func Auth(project stores.Project) git.Auth {
 	return git.Auth{Type: project.AuthType.String(), User: project.AuthUser, Secret: project.AuthSecret}
 }
@@ -163,8 +155,6 @@ func providerFor(repoURL string) stores.Provider {
 	}
 }
 
-// defaultAuthUser is the user git needs for a token or an SSH key when the
-// Project does not pin one.
 func defaultAuthUser(authType stores.AuthType) string {
 	switch authType {
 	case stores.AuthTypeToken:

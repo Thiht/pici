@@ -28,8 +28,6 @@ type User struct {
 	DisabledAt        *time.Time `json:"disabled_at,omitempty"`
 }
 
-// WithoutOAuthTokens returns a copy without the provider credentials, which
-// handlers never need.
 func (u User) WithoutOAuthTokens() User {
 	u.OAuthAccessToken = ""
 	u.OAuthRefreshToken = ""
@@ -94,7 +92,6 @@ type StepResult struct {
 	Env        []string      `json:"env,omitempty"`
 }
 
-// Steps is a JSON-serialized list of step results, stored in a single column.
 type Steps []StepResult
 
 func (s Steps) Value() (driver.Value, error) {
@@ -170,7 +167,6 @@ type Execution struct {
 	CreatedByLogin    string     `json:"created_by_login,omitempty"`
 }
 
-// Attempt is a summary of one attempt, as returned by the attempts endpoint.
 type Attempt struct {
 	Number         int        `json:"attempt"`
 	Status         Status     `json:"status"`
@@ -183,7 +179,6 @@ type Attempt struct {
 	CreatedByLogin string     `json:"created_by_login,omitempty"`
 }
 
-// AttemptSummary projects an attempt row onto its API summary.
 func (e Execution) AttemptSummary() Attempt {
 	return Attempt{
 		Number:         e.Attempt,

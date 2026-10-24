@@ -1,6 +1,3 @@
-// Package auth authenticates humans through an external provider (GitHub,
-// GitLab, or OpenID Connect) and issues the two credentials pici knows about:
-// browser sessions for the UI, and personal API tokens for the CLI and scripts.
 package auth
 
 import (
@@ -68,7 +65,6 @@ type Token struct {
 	ExpiresAt    *time.Time
 }
 
-// Identity is what a provider returns after a successful login.
 type Identity struct {
 	ProviderUserID string
 	Login          string
@@ -78,15 +74,9 @@ type Identity struct {
 	Scopes         []string
 }
 
-// Provider is the minimal contract for an OAuth identity provider. Adding
-// another provider later means implementing this interface and registering it
-// in place of GitHub.
 type Provider interface {
 	Name() string
-	// DisplayName is the human-readable provider name shown in the UI.
 	DisplayName() string
-	// AccessNoun is what the provider calls a membership group: "team" for
-	// GitHub, "group" for GitLab and OIDC.
 	AccessNoun() string
 	AuthCodeURL(state, nonce, verifier string) string
 	Exchange(ctx context.Context, code, nonce, verifier string) (Identity, error)
@@ -94,7 +84,6 @@ type Provider interface {
 	// that rotate refresh tokens return a new RefreshToken, which the caller
 	// must persist immediately: the one it replaces is already invalid.
 	Refresh(ctx context.Context, refreshToken string) (Token, error)
-	// Teams returns the teams or groups the user is a member of.
 	Teams(ctx context.Context, accessToken string) ([]Team, error)
 	// RequiredScope is the OAuth scope needed to list teams or groups. It is
 	// empty for providers that do not gate their API on an explicit scope.
@@ -133,8 +122,6 @@ func UserID(ctx context.Context) *uuid.UUID {
 	return &id
 }
 
-// Service owns login, browser sessions, personal tokens and the periodic team
-// membership revalidation.
 type Service struct {
 	store      stores.Store
 	provider   Provider
@@ -278,12 +265,10 @@ func (s *Service) hasUser(login string) bool {
 	return ok
 }
 
-// NewState returns an unguessable OAuth state value.
 func NewState() (string, error) {
 	return randomToken("")
 }
 
-// NewNonce returns an unguessable OIDC nonce value.
 func NewNonce() (string, error) {
 	return randomToken("")
 }

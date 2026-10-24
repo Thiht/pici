@@ -15,14 +15,9 @@ const CacheMountPath = "/pici/cache"
 const cacheToken = "{cache}"
 
 type cachePreset struct {
-	// markers are glob patterns, relative to the repo root, whose presence
-	// enables the preset.
 	markers []string
-	// env maps an environment variable to its value, with cacheToken standing
-	// for the absolute cache root (see CacheMountPath).
-	env map[string]string
-	// paths are the cache paths to persist, relative to the cache root.
-	paths []string
+	env     map[string]string
+	paths   []string
 }
 
 var cachePresets = []cachePreset{
@@ -103,8 +98,6 @@ var cachePresets = []cachePreset{
 	},
 }
 
-// detectCaches returns the env vars to set and the cache paths to persist for a
-// repo, both relative to cacheRoot.
 func detectCaches(repoDir, cacheRoot string) (map[string]string, []string) {
 	env := map[string]string{}
 	var paths []string

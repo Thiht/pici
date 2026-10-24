@@ -9,11 +9,6 @@ import (
 	"github.com/Thiht/pici/internal/present"
 )
 
-// Badge renders a shields.io-style SVG status badge for a project. The
-// workflow can be selected with ?workflow=; without it the newest execution of
-// any workflow is used. The label defaults to the workflow (or project) name
-// and can be overridden with ?label=. The endpoint is public so badges can be
-// embedded in READMEs.
 func (h *ProjectsHandler) Badge(w http.ResponseWriter, r *http.Request) {
 	project, err := h.projects.Resolve(r.Context(), r.PathValue("id"))
 	if err != nil {

@@ -13,8 +13,6 @@ import (
 	"github.com/Thiht/pici/internal/app/artifacts"
 )
 
-// collectArtifacts copies the files matching patterns out of repoDir and
-// records their hashes in the Step's manifest.
 func (r *Runner) collectArtifacts(projectID uuid.UUID, execID int64, index int, patterns []string, repoDir string, warn io.Writer) {
 	if len(patterns) == 0 {
 		return

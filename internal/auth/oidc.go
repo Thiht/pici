@@ -13,8 +13,6 @@ import (
 
 const oidcDiscoveryTimeout = 15 * time.Second
 
-// OIDCProvider implements Provider for any OpenID Connect 1.0 provider
-// (Keycloak, Authentik, Entra ID, Google, Forgejo, ...).
 type OIDCProvider struct {
 	provider    *oidc.Provider
 	verifier    *oidc.IDTokenVerifier
@@ -142,13 +140,10 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, nonce, verifier strin
 	}, nil
 }
 
-// Refresh renews an expiring user token when the provider issued a refresh
-// token (offline_access).
 func (p *OIDCProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
 	return p.flow.Refresh(ctx, refreshToken)
 }
 
-// Teams returns the groups from the configured groups claim.
 func (p *OIDCProvider) Teams(ctx context.Context, accessToken string) ([]Team, error) {
 	info, err := p.userInfo(ctx, accessToken)
 	if err != nil {

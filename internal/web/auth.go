@@ -43,7 +43,6 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, http.StatusOK, "login", data)
 }
 
-// LoginStart sets an OAuth state cookie and sends the user to GitHub.
 func (h *Handler) LoginStart(w http.ResponseWriter, r *http.Request) {
 	if h.alreadySignedIn(r) {
 		redirect(w, r, "/")
@@ -69,8 +68,6 @@ func (h *Handler) LoginStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.auth.LoginURL(state, nonce, verifier), http.StatusSeeOther)
 }
 
-// LoginCallback verifies the OAuth state, exchanges the code, and creates a
-// session for an authorized team member.
 func (h *Handler) LoginCallback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie(auth.OAuthStateCookie)
 	if err != nil || stateCookie.Value == "" ||

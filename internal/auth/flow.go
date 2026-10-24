@@ -25,8 +25,6 @@ type httpPolicy struct {
 	Forbidden func(resp *http.Response) error
 }
 
-// flow is the OAuth flow every provider shares: PKCE, the code exchange, the
-// refresh, and the authenticated JSON GET that turns a status into an error.
 type flow struct {
 	config     *oauth2.Config
 	client     *http.Client
@@ -154,7 +152,6 @@ func refreshError(err error) error {
 	return fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
 }
 
-// parseScopes splits the scope list a provider returns with a token.
 func parseScopes(raw string) []string {
 	return strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == ' '

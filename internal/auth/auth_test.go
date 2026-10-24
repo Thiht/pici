@@ -605,7 +605,6 @@ func createSession(t *testing.T, svc *auth.Service, userID uuid.UUID) (string, s
 	return raw, session
 }
 
-// hashToken mirrors the session id the service derives from a raw token.
 func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])

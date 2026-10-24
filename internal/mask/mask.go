@@ -54,7 +54,6 @@ func (m *Writer) redact(line []byte) []byte {
 	return []byte(Redact(string(line), m.secrets))
 }
 
-// Redact replaces every occurrence of a secret with the redaction marker.
 func Redact(s string, secrets []string) string {
 	for _, sec := range secrets {
 		if sec == "" {

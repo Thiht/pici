@@ -1,5 +1,3 @@
-// Package cache lists and removes the Docker images and volumes a Project's
-// Workflows build up, so the UI and the API show the same cache.
 package cache
 
 import (
@@ -15,8 +13,6 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-// Engine is the part of the container engine this module needs.
-// *docker.Engine satisfies it.
 type Engine interface {
 	Images(ctx context.Context, reference string) ([]docker.Image, error)
 	Volumes(ctx context.Context, namePrefix string) ([]docker.Volume, error)
@@ -24,7 +20,6 @@ type Engine interface {
 	RemoveVolume(ctx context.Context, name string) error
 }
 
-// Image is a Workflow image built for a Project.
 type Image struct {
 	Reference  string    `json:"reference"`
 	Size       int64     `json:"size"`
@@ -32,7 +27,6 @@ type Image struct {
 	Containers int64     `json:"containers"`
 }
 
-// Volume is a cache volume mounted into a Project's Steps.
 type Volume struct {
 	Name    string    `json:"name"`
 	Cache   string    `json:"cache"`
@@ -40,8 +34,6 @@ type Volume struct {
 	Created time.Time `json:"created"`
 }
 
-// Summary is a Project's cache: its images and volumes, with the size each
-// kind takes and their total.
 type Summary struct {
 	Images      []Image
 	Volumes     []Volume
@@ -50,7 +42,6 @@ type Summary struct {
 	TotalSize   int64
 }
 
-// Module lists and removes the cache of a Project.
 type Module struct {
 	engine Engine
 }
@@ -107,7 +98,6 @@ func (m *Module) Get(ctx context.Context, project stores.Project) (Summary, erro
 	return summary, nil
 }
 
-// RemoveImage deletes one of the Project's Workflow images.
 func (m *Module) RemoveImage(ctx context.Context, project stores.Project, reference string) error {
 	if !strings.HasPrefix(reference, ci.ImagePrefix(project.ID.String())) {
 		return fmt.Errorf("%w: unknown image", app.ErrInvalid)
@@ -118,7 +108,6 @@ func (m *Module) RemoveImage(ctx context.Context, project stores.Project, refere
 	return m.engine.RemoveImage(ctx, reference)
 }
 
-// RemoveVolume deletes one of the Project's cache volumes.
 func (m *Module) RemoveVolume(ctx context.Context, project stores.Project, name string) error {
 	if !strings.HasPrefix(name, ci.VolumePrefix(project.ID.String())) {
 		return fmt.Errorf("%w: unknown cache volume", app.ErrInvalid)

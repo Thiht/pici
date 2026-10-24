@@ -1,6 +1,3 @@
-// Package artifacts owns what a Step collected: the manifest that records each
-// artifact's hash, the listing the UI and the API show, and the bytes a
-// download serves.
 package artifacts
 
 import (
@@ -21,13 +18,11 @@ import (
 	"github.com/Thiht/pici/internal/workspace"
 )
 
-// Hash is the digest of an artifact's bytes.
 type Hash struct {
 	Algorithm string `json:"algorithm"`
 	Value     string `json:"value"`
 }
 
-// Artifact is a file collected by a step's artifacts globs.
 type Artifact struct {
 	Step string `json:"step"`
 	Path string `json:"path"`
@@ -35,14 +30,12 @@ type Artifact struct {
 	Hash *Hash  `json:"hash,omitempty"`
 }
 
-// File is an artifact opened for download.
 type File struct {
 	io.ReadSeekCloser
 	Info fs.FileInfo
 	ETag string
 }
 
-// Entry is one artifact as recorded in a Step's manifest.
 type Entry struct {
 	Path string `json:"path"`
 	Hash Hash   `json:"hash"`
@@ -55,7 +48,6 @@ type manifest struct {
 
 const manifestVersion = 1
 
-// Module lists, opens and records artifacts.
 type Module struct {
 	workspace *workspace.Workspace
 }
@@ -185,7 +177,6 @@ func WriteManifest(path string, entries []Entry) error {
 	return nil
 }
 
-// HashFile copies src to dst and hashes the bytes as they stream through.
 func HashFile(src, dst string) (Hash, error) {
 	hasher := sha256.New()
 	in, err := os.Open(src)

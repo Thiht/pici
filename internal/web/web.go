@@ -1,6 +1,3 @@
-// Package web serves the embedded management UI. It is an independent
-// front-end over the same store and runner as the JSON API: it renders Go
-// templates, enhanced with htmx, and never round-trips through the API.
 package web
 
 import (
@@ -90,8 +87,6 @@ type Handler struct {
 	auth          *auth.Service
 }
 
-// Deps are what the web UI serves with. Main builds them once and hands the
-// same instances to the JSON surface.
 type Deps struct {
 	Store         stores.Store
 	Runner        *ci.Runner
@@ -177,15 +172,12 @@ func (h *Handler) Routes() http.Handler {
 	return middlewares.Log(h.sessionAuth(mux))
 }
 
-// Schema serves the JSON Schema for `ci.yml` so editors can fetch it over HTTP
-// (see /guide/ci-schema).
 func (h *Handler) Schema(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/schema+json")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(ci.Schema)
 }
 
-// base is embedded in every page model. It carries the shared chrome data.
 type base struct {
 	Title        string
 	Active       string

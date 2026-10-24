@@ -12,14 +12,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// GitLabProvider implements Provider for gitlab.com and self-hosted GitLab
-// instances.
 type GitLabProvider struct {
 	flow   *flow
 	apiURL string
 }
 
-// NewGitLabProvider builds a provider for the given GitLab base URL.
 func NewGitLabProvider(baseURL, clientID, clientSecret, redirectURL string) *GitLabProvider {
 	base := strings.TrimRight(baseURL, "/")
 	return &GitLabProvider{
