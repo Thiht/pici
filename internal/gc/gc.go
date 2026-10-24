@@ -150,7 +150,7 @@ func (c *Collector) cleanupUploads() {
 }
 
 func (c *Collector) expired(ctx context.Context, projectID uuid.UUID, id int64, cutoff time.Time) bool {
-	exec, err := c.Store.GetExecution(ctx, projectID, id)
+	exec, err := c.Store.GetAttempt(ctx, projectID, id)
 	if err != nil {
 		return true
 	}

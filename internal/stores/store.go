@@ -39,8 +39,11 @@ type Store interface {
 
 	CreateExecution(ctx context.Context, e *Execution) error
 	UpdateExecution(ctx context.Context, e Execution) error
-	GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error)
+	GetAttempt(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error)
+	GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (Execution, error)
 	ListExecutions(ctx context.Context, projectID uuid.UUID, limit int) ([]Execution, error)
+	ListAttempts(ctx context.Context, projectID uuid.UUID, executionID int64) ([]Execution, error)
+	SetCheckRunID(ctx context.Context, projectID uuid.UUID, executionID, checkRunID int64) error
 
 	ClaimPendingExecution(ctx context.Context, workerID string) (Execution, error)
 	RequeueOrphanedExecutions(ctx context.Context) error

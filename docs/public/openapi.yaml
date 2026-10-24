@@ -509,6 +509,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
     get:
       tags: [Executions]
       summary: Get an execution
@@ -525,14 +526,37 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/projects/{id}/executions/{executionID}/logs:
+  /api/projects/{id}/executions/{executionID}/attempts:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
     get:
       tags: [Executions]
+      summary: List the attempts of an execution
+      operationId: listExecutionAttempts
+      responses:
+        "200":
+          description: List of attempts, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attempt"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}/executions/{executionID}/logs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
+    get:
+      tags: [Executions]
       summary: Combined logs
-      description: Concatenated logs for the whole execution as plain text.
+      description: Concatenated logs for the selected attempt as plain text.
       operationId: getExecutionLogs
       responses:
         "200":
@@ -548,6 +572,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
     get:
       tags: [Executions]
       summary: Stream logs (SSE)
@@ -571,6 +596,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
       - $ref: "#/components/parameters/Step"
     get:
       tags: [Executions]
@@ -634,9 +660,13 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
     post:
       tags: [Executions]
-      summary: Retry the failed steps, reusing the workspace
+      summary: Retry the latest failed attempt, reusing the workspace
+      description: |
+        Adds an attempt to the execution, retrying only the failed or skipped
+        steps of its latest attempt. The workspace is reused.
       operationId: retryExecution
       responses:
         "202":
@@ -648,7 +678,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Not retryable (not failed, snapshot, or already running)
+          description: Not retryable (not failed, snapshot, already running, or not the latest attempt)
         "410":
           description: Workspace no longer available
         "500":
@@ -658,6 +688,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
     get:
       tags: [Artifacts]
       summary: List collected artifacts
@@ -680,6 +711,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ExecutionId"
+      - $ref: "#/components/parameters/Attempt"
       - $ref: "#/components/parameters/Step"
       - name: path
         in: path
@@ -696,6 +728,11 @@ paths:
       responses:
         "200":
           description: Artifact file
+          headers:
+            ETag:
+              description: Strong entity tag derived from the artifact SHA-256, when known.
+              schema:
+                type: string
           content:
             application/octet-stream:
               schema:
@@ -839,10 +876,18 @@ components:
       name: executionID
       in: path
       required: true
-      description: Per-project execution number
+      description: Per-project execution number (identifies the Execution, not an attempt)
       schema:
         type: integer
         format: int64
+    Attempt:
+      name: attempt
+      in: query
+      required: false
+      description: Attempt number (1-based). Defaults to the latest attempt.
+      schema:
+        type: integer
+        minimum: 1
     Key:
       name: key
       in: path
@@ -1076,6 +1121,8 @@ components:
       required:
         [
           id,
+          attempt,
+          attempts_count,
           project_id,
           workflow,
           ref,
@@ -1089,6 +1136,13 @@ components:
         id:
           type: integer
           format: int64
+          description: Execution id (the id of its first attempt).
+        attempt:
+          type: integer
+          description: Selected attempt number (1-based).
+        attempts_count:
+          type: integer
+          description: Number of attempts in this Execution.
         project_id:
           type: string
           format: uuid
@@ -1127,11 +1181,49 @@ components:
         created_at:
           type: string
           format: date-time
+          description: When the Execution was created (not the selected attempt).
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        created_by_login:
+          type: string
         parent_id:
           type: integer
           format: int64
           nullable: true
-          description: The execution this one was derived from (rebuild or retry).
+          description: The Execution this one was rebuilt from. Empty for retry attempts.
+
+    Attempt:
+      type: object
+      required: [attempt, status, trigger, created_at]
+      properties:
+        attempt:
+          type: integer
+          description: Attempt number (1-based).
+        status:
+          $ref: "#/components/schemas/Status"
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        created_by_login:
+          type: string
 
     ExecutionRequest:
       type: object
@@ -1168,6 +1260,20 @@ components:
         size:
           type: integer
           format: int64
+        hash:
+          $ref: "#/components/schemas/ArtifactHash"
+
+    ArtifactHash:
+      type: object
+      description: Digest of the artifact bytes. Omitted for artifacts collected before hashes were recorded.
+      required: [algorithm, value]
+      properties:
+        algorithm:
+          type: string
+          example: sha256
+        value:
+          type: string
+          example: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
     HealthUnavailable:
       type: object

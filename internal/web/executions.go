@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,14 +12,9 @@ import (
 
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/stores"
 )
-
-type artifact struct {
-	Step string
-	Path string
-	Size int64
-}
 
 type stepView struct {
 	Index     int
@@ -49,10 +43,12 @@ type executionPage struct {
 	base
 	Execution stores.Execution
 	Project   stores.Project
-	Artifacts []artifact
+	Artifacts []ci.Artifact
 	Steps     []stepView
 	SetupLog  string
 	Running   bool
+	Attempts  []stores.Execution
+	IsLatest  bool
 	Error     string
 }
 
@@ -82,37 +78,36 @@ func (h *Handler) ExecutionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlash(w, "success", "Execution queued.")
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ID, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ExecutionID, 10))
 }
 
 func (h *Handler) ExecutionShow(w http.ResponseWriter, r *http.Request) {
-	data, err := h.executionData(w, r)
-	if err != nil {
+	data, ok := h.executionData(w, r)
+	if !ok {
 		return
 	}
 	h.render(w, r, http.StatusOK, "execution_show", data)
 }
 
-func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executionPage, error) {
+func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executionPage, bool) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
 		h.storeError(w, r, err)
-		return executionPage{}, err
+		return executionPage{}, false
 	}
-	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
-	if err != nil {
-		h.notFound(w, r)
-		return executionPage{}, err
+	execution, ok := h.resolveAttempt(w, r, project)
+	if !ok {
+		return executionPage{}, false
 	}
-	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
+	attempts, err := h.store.ListAttempts(r.Context(), project.ID, execution.ExecutionID)
 	if err != nil {
 		h.storeError(w, r, err)
-		return executionPage{}, err
+		return executionPage{}, false
 	}
 	running := execution.Status == stores.StatusRunning || execution.Status == stores.StatusPending
 	steps := make([]stepView, len(execution.Steps))
 	for i, sr := range execution.Steps {
-		path := h.runner.StepLogPath(project.ID, id, i, sr.Name)
+		path := h.runner.StepLogPath(project.ID, execution.ID, i, sr.Name)
 		sv := stepView{Index: i, LogSource: ci.LogSource(path), StepResult: sr}
 		if !running {
 			sv.Logs = readFile(path)
@@ -121,17 +116,40 @@ func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executi
 	}
 	var setupLog string
 	if !running {
-		setupLog = readFile(h.runner.SetupLogPath(project.ID, id))
+		setupLog = readFile(h.runner.SetupLogPath(project.ID, execution.ID))
 	}
 	return executionPage{
-		base:      h.base(w, r, "Execution #"+strconv.FormatInt(id, 10), "projects"),
+		base:      h.base(w, r, "Execution #"+strconv.FormatInt(execution.ExecutionID, 10), "projects"),
 		Execution: execution,
 		Project:   project,
-		Artifacts: h.listArtifacts(execution),
+		Artifacts: h.runner.ListArtifacts(execution),
 		Steps:     steps,
 		SetupLog:  setupLog,
 		Running:   running,
-	}, nil
+		Attempts:  attempts,
+		IsLatest:  execution.Attempt == execution.AttemptsCount,
+	}, true
+}
+
+// resolveAttempt resolves the execution id from the path and the optional
+// ?attempt= selector to the concrete attempt row.
+func (h *Handler) resolveAttempt(w http.ResponseWriter, r *http.Request, project stores.Project) (stores.Execution, bool) {
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		h.notFound(w, r)
+		return stores.Execution{}, false
+	}
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		h.notFound(w, r)
+		return stores.Execution{}, false
+	}
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	if err != nil {
+		h.storeError(w, r, err)
+		return stores.Execution{}, false
+	}
+	return execution, true
 }
 
 func readFile(path string) string {
@@ -148,17 +166,12 @@ func (h *Handler) ExecutionLogs(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
-	if err != nil {
-		h.notFound(w, r)
-		return
-	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
-		h.storeError(w, r, err)
+	execution, ok := h.resolveAttempt(w, r, project)
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	for _, path := range h.runner.LogPaths(project.ID, id) {
+	for _, path := range h.runner.LogPaths(project.ID, execution.ID) {
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -174,13 +187,8 @@ func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
-	if err != nil {
-		h.notFound(w, r)
-		return
-	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
-		h.storeError(w, r, err)
+	execution, ok := h.resolveAttempt(w, r, project)
+	if !ok {
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -191,7 +199,7 @@ func (h *Handler) ExecutionStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	h.runner.StreamLogs(r.Context(), project.ID, id, w, flusher.Flush)
+	h.runner.StreamLogs(r.Context(), project.ID, execution.ID, w, flusher.Flush)
 }
 
 func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {
@@ -200,23 +208,17 @@ func (h *Handler) StepLogs(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
-	if err != nil {
-		h.notFound(w, r)
+	execution, ok := h.resolveAttempt(w, r, project)
+	if !ok {
 		return
 	}
 	step := r.PathValue("step")
-	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
-	if err != nil {
-		h.storeError(w, r, err)
-		return
-	}
 	index := stepIndex(execution, step)
 	if index < 0 {
 		h.notFound(w, r)
 		return
 	}
-	f, err := os.Open(h.runner.StepLogPath(project.ID, id, index, step))
+	f, err := os.Open(h.runner.StepLogPath(project.ID, execution.ID, index, step))
 	if err != nil {
 		h.notFound(w, r)
 		return
@@ -241,17 +243,18 @@ func (h *Handler) ExecutionCancel(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
+	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), project.ID, id); err != nil {
+	if err := h.store.SetCancelRequested(r.Context(), project.ID, execution.ID); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.runner.Cancel(project.ID, id)
+	h.runner.Cancel(project.ID, execution.ID)
 	setFlash(w, "success", "Cancellation requested.")
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ExecutionID, 10))
 }
 
 func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
@@ -269,14 +272,14 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
 	if previous.Source == stores.SourceSnapshot {
 		setFlash(w, "error", "Snapshot executions cannot be rebuilt.")
-		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(id, 10))
+		redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(previous.ExecutionID, 10))
 		return
 	}
 	execution, err := h.runner.EnqueueRebuild(r.Context(), project, previous, auth.UserID(r.Context()))
@@ -285,7 +288,7 @@ func (h *Handler) ExecutionRebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlash(w, "success", "Rebuild queued.")
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ID, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(execution.ExecutionID, 10))
 }
 
 func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
@@ -303,14 +306,18 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		h.notFound(w, r)
+		return
+	}
+	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		h.storeError(w, r, err)
 		return
 	}
 
-	retryID := id
-	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
+	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
 	switch {
 	case errors.Is(err, ci.ErrWorkspaceGone):
 		setFlash(w, "error", "The workspace is no longer available.")
@@ -321,9 +328,8 @@ func (h *Handler) ExecutionRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		setFlash(w, "success", "Retry queued.")
-		retryID = execution.ID
 	}
-	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(retryID, 10))
+	redirect(w, r, "/projects/"+project.ID.String()+"/executions/"+strconv.FormatInt(previous.ExecutionID, 10))
 }
 
 func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
@@ -332,14 +338,8 @@ func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		h.storeError(w, r, err)
 		return
 	}
-	execID, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
-	if err != nil {
-		h.notFound(w, r)
-		return
-	}
-	execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
-	if err != nil {
-		h.storeError(w, r, err)
+	execution, ok := h.resolveAttempt(w, r, project)
+	if !ok {
 		return
 	}
 	index := stepIndex(execution, r.PathValue("step"))
@@ -347,7 +347,7 @@ func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
-	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execID), fmt.Sprintf("%03d", index))
+	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execution.ID), fmt.Sprintf("%03d", index))
 	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(r.PathValue("path"))))
 	if full != dir && !strings.HasPrefix(full, dir+string(filepath.Separator)) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
@@ -358,32 +358,15 @@ func (h *Handler) ArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r)
 		return
 	}
+	relPath, err := filepath.Rel(dir, full)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if etag := h.runner.ArtifactETag(execution, index, filepath.ToSlash(relPath)); etag != "" {
+		w.Header().Set("ETag", etag)
+	}
 	http.ServeFile(w, r, full)
-}
-
-func (h *Handler) listArtifacts(execution stores.Execution) []artifact {
-	dir := h.runner.ArtifactDir(execution.ProjectID, execution.ID)
-	out := []artifact{}
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return nil
-		}
-		parts := strings.SplitN(rel, string(filepath.Separator), 2)
-		if len(parts) != 2 {
-			return nil
-		}
-		var size int64
-		if info, err := d.Info(); err == nil {
-			size = info.Size()
-		}
-		out = append(out, artifact{Step: stepNameForIndex(execution, parts[0]), Path: filepath.ToSlash(parts[1]), Size: size})
-		return nil
-	})
-	return out
 }
 
 func stepIndex(execution stores.Execution, name string) int {
@@ -393,11 +376,4 @@ func stepIndex(execution stores.Execution, name string) int {
 		}
 	}
 	return -1
-}
-
-func stepNameForIndex(execution stores.Execution, indexDir string) string {
-	if idx, err := strconv.Atoi(indexDir); err == nil && idx >= 0 && idx < len(execution.Steps) {
-		return execution.Steps[idx].Name
-	}
-	return indexDir
 }

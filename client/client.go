@@ -184,6 +184,8 @@ type StepResult struct {
 
 type Execution struct {
 	ID              int64        `json:"id"`
+	Attempt         int          `json:"attempt"`
+	AttemptsCount   int          `json:"attempts_count"`
 	ProjectID       uuid.UUID    `json:"project_id"`
 	Project         string       `json:"project,omitempty"`
 	Workflow        string       `json:"workflow"`
@@ -203,8 +205,26 @@ type Execution struct {
 	CreatedByLogin  string       `json:"created_by_login,omitempty"`
 }
 
+type Attempt struct {
+	Number         int        `json:"attempt"`
+	Status         Status     `json:"status"`
+	Trigger        Trigger    `json:"trigger"`
+	Error          string     `json:"error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	CreatedBy      *uuid.UUID `json:"created_by,omitempty"`
+	CreatedByLogin string     `json:"created_by_login,omitempty"`
+}
+
+type ArtifactHash struct {
+	Algorithm string `json:"algorithm"`
+	Value     string `json:"value"`
+}
+
 type Artifact struct {
-	Step string `json:"step"`
-	Path string `json:"path"`
-	Size int64  `json:"size"`
+	Step string        `json:"step"`
+	Path string        `json:"path"`
+	Size int64         `json:"size"`
+	Hash *ArtifactHash `json:"hash,omitempty"`
 }

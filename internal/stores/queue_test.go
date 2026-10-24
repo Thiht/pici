@@ -62,7 +62,7 @@ func TestExecutionQueue(t *testing.T) {
 	if n, err := s.CountPendingExecutions(ctx); err != nil || n != 2 {
 		t.Fatalf("expected both executions requeued, got %d (err=%v)", n, err)
 	}
-	requeued, err := s.GetExecution(ctx, projectID, first.ID)
+	requeued, err := s.GetAttempt(ctx, projectID, first.ID)
 	if err != nil || requeued.Status != StatusPending {
 		t.Fatalf("unexpected requeued execution: %+v (err=%v)", requeued, err)
 	}

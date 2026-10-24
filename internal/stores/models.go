@@ -127,31 +127,75 @@ func (s *Steps) Scan(src any) error {
 	return json.Unmarshal(b, s)
 }
 
+// Execution is the Execution view of a selected attempt, shared by the API and
+// the web UI. ExecutionID, Attempt and AttemptsCount identify the logical
+// Execution; ID, status, steps and timestamps belong to that selected attempt.
+// The JSON form exposes the Execution id as "id".
 type Execution struct {
-	ID              int64      `json:"id"`
-	ProjectID       uuid.UUID  `json:"project_id"`
-	Project         string     `json:"project,omitempty"`
-	Workflow        string     `json:"workflow"`
-	Ref             string     `json:"ref"`
-	CommitSHA       string     `json:"commit_sha"`
-	Status          Status     `json:"status"`
-	Trigger         Trigger    `json:"trigger"`
-	Source          Source     `json:"source"`
-	Steps           Steps      `json:"steps,omitempty"`
-	Error           string     `json:"error,omitempty"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	SetupFinishedAt *time.Time `json:"setup_finished_at,omitempty"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID            int64     `json:"-"`
+	ExecutionID   int64     `json:"id"`
+	Attempt       int       `json:"attempt"`
+	AttemptsCount int       `json:"attempts_count"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	Project       string    `json:"project,omitempty"`
+	Workflow      string    `json:"workflow"`
+	Ref           string    `json:"ref"`
+	CommitSHA     string    `json:"commit_sha"`
+	Status        Status    `json:"status"`
+	Trigger       Trigger   `json:"trigger"`
+	Source        Source    `json:"source"`
+	Steps         Steps     `json:"steps,omitempty"`
+	Error         string    `json:"error,omitempty"`
+	// CreatedAt is when the Execution was created; AttemptCreatedAt is when
+	// this attempt was created. Both are the same on the first attempt.
+	CreatedAt        time.Time  `json:"created_at"`
+	AttemptCreatedAt time.Time  `json:"-"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	SetupFinishedAt  *time.Time `json:"setup_finished_at,omitempty"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
 
-	ClaimedBy        string     `json:"-"`
-	CancelRequested  bool       `json:"-"`
-	ConcurrencyGroup string     `json:"-"`
-	ParentID         *int64     `json:"parent_id,omitempty"`
-	WorkspaceID      *int64     `json:"-"`
-	SnapshotID       *uuid.UUID `json:"-"`
-	CreatedBy        *uuid.UUID `json:"created_by,omitempty"`
-	CreatedByLogin   string     `json:"created_by_login,omitempty"`
+	ClaimedBy        string `json:"-"`
+	CancelRequested  bool   `json:"-"`
+	ConcurrencyGroup string `json:"-"`
+	// ParentID is the Execution this one was rebuilt from. It is empty for
+	// retry attempts, whose previous attempt is internal to the Execution.
+	ParentID *int64 `json:"parent_id,omitempty"`
+	// PreviousAttemptID is the attempt this row retries. It is only used inside
+	// an Execution to carry over successful steps and logs.
+	PreviousAttemptID *int64     `json:"-"`
+	WorkspaceID       *int64     `json:"-"`
+	SnapshotID        *uuid.UUID `json:"-"`
+	CheckRunID        int64      `json:"-"`
+	CreatedBy         *uuid.UUID `json:"created_by,omitempty"`
+	CreatedByLogin    string     `json:"created_by_login,omitempty"`
+}
+
+// Attempt is a summary of one attempt, as returned by the attempts endpoint.
+type Attempt struct {
+	Number         int        `json:"attempt"`
+	Status         Status     `json:"status"`
+	Trigger        Trigger    `json:"trigger"`
+	Error          string     `json:"error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	CreatedBy      *uuid.UUID `json:"created_by,omitempty"`
+	CreatedByLogin string     `json:"created_by_login,omitempty"`
+}
+
+// AttemptSummary projects an attempt row onto its API summary.
+func (e Execution) AttemptSummary() Attempt {
+	return Attempt{
+		Number:         e.Attempt,
+		Status:         e.Status,
+		Trigger:        e.Trigger,
+		Error:          e.Error,
+		CreatedAt:      e.CreatedAt,
+		StartedAt:      e.StartedAt,
+		FinishedAt:     e.FinishedAt,
+		CreatedBy:      e.CreatedBy,
+		CreatedByLogin: e.CreatedByLogin,
+	}
 }
 
 type Schedule struct {

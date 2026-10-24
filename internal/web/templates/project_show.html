@@ -87,9 +87,9 @@
         <tbody>
           {{range .Executions}}
             <tr class="relative">
-              <td class="font-mono text-xs">#{{.ID}}</td>
+              <td class="font-mono text-xs">#{{.ExecutionID}}</td>
               <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
-              <td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ID}}">{{.Workflow}}</a>{{if eq (printf "%s" .Source) "snapshot"}} <span class="badge badge-soft badge-accent">local</span>{{end}}</td>
+              <td><a class="link link-primary font-medium stretched-link" href="/projects/{{$.Project.ID}}/executions/{{.ExecutionID}}">{{.Workflow}}</a>{{if eq (printf "%s" .Source) "snapshot"}} <span class="badge badge-soft badge-accent">local</span>{{end}}</td>
               <td class="font-mono text-xs">
                 {{.Ref}}
                 {{if .CommitSHA}}<span class="ml-1 opacity-60"

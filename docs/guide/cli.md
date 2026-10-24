@@ -36,20 +36,26 @@ Add the `source` line to your shell rc file to make it permanent. Completion que
 # trigger a run, prints the execution id
 pici-cli run demo build --ref main
 
-# watch an execution status
+# watch an execution status (latest attempt)
 pici-cli status demo 42
 
-# stream logs (--follow keeps streaming)
+# stream logs (--follow keeps streaming, --attempt selects an attempt)
 pici-cli logs demo 42 --follow
+pici-cli logs demo 42 --attempt 1
 
 # list a project's executions
 pici-cli executions demo --limit 10
+
+# list the attempts of an execution
+pici-cli attempts demo 42
 
 # cancel, rebuild, or retry the failed steps
 pici-cli cancel demo 42
 pici-cli rebuild demo 42
 pici-cli retry demo 42
 ```
+
+`status`, `logs`, and `artifacts` accept `--attempt N` (default: the latest attempt). `pici-cli attempts demo 42` lists the attempts of an execution.
 
 ## Local runs
 
@@ -92,7 +98,7 @@ pici-cli vars rm NPM_TOKEN --project demo
 ## Artifacts
 
 ```sh
-# list artifacts of an execution
+# list artifacts of an execution (prints step/path, size and SHA-256)
 pici-cli artifacts demo 42
 
 # download one (writes to the basename of the path)

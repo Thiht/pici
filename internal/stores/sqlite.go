@@ -287,6 +287,9 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.Source == "" {
 		e.Source = SourceGit
 	}
+	if e.Attempt == 0 {
+		e.Attempt = 1
+	}
 	if e.WorkspaceID == nil {
 		e.WorkspaceID = &e.ID
 	}
@@ -308,6 +311,13 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if err := tx.QueryRowContext(ctx, `UPDATE projects SET execution_seq = execution_seq + 1 WHERE id = ? RETURNING execution_seq`, e.ProjectID.String()).Scan(&e.ID); err != nil {
 		return err
 	}
+	if e.ExecutionID == 0 {
+		e.ExecutionID = e.ID
+		e.Attempt = 1
+	}
+	if e.AttemptsCount == 0 {
+		e.AttemptsCount = e.Attempt
+	}
 	var snapshotID any
 	if e.SnapshotID != nil {
 		snapshotID = e.SnapshotID.String()
@@ -316,10 +326,14 @@ func (s *sqliteStore) CreateExecution(ctx context.Context, e *Execution) error {
 	if e.CreatedBy != nil {
 		createdBy = e.CreatedBy.String()
 	}
+	parentID := e.ParentID
+	if e.PreviousAttemptID != nil {
+		parentID = e.PreviousAttemptID
+	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID, createdBy); err != nil {
+        INSERT INTO executions (project_id, id, execution_id, attempt, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id, created_by, check_run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, e.ProjectID.String(), e.ID, e.ExecutionID, e.Attempt, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, startedMs, setupFinishedMs, finishedMs, e.CreatedAt.UnixMilli(), e.ConcurrencyGroup, e.Source, snapshotID, parentID, e.WorkspaceID, createdBy, e.CheckRunID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -344,28 +358,50 @@ func (s *sqliteStore) UpdateExecution(ctx context.Context, e Execution) error {
 	return err
 }
 
-func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
+const sqliteRawExecutionColumns = `
+    e.project_id, e.id, COALESCE(e.execution_id, e.id), e.attempt, e.workflow, e.ref, e.commit_sha,
+    e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at,
+    e.created_at, e.concurrency_group, e.source, e.snapshot_id,
+    CASE WHEN e.trigger = 'retry' THEN e.parent_id END,
+    CASE WHEN e.trigger = 'rebuild' THEN e.parent_id END,
+    e.workspace_id, e.created_by, u.login, e.check_run_id,
+    COALESCE((SELECT MAX(a.attempt) FROM executions a WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id), e.attempt),
+    e.created_at
+`
+
+const sqliteJoinedExecutionColumns = `
+    e.project_id, e.id, COALESCE(e.execution_id, e.id), e.attempt, e.workflow, e.ref, e.commit_sha,
+    e.status, r.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at,
+    r.created_at, e.concurrency_group, e.source, e.snapshot_id,
+    CASE WHEN e.trigger = 'retry' THEN e.parent_id END, r.parent_id,
+    e.workspace_id, r.created_by, u.login, r.check_run_id,
+    COALESCE((SELECT MAX(a.attempt) FROM executions a WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id), e.attempt),
+    e.created_at
+`
+
+func (s *sqliteStore) scanExecution(row rowScanner) (Execution, error) {
 	var e Execution
 	var projectIDStr string
 	var snapshotID *string
 	var startedMs, setupFinishedMs, finishedMs *int64
-	var createdMs int64
+	var createdMs, attemptCreatedMs int64
 	var createdBy, createdByLogin *string
-	err := s.db.QueryRowContext(ctx, `
-        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
-        FROM executions e
-        LEFT JOIN users u ON u.id = e.created_by
-        WHERE e.project_id = ? AND e.id = ?
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Execution{}, ErrNotFound
-	}
-	if err != nil {
+	var previousAttemptID, parentID *int64
+	if err := row.Scan(&projectIDStr, &e.ID, &e.ExecutionID, &e.Attempt, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &previousAttemptID, &parentID, &e.WorkspaceID, &createdBy, &createdByLogin, &e.CheckRunID, &e.AttemptsCount, &attemptCreatedMs); err != nil {
 		return Execution{}, err
 	}
+	e.PreviousAttemptID = previousAttemptID
+	e.ParentID = parentID
+	var err error
 	e.ProjectID, err = uuid.Parse(projectIDStr)
 	if err != nil {
 		return Execution{}, err
+	}
+	if e.Attempt == 0 {
+		e.Attempt = 1
+	}
+	if e.AttemptsCount == 0 {
+		e.AttemptsCount = e.Attempt
 	}
 	if createdBy != nil {
 		parsed, err := uuid.Parse(*createdBy)
@@ -397,7 +433,42 @@ func (s *sqliteStore) GetExecution(ctx context.Context, projectID uuid.UUID, id 
 		e.FinishedAt = &t
 	}
 	e.CreatedAt = time.UnixMilli(createdMs)
+	e.AttemptCreatedAt = time.UnixMilli(attemptCreatedMs)
 	return e, nil
+}
+
+func (s *sqliteStore) GetAttempt(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
+	e, err := s.scanExecution(s.db.QueryRowContext(ctx, `
+        SELECT `+sqliteRawExecutionColumns+`
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = ? AND e.id = ?
+    `, projectID.String(), id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Execution{}, ErrNotFound
+	}
+	return e, err
+}
+
+func (s *sqliteStore) GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (Execution, error) {
+	query := `
+        SELECT ` + sqliteJoinedExecutionColumns + `
+        FROM executions e
+        JOIN executions r ON r.project_id = e.project_id AND r.id = e.execution_id
+        LEFT JOIN users u ON u.id = r.created_by
+        WHERE e.project_id = ? AND e.execution_id = ?`
+	args := []any{projectID.String(), executionID}
+	if attempt > 0 {
+		query += ` AND e.attempt = ?`
+		args = append(args, attempt)
+	} else {
+		query += ` ORDER BY e.attempt DESC LIMIT 1`
+	}
+	e, err := s.scanExecution(s.db.QueryRowContext(ctx, query, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Execution{}, ErrNotFound
+	}
+	return e, err
 }
 
 func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, limit int) ([]Execution, error) {
@@ -405,11 +476,16 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
+        SELECT `+sqliteJoinedExecutionColumns+`
         FROM executions e
-        LEFT JOIN users u ON u.id = e.created_by
+        JOIN executions r ON r.project_id = e.project_id AND r.id = e.execution_id
+        LEFT JOIN users u ON u.id = r.created_by
         WHERE e.project_id = ?
-        ORDER BY e.id DESC
+          AND e.attempt = (
+              SELECT MAX(a.attempt) FROM executions a
+              WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id
+          )
+        ORDER BY e.created_at DESC, e.id DESC
         LIMIT ?
     `, projectID.String(), limit)
 	if err != nil {
@@ -419,52 +495,42 @@ func (s *sqliteStore) ListExecutions(ctx context.Context, projectID uuid.UUID, l
 
 	executions := make([]Execution, 0)
 	for rows.Next() {
-		var e Execution
-		var projectIDStr string
-		var snapshotID *string
-		var startedMs, setupFinishedMs, finishedMs *int64
-		var createdMs int64
-		var createdBy, createdByLogin *string
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &startedMs, &setupFinishedMs, &finishedMs, &createdMs, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin); err != nil {
-			return nil, err
-		}
-		e.ProjectID, err = uuid.Parse(projectIDStr)
+		e, err := s.scanExecution(rows)
 		if err != nil {
 			return nil, err
 		}
-		if createdBy != nil {
-			parsed, err := uuid.Parse(*createdBy)
-			if err != nil {
-				return nil, err
-			}
-			e.CreatedBy = &parsed
-		}
-		if createdByLogin != nil {
-			e.CreatedByLogin = *createdByLogin
-		}
-		if snapshotID != nil {
-			parsed, err := uuid.Parse(*snapshotID)
-			if err != nil {
-				return nil, err
-			}
-			e.SnapshotID = &parsed
-		}
-		if startedMs != nil {
-			t := time.UnixMilli(*startedMs)
-			e.StartedAt = &t
-		}
-		if setupFinishedMs != nil {
-			t := time.UnixMilli(*setupFinishedMs)
-			e.SetupFinishedAt = &t
-		}
-		if finishedMs != nil {
-			t := time.UnixMilli(*finishedMs)
-			e.FinishedAt = &t
-		}
-		e.CreatedAt = time.UnixMilli(createdMs)
 		executions = append(executions, e)
 	}
 	return executions, rows.Err()
+}
+
+func (s *sqliteStore) ListAttempts(ctx context.Context, projectID uuid.UUID, executionID int64) ([]Execution, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT `+sqliteRawExecutionColumns+`
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = ? AND e.execution_id = ?
+        ORDER BY e.attempt ASC
+    `, projectID.String(), executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	attempts := make([]Execution, 0)
+	for rows.Next() {
+		e, err := s.scanExecution(rows)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, e)
+	}
+	return attempts, rows.Err()
+}
+
+func (s *sqliteStore) SetCheckRunID(ctx context.Context, projectID uuid.UUID, executionID, checkRunID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE executions SET check_run_id = ? WHERE project_id = ? AND id = ?`, checkRunID, projectID.String(), executionID)
+	return err
 }
 
 func (s *sqliteStore) ClaimPendingExecution(ctx context.Context, workerID string) (Execution, error) {
@@ -507,7 +573,7 @@ func (s *sqliteStore) ClaimPendingExecution(ctx context.Context, workerID string
 	if err != nil {
 		return Execution{}, err
 	}
-	return s.GetExecution(ctx, projectID, id)
+	return s.GetAttempt(ctx, projectID, id)
 }
 
 func (s *sqliteStore) RequeueOrphanedExecutions(ctx context.Context) error {

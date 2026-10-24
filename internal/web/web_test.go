@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
 
@@ -215,8 +217,9 @@ func TestExecutionTemplateHidesZeroExitCode(t *testing.T) {
 	data := executionPage{
 		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
+			ExecutionID: 1, Attempt: 1, AttemptsCount: 1,
 			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
-			CreatedAt: started, StartedAt: &started, FinishedAt: &finished,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started, FinishedAt: &finished,
 		},
 		Steps: []stepView{
 			{Name: "ok", Status: stores.StepStatusSuccess, ExitCode: 0, StartedAt: &started, FinishedAt: &finished},
@@ -260,8 +263,9 @@ func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	data := executionPage{
 		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
+			ExecutionID: 1, Attempt: 1, AttemptsCount: 1,
 			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
-			CreatedAt: started, StartedAt: &started, SetupFinishedAt: &setupFinished, FinishedAt: &finished,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started, SetupFinishedAt: &setupFinished, FinishedAt: &finished,
 		},
 		SetupLog: "cloning...",
 	}
@@ -280,9 +284,9 @@ func TestExecutionTemplateRunningStepTimer(t *testing.T) {
 	data := executionPage{
 		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
-			ID: 42, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+			ID: 42, ExecutionID: 42, Attempt: 1, AttemptsCount: 1, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
 			Workflow: "build", Ref: "main", Status: stores.StatusRunning,
-			CreatedAt: started, StartedAt: &started,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started,
 		},
 		Steps: []stepView{
 			{Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started, Timeout: 5 * time.Minute},
@@ -308,8 +312,9 @@ func TestExecutionTemplateFailedStepShowsExceededTimeout(t *testing.T) {
 	data := executionPage{
 		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
+			ExecutionID: 1, Attempt: 1, AttemptsCount: 1,
 			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
-			CreatedAt: started, StartedAt: &started, FinishedAt: &finished,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started, FinishedAt: &finished,
 		},
 		Steps: []stepView{
 			{Name: "compile", Status: stores.StepStatusFailed, StartedAt: &started, FinishedAt: &finished, Timeout: 5 * time.Minute},
@@ -334,9 +339,9 @@ func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 	data := executionPage{
 		Title: "Execution", Active: "projects", Version: "dev",
 		Execution: stores.Execution{
-			ID: 42, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+			ID: 42, ExecutionID: 42, Attempt: 1, AttemptsCount: 1, ProjectID: uuid.MustParse("33333333-3333-3333-3333-333333333333"),
 			Workflow: "build", Ref: "main", Status: stores.StatusRunning,
-			CreatedAt: started, StartedAt: &started,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started,
 		},
 		Steps: []stepView{
 			{LogSource: "compile", Name: "compile", Status: stores.StepStatusRunning, StartedAt: &started},
@@ -348,9 +353,101 @@ func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{`data-source="setup"`, `data-source="compile"`, `new EventSource(`, "/stream"} {
+	for _, want := range []string{`data-source="setup"`, `data-source="compile"`, `new EventSource(`, "/stream?attempt=1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in running execution page, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestExecutionTemplateShowsArtifactHashes(t *testing.T) {
+	started := time.Now()
+	projectID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	full := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	data := executionPage{
+		Title: "Execution", Active: "projects", Version: "dev",
+		Project: stores.Project{ID: projectID, Name: "demo"},
+		Execution: stores.Execution{
+			ID: 12, ExecutionID: 12, Attempt: 1, AttemptsCount: 1, ProjectID: projectID,
+			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started, FinishedAt: &started,
+		},
+		Artifacts: []ci.Artifact{
+			{Step: "build", Path: "dist/app", Size: 5, Hash: &ci.ArtifactHash{Algorithm: "sha256", Value: full}},
+			{Step: "build", Path: "dist/old", Size: 3},
+		},
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{">Hash<", "2cf24dba5fb0", `title="` + full + `"`, `data-copy="` + full + `"`, ">Copy<", ">—<"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in execution page, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestExecutionTemplateShowsAttemptHistory(t *testing.T) {
+	started := time.Now()
+	finished := started.Add(30 * time.Second)
+	projectID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	data := executionPage{
+		Title: "Execution", Active: "projects", Version: "dev",
+		Project: stores.Project{ID: projectID, Name: "demo"},
+		Execution: stores.Execution{
+			ID: 12, ExecutionID: 7, Attempt: 2, AttemptsCount: 2, ProjectID: projectID,
+			Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
+			CreatedAt: started.Add(-time.Hour), AttemptCreatedAt: started,
+			StartedAt: &started, FinishedAt: &finished,
+		},
+		Attempts: []stores.Execution{
+			{Attempt: 1, Status: stores.StatusFailed, Trigger: stores.TriggerManual, CreatedAt: started.Add(-time.Hour), Error: "step test failed"},
+			{Attempt: 2, Status: stores.StatusSuccess, Trigger: stores.TriggerRetry, CreatedAt: started},
+		},
+		IsLatest: true,
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"attempt 2 of 2", "Attempt history", "?attempt=1", "?attempt=2", "step test failed", "retry"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in execution page, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestExecutionTemplateOlderAttemptIsReadOnly(t *testing.T) {
+	started := time.Now()
+	projectID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	data := executionPage{
+		Title: "Execution", Active: "projects", Version: "dev",
+		Project: stores.Project{ID: projectID, Name: "demo"},
+		Execution: stores.Execution{
+			ID: 7, ExecutionID: 7, Attempt: 1, AttemptsCount: 2, ProjectID: projectID,
+			Workflow: "build", Ref: "main", Status: stores.StatusFailed,
+			CreatedAt: started, AttemptCreatedAt: started, StartedAt: &started,
+		},
+		Attempts: []stores.Execution{
+			{Attempt: 1, Status: stores.StatusFailed, Trigger: stores.TriggerManual, CreatedAt: started},
+			{Attempt: 2, Status: stores.StatusSuccess, Trigger: stores.TriggerRetry, CreatedAt: started},
+		},
+		IsLatest: false,
+	}
+	var buf strings.Builder
+	if err := templates.ExecuteTemplate(&buf, "execution_show", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Attempt 1 is read-only") {
+		t.Fatalf("expected the older attempt to be read-only, got:\n%s", out)
+	}
+	for _, unwanted := range []string{"Retry failed steps", ">Rebuild<"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("did not expect %q on an older attempt", unwanted)
 		}
 	}
 }
@@ -735,6 +832,71 @@ func TestCSRFRequiredForMutations(t *testing.T) {
 	}
 }
 
+func TestExecutionPageShowsAttemptHistory(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
+	if _, err := env.store.CreateProject(ctx, stores.Project{ID: projectID, Name: "demo", DefaultBranch: "main", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now().Add(-time.Hour)
+	finished := started.Add(time.Minute)
+	root := stores.Execution{
+		ProjectID: projectID, Workflow: "build", Ref: "main", Status: stores.StatusFailed,
+		CreatedAt: started, Steps: stores.Steps{{Name: "test", Status: stores.StepStatusFailed, Error: "boom"}},
+	}
+	if err := env.store.CreateExecution(ctx, &root); err != nil {
+		t.Fatal(err)
+	}
+	root.StartedAt, root.FinishedAt, root.Error = &started, &finished, "step test failed"
+	if err := env.store.UpdateExecution(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+
+	parentID, workspaceID := root.ID, root.ID
+	retry := stores.Execution{
+		ProjectID: projectID, ExecutionID: root.ID, Attempt: 2,
+		Workflow: "build", Ref: "main", Status: stores.StatusSuccess, Trigger: stores.TriggerRetry,
+		PreviousAttemptID: &parentID, WorkspaceID: &workspaceID, CreatedAt: time.Now(),
+		Steps: stores.Steps{{Name: "test", Status: stores.StepStatusSuccess}},
+	}
+	if err := env.store.CreateExecution(ctx, &retry); err != nil {
+		t.Fatal(err)
+	}
+	retry.StartedAt, retry.FinishedAt = &started, &finished
+	if err := env.store.UpdateExecution(ctx, retry); err != nil {
+		t.Fatal(err)
+	}
+
+	execURL := env.srv.URL + "/projects/" + projectID.String() + "/executions/" + strconv.FormatInt(root.ID, 10)
+	resp, err := env.client.Get(execURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := body(t, resp)
+	for _, want := range []string{"attempt 2 of 2", "Attempt history", "?attempt=1", "?attempt=2", "step test failed", "retry"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q on the latest attempt page, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Retry failed steps") {
+		t.Errorf("did not expect a retry action on a successful attempt")
+	}
+
+	resp, err = env.client.Get(execURL + "?attempt=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = body(t, resp)
+	if !strings.Contains(out, "Attempt 1 is read-only") {
+		t.Errorf("expected the older attempt to be read-only, got:\n%s", out)
+	}
+	if strings.Contains(out, "Retry failed steps") || strings.Contains(out, ">Rebuild<") {
+		t.Errorf("did not expect actions on an older attempt, got:\n%s", out)
+	}
+}
+
 func TestExecutionNotFound(t *testing.T) {
 	srv, client := newTestServer(t, "")
 	resp, err := client.Get(srv.URL + "/projects/demo/executions/999")
@@ -1088,7 +1250,7 @@ func TestProjectShowExecutionShowsShortCommit(t *testing.T) {
 		Title: "demo", Active: "projects", Version: "dev",
 		Project: stores.Project{ID: uuid.MustParse("33333333-3333-3333-3333-333333333333"), Name: "demo"},
 		Executions: []stores.Execution{{
-			ID: 7, Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
+			ID: 7, ExecutionID: 7, Attempt: 1, AttemptsCount: 1, Workflow: "build", Ref: "main", Status: stores.StatusSuccess,
 			CommitSHA: sha, CreatedAt: time.Now(),
 		}},
 	}
@@ -1187,5 +1349,67 @@ func TestProjectCacheDeleteRequiresCSRF(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 without csrf, got %d", resp.StatusCode)
+	}
+}
+
+func TestArtifactDownloadSetsETag(t *testing.T) {
+	const helloHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	store := newWebTestStore(t)
+	ws := t.TempDir()
+	h := New(store, &ci.Runner{Store: store, WorkspaceDir: ws}, ws, nil, "", "dev")
+
+	projectID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
+	if _, err := store.CreateProject(t.Context(), stores.Project{
+		ID: projectID, Name: "demo", DefaultBranch: "main", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	execution := stores.Execution{
+		ProjectID: projectID,
+		Workflow:  "build",
+		Ref:       "main",
+		Steps:     stores.Steps{{Name: "build", Status: stores.StepStatusSuccess}},
+	}
+	if err := store.CreateExecution(t.Context(), &execution); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(ws, "artifacts", projectID.String(), strconv.FormatInt(execution.ID, 10))
+	if err := os.MkdirAll(filepath.Join(root, "000", "dist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "000", "dist", "app"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"version":1,"artifacts":[{"path":"dist/app","hash":{"algorithm":"sha256","value":"` + helloHash + `"}}]}`
+	if err := os.WriteFile(filepath.Join(root, "000.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	download := func(path string, headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetPathValue("id", projectID.String())
+		req.SetPathValue("executionID", strconv.FormatInt(execution.ExecutionID, 10))
+		req.SetPathValue("step", "build")
+		req.SetPathValue("path", path)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rr := httptest.NewRecorder()
+		h.ArtifactDownload(rr, req)
+		return rr
+	}
+
+	rr := download("dist//app", nil)
+	if rr.Code != http.StatusOK || rr.Body.String() != "hello" {
+		t.Fatalf("expected 200 hello, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if etag := rr.Header().Get("ETag"); etag != `"sha256-`+helloHash+`"` {
+		t.Fatalf("unexpected ETag %q", etag)
+	}
+
+	rr = download("dist/app", map[string]string{"If-None-Match": `"sha256-` + helloHash + `"`})
+	if rr.Code != http.StatusNotModified {
+		t.Fatalf("expected 304, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

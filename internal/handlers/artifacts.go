@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Thiht/pici/internal/ci"
+	"github.com/Thiht/pici/internal/handlers/bind"
 	"github.com/Thiht/pici/internal/handlers/render"
 	"github.com/Thiht/pici/internal/stores"
 )
@@ -24,12 +24,6 @@ func NewArtifactsHandler(store stores.Store, runner *ci.Runner) *ArtifactsHandle
 	return &ArtifactsHandler{store: store, runner: runner}
 }
 
-type artifact struct {
-	Step string `json:"step"`
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-}
-
 func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -41,35 +35,17 @@ func (h *ArtifactsHandler) List(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-
-	dir := h.runner.ArtifactDir(project.ID, id)
-	out := []artifact{}
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return nil
-		}
-		parts := strings.SplitN(rel, string(filepath.Separator), 2)
-		if len(parts) != 2 {
-			return nil
-		}
-		info, _ := d.Info()
-		var size int64
-		if info != nil {
-			size = info.Size()
-		}
-		out = append(out, artifact{Step: stepNameForIndex(execution, parts[0]), Path: filepath.ToSlash(parts[1]), Size: size})
-		return nil
-	})
-	render.JSON(w, http.StatusOK, out)
+	render.JSON(w, http.StatusOK, h.runner.ListArtifacts(execution))
 }
 
 func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
@@ -83,10 +59,15 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	step := r.PathValue("step")
 	rel := r.PathValue("path")
 
-	execution, err := h.store.GetExecution(r.Context(), project.ID, execID)
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, execID, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -104,7 +85,7 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execID), fmt.Sprintf("%03d", index))
+	dir := filepath.Join(h.runner.ArtifactDir(project.ID, execution.ID), fmt.Sprintf("%03d", index))
 	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(rel)))
 	if full != dir && !strings.HasPrefix(full, dir+string(filepath.Separator)) {
 		render.Error(w, http.StatusBadRequest, errors.New("invalid path"))
@@ -116,13 +97,13 @@ func (h *ArtifactsHandler) Download(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, errors.New("artifact not found"))
 		return
 	}
-	http.ServeFile(w, r, full)
-}
-
-func stepNameForIndex(execution stores.Execution, indexDir string) string {
-	idx, err := strconv.Atoi(indexDir)
-	if err == nil && idx >= 0 && idx < len(execution.Steps) {
-		return execution.Steps[idx].Name
+	relPath, err := filepath.Rel(dir, full)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, errors.New("invalid path"))
+		return
 	}
-	return indexDir
+	if etag := h.runner.ArtifactETag(execution, index, filepath.ToSlash(relPath)); etag != "" {
+		w.Header().Set("ETag", etag)
+	}
+	http.ServeFile(w, r, full)
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -137,18 +138,64 @@ func TestRetryExecution(t *testing.T) {
 		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
 	}
 
+	var created struct {
+		ID            int64 `json:"id"`
+		Attempt       int   `json:"attempt"`
+		AttemptsCount int   `json:"attempts_count"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != previous.ID || created.Attempt != 2 || created.AttemptsCount != 2 {
+		t.Fatalf("retry response should describe the execution's latest attempt: %+v", created)
+	}
+
 	execs, err := store.ListExecutions(t.Context(), projectID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var retried *stores.Execution
-	for i := range execs {
-		if execs[i].Trigger == stores.TriggerRetry {
-			retried = &execs[i]
-		}
+	if len(execs) != 1 {
+		t.Fatalf("retry should not add an execution: %+v", execs)
 	}
-	if retried == nil || retried.ParentID == nil || *retried.ParentID != previous.ID {
-		t.Fatalf("retry not created: %+v", execs)
+	if execs[0].ExecutionID != previous.ID || execs[0].Attempt != 2 || execs[0].AttemptsCount != 2 {
+		t.Fatalf("retry not grouped: %+v", execs[0])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/projects/"+projectID.String()+"/executions/"+itoa(previous.ID)+"?attempt=1", nil)
+	rr = serveAuthed(t, s, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for attempt 1, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var first struct {
+		ID      int64  `json:"id"`
+		Attempt int    `json:"attempt"`
+		Status  string `json:"status"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != previous.ID || first.Attempt != 1 || first.Status != string(stores.StatusFailed) {
+		t.Fatalf("unexpected attempt 1: %+v", first)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/projects/"+projectID.String()+"/executions/"+itoa(previous.ID)+"/attempts", nil)
+	rr = serveAuthed(t, s, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var attempts []stores.Attempt
+	if err := json.Unmarshal(rr.Body.Bytes(), &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 2 || attempts[0].Number != 1 || attempts[1].Number != 2 || attempts[1].Trigger != stores.TriggerRetry {
+		t.Fatalf("unexpected attempts: %+v", attempts)
+	}
+
+	// Retrying an older attempt would fork the execution and is rejected.
+	req = httptest.NewRequest(http.MethodPost, "/api/projects/"+projectID.String()+"/executions/"+itoa(previous.ID)+"/retry?attempt=1", nil)
+	rr = serveAuthed(t, s, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for retrying an older attempt, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

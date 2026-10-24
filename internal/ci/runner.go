@@ -185,7 +185,7 @@ func (r *Runner) EnqueueSnapshot(ctx context.Context, project stores.Project, wo
 }
 
 func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error) {
-	parentID := previous.ID
+	parentID := previous.ExecutionID
 	return r.enqueue(ctx, stores.Execution{
 		ProjectID: project.ID,
 		Project:   project.Name,
@@ -201,6 +201,15 @@ func (r *Runner) EnqueueRebuild(ctx context.Context, project stores.Project, pre
 }
 
 func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previous stores.Execution, createdBy *uuid.UUID) (stores.Execution, error) {
+	latest, err := r.Store.GetExecutionAttempt(ctx, project.ID, previous.ExecutionID, 0)
+	if err != nil {
+		return stores.Execution{}, err
+	}
+	if latest.ID != previous.ID {
+		return stores.Execution{}, fmt.Errorf("%w: only the latest attempt can be retried", ErrNotRetryable)
+	}
+	previous = latest
+
 	if previous.Source != stores.SourceGit {
 		return stores.Execution{}, fmt.Errorf("%w: snapshot executions cannot be retried", ErrNotRetryable)
 	}
@@ -229,17 +238,19 @@ func (r *Runner) EnqueueRetry(ctx context.Context, project stores.Project, previ
 
 	parentID := previous.ID
 	return r.enqueue(ctx, stores.Execution{
-		ProjectID:   project.ID,
-		Project:     project.Name,
-		Workflow:    previous.Workflow,
-		Ref:         previous.Ref,
-		CommitSHA:   previous.CommitSHA,
-		Trigger:     stores.TriggerRetry,
-		Source:      stores.SourceGit,
-		ParentID:    &parentID,
-		WorkspaceID: &workspaceID,
-		CreatedAt:   time.Now(),
-		CreatedBy:   createdBy,
+		ProjectID:         project.ID,
+		Project:           project.Name,
+		ExecutionID:       previous.ExecutionID,
+		Attempt:           previous.Attempt + 1,
+		Workflow:          previous.Workflow,
+		Ref:               previous.Ref,
+		CommitSHA:         previous.CommitSHA,
+		Trigger:           stores.TriggerRetry,
+		Source:            stores.SourceGit,
+		PreviousAttemptID: &parentID,
+		WorkspaceID:       &workspaceID,
+		CreatedAt:         time.Now(),
+		CreatedBy:         createdBy,
 	})
 }
 
@@ -346,8 +357,8 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 
 	var parent stores.Execution
 	var carry map[string]stores.StepResult
-	if isRetry && exec.ParentID != nil {
-		if loaded, err := r.Store.GetExecution(ctx, project.ID, *exec.ParentID); err == nil {
+	if isRetry && exec.PreviousAttemptID != nil {
+		if loaded, err := r.Store.GetAttempt(ctx, project.ID, *exec.PreviousAttemptID); err == nil {
 			parent = loaded
 			carry = carryOverSteps(loaded.Steps)
 		}
@@ -368,17 +379,17 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		exec.Steps = planned
 		_ = r.Store.UpdateExecution(ctx, exec)
 
-		if isRetry && exec.ParentID != nil {
+		if isRetry && exec.PreviousAttemptID != nil {
 			for i, name := range order {
 				if _, ok := carry[name]; !ok {
 					continue
 				}
-				src := r.StepLogPath(project.ID, *exec.ParentID, stepIndexByName(parent.Steps, name), name)
+				src := r.StepLogPath(project.ID, *exec.PreviousAttemptID, stepIndexByName(parent.Steps, name), name)
 				dst := r.StepLogPath(project.ID, exec.ID, i, name)
 				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err == nil {
 					_ = copyFile(src, dst)
 				}
-				r.collectArtifacts(project.ID, exec.ID, i, findStep(cfg.Steps, name).Artifacts, repoDir)
+				r.collectArtifacts(project.ID, exec.ID, i, findStep(cfg.Steps, name).Artifacts, repoDir, setupLog)
 			}
 		}
 	}
@@ -413,7 +424,24 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	explicitBinds := cacheBinds(project.ID.String(), r.MountPath, cfg.Cache)
 	cacheBinds := append(explicitBinds, autoBinds...)
 
-	checkRunID := r.createCheckRun(ctx, project, exec, setupLog)
+	// The check run belongs to the Execution, not the attempt: reuse the one
+	// created by the first attempt so a retry updates it instead of adding a
+	// second check to the commit.
+	checkRunID := int64(0)
+	if root, err := r.Store.GetExecutionAttempt(ctx, project.ID, exec.ExecutionID, 1); err == nil {
+		checkRunID = root.CheckRunID
+	} else {
+		fmt.Fprintf(setupLog, "load github check run id failed: %v\n", err)
+	}
+	if checkRunID == 0 {
+		checkRunID = r.createCheckRun(ctx, project, exec, setupLog)
+		if checkRunID != 0 {
+			if err := r.Store.SetCheckRunID(ctx, project.ID, exec.ExecutionID, checkRunID); err != nil {
+				fmt.Fprintf(setupLog, "store github check run id failed: %v\n", err)
+			}
+		}
+	}
+	r.markCheckRunRunning(ctx, project, exec, checkRunID, setupLog)
 	r.gitlabStatus(ctx, project, exec, "running", setupLog)
 
 	image := cfg.Image
@@ -620,7 +648,7 @@ func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exe
 		HeadSHA:    exec.CommitSHA,
 		Status:     &status,
 		StartedAt:  &gh.Timestamp{Time: time.Now()},
-		DetailsURL: r.detailsURL(project.ID, exec.ID),
+		DetailsURL: r.detailsURL(project.ID, exec.ExecutionID),
 	})
 	if err != nil {
 		if log != nil {
@@ -629,6 +657,53 @@ func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exe
 		return 0
 	}
 	return checkRun.GetID()
+}
+
+func (r *Runner) markCheckRunRunning(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, log io.Writer) {
+	if checkRunID == 0 || project.Provider != stores.ProviderGithub || project.AuthSecret == "" {
+		return
+	}
+	owner, repo, ok := github.ParseRepo(project.RepoURL)
+	if !ok {
+		return
+	}
+	client, err := gh.NewClient(gh.WithAuthToken(project.AuthSecret))
+	if err != nil {
+		if log != nil {
+			fmt.Fprintf(log, "mark github check run running failed: %v\n", err)
+		}
+		return
+	}
+	status := "in_progress"
+	title := fmt.Sprintf("pici/%s: running (attempt %d/%d)", exec.Workflow, exec.Attempt, exec.AttemptsCount)
+	summary := fmt.Sprintf("Attempt %d of %d is running.", exec.Attempt, exec.AttemptsCount)
+	summary = r.attemptSummary(ctx, project.ID, exec.ExecutionID, summary)
+	_, _, err = client.Checks.UpdateCheckRun(ctx, owner, repo, checkRunID, gh.UpdateCheckRunOptions{
+		Name:       "pici/" + exec.Workflow,
+		Status:     &status,
+		DetailsURL: r.detailsURL(project.ID, exec.ExecutionID),
+		Output: &gh.CheckRunOutput{
+			Title:   &title,
+			Summary: &summary,
+		},
+	})
+	if err != nil && log != nil {
+		fmt.Fprintf(log, "mark github check run running failed: %v\n", err)
+	}
+}
+
+func (r *Runner) attemptSummary(ctx context.Context, projectID uuid.UUID, executionID int64, summary string) string {
+	attempts, err := r.Store.ListAttempts(ctx, projectID, executionID)
+	if err != nil || len(attempts) == 0 {
+		return summary
+	}
+	var b strings.Builder
+	b.WriteString(summary)
+	b.WriteString("\n\nAttempts:\n")
+	for _, a := range attempts {
+		fmt.Fprintf(&b, "- #%d: %s (%s)\n", a.Attempt, a.Status, a.Trigger)
+	}
+	return b.String()
 }
 
 func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, status stores.Status, errMsg string, log io.Writer) {
@@ -648,11 +723,12 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 		conclusion = "cancelled"
 	}
 
-	title := "pici/" + exec.Workflow + ": " + conclusion
+	title := fmt.Sprintf("pici/%s: %s (attempt %d/%d)", exec.Workflow, conclusion, exec.Attempt, exec.AttemptsCount)
 	summary := errMsg
 	if summary == "" {
 		summary = "Workflow completed successfully"
 	}
+	summary = r.attemptSummary(ctx, project.ID, exec.ExecutionID, summary)
 
 	client, err := gh.NewClient(gh.WithAuthToken(project.AuthSecret))
 	if err != nil {
@@ -668,7 +744,7 @@ func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exe
 		Status:      &completed,
 		Conclusion:  &conclusion,
 		CompletedAt: &gh.Timestamp{Time: time.Now()},
-		DetailsURL:  r.detailsURL(project.ID, exec.ID),
+		DetailsURL:  r.detailsURL(project.ID, exec.ExecutionID),
 		Output: &gh.CheckRunOutput{
 			Title:   &title,
 			Summary: &summary,
@@ -691,7 +767,7 @@ func (r *Runner) gitlabStatus(ctx context.Context, project stores.Project, exec 
 		return
 	}
 	var targetURL string
-	if url := r.detailsURL(project.ID, exec.ID); url != nil {
+	if url := r.detailsURL(project.ID, exec.ExecutionID); url != nil {
 		targetURL = *url
 	}
 	if err := gitlab.SetCommitStatus(ctx, base, path, project.AuthSecret, exec.CommitSHA, state, "pici/"+exec.Workflow, targetURL, ""); err != nil && log != nil {
@@ -763,7 +839,7 @@ func buildEnv(project stores.Project, exec stores.Execution, mountPath, sha, ver
 		"PICI_REPO_URL=" + project.RepoURL,
 		"PICI_REPO_SLUG=" + github.RepoSlug(project.RepoURL),
 		"PICI_WORKFLOW=" + exec.Workflow,
-		"PICI_EXECUTION_ID=" + strconv.FormatInt(exec.ID, 10),
+		"PICI_EXECUTION_ID=" + strconv.FormatInt(exec.ExecutionID, 10),
 		"PICI_REF=" + exec.Ref,
 		"PICI_VERSION=" + version,
 		"PICI_COMMIT_SHA=" + sha,

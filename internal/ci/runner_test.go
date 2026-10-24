@@ -213,8 +213,11 @@ func TestEnqueueRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exec.Trigger != stores.TriggerRetry || exec.ParentID == nil || *exec.ParentID != previous.ID {
+	if exec.Trigger != stores.TriggerRetry || exec.PreviousAttemptID == nil || *exec.PreviousAttemptID != previous.ID {
 		t.Fatalf("unexpected retry: %+v", exec)
+	}
+	if exec.ExecutionID != previous.ExecutionID || exec.Attempt != 2 || exec.AttemptsCount != 2 {
+		t.Fatalf("retry should be attempt 2 of the same execution: %+v", exec)
 	}
 	if exec.WorkspaceID == nil || *exec.WorkspaceID != previous.ID {
 		t.Fatalf("workspace should point to parent: %+v", exec.WorkspaceID)

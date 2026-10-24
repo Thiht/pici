@@ -234,7 +234,11 @@ func printVars(vars []client.Variable) {
 
 func printArtifacts(list []client.Artifact) {
 	for _, a := range list {
-		fmt.Printf("%s/%s  %s\n", a.Step, a.Path, humanBytes(a.Size))
+		hash := "-"
+		if a.Hash != nil {
+			hash = a.Hash.Value
+		}
+		fmt.Printf("%s/%s  %s  %s\n", a.Step, a.Path, humanBytes(a.Size), hash)
 	}
 }
 

@@ -145,7 +145,7 @@ func (h *ExecutionsHandler) Rebuild(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -175,13 +175,18 @@ func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	previous, err := h.store.GetExecution(r.Context(), project.ID, id)
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	previous, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
 
-	execution, err := h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
+	_, err = h.runner.EnqueueRetry(r.Context(), project, previous, auth.UserID(r.Context()))
 	switch {
 	case errors.Is(err, ci.ErrWorkspaceGone):
 		render.Error(w, http.StatusGone, err)
@@ -190,6 +195,13 @@ func (h *ExecutionsHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusConflict, err)
 		return
 	case err != nil:
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	// Return the Execution as seen by the API: origin metadata plus the new
+	// latest attempt, not the raw attempt row that was just inserted.
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, previous.ExecutionID, 0)
+	if err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -211,6 +223,33 @@ func (h *ExecutionsHandler) List(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, http.StatusOK, executions)
 }
 
+func (h *ExecutionsHandler) ListAttempts(w http.ResponseWriter, r *http.Request) {
+	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	if err != nil {
+		render.Error(w, http.StatusNotFound, err)
+		return
+	}
+	attempts, err := h.store.ListAttempts(r.Context(), project.ID, id)
+	if err != nil {
+		render.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(attempts) == 0 {
+		render.Error(w, http.StatusNotFound, stores.ErrNotFound)
+		return
+	}
+	out := make([]stores.Attempt, 0, len(attempts))
+	for _, e := range attempts {
+		out = append(out, e.AttemptSummary())
+	}
+	render.JSON(w, http.StatusOK, out)
+}
+
 func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	project, err := resolveProject(r.Context(), h.store, r.PathValue("id"))
 	if err != nil {
@@ -222,7 +261,12 @@ func (h *ExecutionsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -241,12 +285,18 @@ func (h *ExecutionsHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	if err != nil {
 		storeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
-	for _, path := range h.runner.LogPaths(project.ID, id) {
+	for _, path := range h.runner.LogPaths(project.ID, execution.ID) {
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -267,9 +317,14 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	step := r.PathValue("step")
 
-	execution, err := h.store.GetExecution(r.Context(), project.ID, id)
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -286,7 +341,7 @@ func (h *ExecutionsHandler) StepLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := os.Open(h.runner.StepLogPath(project.ID, id, index, step))
+	f, err := os.Open(h.runner.StepLogPath(project.ID, execution.ID, index, step))
 	if err != nil {
 		render.Error(w, http.StatusNotFound, errors.New("step logs not found"))
 		return
@@ -307,15 +362,16 @@ func (h *ExecutionsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, id); err != nil {
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, 0)
+	if err != nil {
 		storeError(w, err)
 		return
 	}
-	if err := h.store.SetCancelRequested(r.Context(), project.ID, id); err != nil {
+	if err := h.store.SetCancelRequested(r.Context(), project.ID, execution.ID); err != nil {
 		render.Error(w, http.StatusInternalServerError, err)
 		return
 	}
-	h.runner.Cancel(project.ID, id)
+	h.runner.Cancel(project.ID, execution.ID)
 	render.JSON(w, http.StatusOK, map[string]string{"status": "canceling"})
 }
 
@@ -325,12 +381,18 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	execID, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {
 		render.Error(w, http.StatusNotFound, err)
 		return
 	}
-	if _, err := h.store.GetExecution(r.Context(), project.ID, execID); err != nil {
+	attempt, err := bind.Attempt(r)
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	execution, err := h.store.GetExecutionAttempt(r.Context(), project.ID, id, attempt)
+	if err != nil {
 		storeError(w, err)
 		return
 	}
@@ -345,5 +407,5 @@ func (h *ExecutionsHandler) LogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	h.runner.StreamLogs(r.Context(), project.ID, execID, w, flusher.Flush)
+	h.runner.StreamLogs(r.Context(), project.ID, execution.ID, w, flusher.Flush)
 }

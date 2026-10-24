@@ -26,12 +26,23 @@ func (c *Client) RetryExecution(ctx context.Context, project string, id int64) (
 	return doJSON[Execution](c, ctx, http.MethodPost, fmt.Sprintf("/api/projects/%s/executions/%d/retry", project, id), nil)
 }
 
-func (c *Client) GetExecution(ctx context.Context, project string, id int64) (Execution, error) {
-	return getJSON[Execution](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d", project, id))
+func (c *Client) GetExecution(ctx context.Context, project string, id int64, attempt int) (Execution, error) {
+	return getJSON[Execution](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d%s", project, id, attemptQuery(attempt)))
 }
 
 func (c *Client) ListExecutions(ctx context.Context, project string, limit int) ([]Execution, error) {
 	return getJSON[[]Execution](c, ctx, fmt.Sprintf("/api/projects/%s/executions?limit=%d", project, limit))
+}
+
+func (c *Client) ListAttempts(ctx context.Context, project string, id int64) ([]Attempt, error) {
+	return getJSON[[]Attempt](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d/attempts", project, id))
+}
+
+func attemptQuery(attempt int) string {
+	if attempt <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("?attempt=%d", attempt)
 }
 
 func (c *Client) CancelExecution(ctx context.Context, project string, id int64) error {
@@ -39,16 +50,16 @@ func (c *Client) CancelExecution(ctx context.Context, project string, id int64) 
 	return err
 }
 
-func (c *Client) ExecutionLogs(ctx context.Context, project string, id int64) (string, error) {
-	data, err := c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/logs", project, id))
+func (c *Client) ExecutionLogs(ctx context.Context, project string, id int64, attempt int) (string, error) {
+	data, err := c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/logs%s", project, id, attemptQuery(attempt)))
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-func (c *Client) StepLogs(ctx context.Context, project string, id int64, step string) (string, error) {
-	data, err := c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/steps/%s/logs", project, id, step))
+func (c *Client) StepLogs(ctx context.Context, project string, id int64, step string, attempt int) (string, error) {
+	data, err := c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/steps/%s/logs%s", project, id, step, attemptQuery(attempt)))
 	if err != nil {
 		return "", err
 	}
@@ -65,8 +76,8 @@ type Event struct {
 // after their log source ("setup" or a step name); a "state" event carries the
 // execution and step statuses, and a "done" event ends the stream. The caller
 // must Close the returned stream.
-func (c *Client) ExecutionStream(ctx context.Context, project string, id int64) (*EventStream, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%s/executions/%d/logs/stream", project, id), nil)
+func (c *Client) ExecutionStream(ctx context.Context, project string, id int64, attempt int) (*EventStream, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%s/executions/%d/logs/stream%s", project, id, attemptQuery(attempt)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -121,10 +132,10 @@ func (s *EventStream) Next() (Event, error) {
 	return ev, io.EOF
 }
 
-func (c *Client) ListArtifacts(ctx context.Context, project string, id int64) ([]Artifact, error) {
-	return getJSON[[]Artifact](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d/artifacts", project, id))
+func (c *Client) ListArtifacts(ctx context.Context, project string, id int64, attempt int) ([]Artifact, error) {
+	return getJSON[[]Artifact](c, ctx, fmt.Sprintf("/api/projects/%s/executions/%d/artifacts%s", project, id, attemptQuery(attempt)))
 }
 
-func (c *Client) DownloadArtifact(ctx context.Context, project string, id int64, step, path string) ([]byte, error) {
-	return c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/artifacts/%s/%s", project, id, step, path))
+func (c *Client) DownloadArtifact(ctx context.Context, project string, id int64, step, path string, attempt int) ([]byte, error) {
+	return c.get(ctx, fmt.Sprintf("/api/projects/%s/executions/%d/artifacts/%s/%s%s", project, id, step, path, attemptQuery(attempt)))
 }

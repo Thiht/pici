@@ -41,7 +41,8 @@ The OAuth app callback URL is `http://localhost:8080/auth/github/callback`. For 
 
 - **Project** — a git repository (GitHub, GitLab, or any git URL, public or private).
 - **Workflow** — a folder under `.ci/`. One folder = one workflow.
-- **Execution** — one run of one workflow on one project.
+- **Execution** — a logical run of one workflow on one project, grouping every attempt made to complete it.
+- **Attempt** — one concrete try at completing an Execution. A retry adds an attempt to the same Execution; a rebuild starts a new Execution.
 - **Variable / secret** — injected into every execution as environment variables. Secrets are encrypted at rest and masked in logs and API responses.
 
 ## A workflow

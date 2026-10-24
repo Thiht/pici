@@ -218,7 +218,7 @@ func TestExecutionCRUD(t *testing.T) {
 		t.Fatalf("expected first execution id 1, got %d", e.ID)
 	}
 
-	got, err := s.GetExecution(ctx, projectID, e.ID)
+	got, err := s.GetAttempt(ctx, projectID, e.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestExecutionCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, _ := s.GetExecution(ctx, projectID, e.ID)
+	updated, _ := s.GetAttempt(ctx, projectID, e.ID)
 	if updated.Status != StatusSuccess {
 		t.Fatalf("expected success, got %s", updated.Status)
 	}
@@ -273,7 +273,7 @@ func TestExecutionSourceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := s.GetExecution(ctx, projectID, e.ID)
+	got, err := s.GetAttempt(ctx, projectID, e.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestExecutionSourceRoundTrip(t *testing.T) {
 	if err := s.CreateExecution(ctx, &gitExec); err != nil {
 		t.Fatal(err)
 	}
-	gotGit, err := s.GetExecution(ctx, projectID, gitExec.ID)
+	gotGit, err := s.GetAttempt(ctx, projectID, gitExec.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,22 +401,91 @@ func TestExecutionRetryFields(t *testing.T) {
 	if first.WorkspaceID == nil || *first.WorkspaceID != first.ID {
 		t.Fatalf("workspace id should default to self, got %v", first.WorkspaceID)
 	}
+	if first.ExecutionID != first.ID || first.Attempt != 1 || first.AttemptsCount != 1 {
+		t.Fatalf("first attempt should be its own execution: %+v", first)
+	}
 
 	parentID, workspaceID := first.ID, first.ID
-	retried := Execution{ProjectID: id, Workflow: "build", Status: StatusPending, Trigger: TriggerRetry, ParentID: &parentID, WorkspaceID: &workspaceID, CreatedAt: time.Now()}
+	retried := Execution{ProjectID: id, ExecutionID: first.ID, Attempt: 2, Workflow: "build", Status: StatusPending, Trigger: TriggerRetry, PreviousAttemptID: &parentID, WorkspaceID: &workspaceID, CreatedAt: time.Now()}
 	if err := store.CreateExecution(ctx, &retried); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := store.GetExecution(ctx, id, retried.ID)
+	got, err := store.GetAttempt(ctx, id, retried.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Trigger != TriggerRetry || got.ParentID == nil || *got.ParentID != first.ID {
+	if got.Trigger != TriggerRetry || got.PreviousAttemptID == nil || *got.PreviousAttemptID != first.ID {
 		t.Fatalf("unexpected retried execution: %+v", got)
+	}
+	if got.ParentID != nil {
+		t.Fatalf("retry should not expose a rebuild parent: %+v", got.ParentID)
+	}
+	if got.ExecutionID != first.ID || got.Attempt != 2 || got.AttemptsCount != 2 {
+		t.Fatalf("retry should be attempt 2 of execution %d: %+v", first.ID, got)
 	}
 	if got.WorkspaceID == nil || *got.WorkspaceID != first.ID {
 		t.Fatalf("workspace id should point to parent, got %v", got.WorkspaceID)
+	}
+
+	executions, err := store.ListExecutions(ctx, id, 10)
+	if err != nil || len(executions) != 1 {
+		t.Fatalf("list should group attempts: %v (n=%d)", err, len(executions))
+	}
+	if executions[0].ExecutionID != first.ID || executions[0].Attempt != 2 || executions[0].AttemptsCount != 2 {
+		t.Fatalf("list should show the latest attempt: %+v", executions[0])
+	}
+	if executions[0].Trigger != TriggerManual {
+		t.Fatalf("list should keep the execution's origin trigger, got %q", executions[0].Trigger)
+	}
+
+	latest, err := store.GetExecutionAttempt(ctx, id, first.ID, 0)
+	if err != nil || latest.ID != retried.ID {
+		t.Fatalf("latest attempt lookup: %v %+v", err, latest)
+	}
+	second, err := store.GetExecutionAttempt(ctx, id, first.ID, 2)
+	if err != nil || second.ID != retried.ID {
+		t.Fatalf("attempt lookup: %v %+v", err, second)
+	}
+	attempts, err := store.ListAttempts(ctx, id, first.ID)
+	if err != nil || len(attempts) != 2 {
+		t.Fatalf("list attempts: %v (n=%d)", err, len(attempts))
+	}
+}
+
+func TestListExecutionsOrdersByLatestActivity(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	id := mustUUID("11111111-1111-1111-1111-111111111111")
+	if _, err := store.CreateProject(ctx, Project{ID: id, Name: "demo", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	first := Execution{ProjectID: id, Workflow: "build", Status: StatusFailed, CreatedAt: now.Add(-2 * time.Hour)}
+	if err := store.CreateExecution(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	second := Execution{ProjectID: id, Workflow: "build", Status: StatusSuccess, CreatedAt: now.Add(-time.Hour)}
+	if err := store.CreateExecution(ctx, &second); err != nil {
+		t.Fatal(err)
+	}
+
+	previousID, workspaceID := first.ID, first.ID
+	retry := Execution{ProjectID: id, ExecutionID: first.ID, Attempt: 2, Workflow: "build", Status: StatusSuccess, Trigger: TriggerRetry, PreviousAttemptID: &previousID, WorkspaceID: &workspaceID, CreatedAt: now}
+	if err := store.CreateExecution(ctx, &retry); err != nil {
+		t.Fatal(err)
+	}
+
+	executions, err := store.ListExecutions(ctx, id, 10)
+	if err != nil || len(executions) != 2 {
+		t.Fatalf("list: %v (n=%d)", err, len(executions))
+	}
+	if executions[0].ExecutionID != first.ID || executions[0].Attempt != 2 {
+		t.Fatalf("the retried execution should be first, got %+v", executions[0])
+	}
+	if executions[1].ExecutionID != second.ID {
+		t.Fatalf("unexpected second execution: %+v", executions[1])
 	}
 }
 

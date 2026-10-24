@@ -81,7 +81,7 @@ steps:
 - `timeout` is per step; the default comes from `PICI_STEP_TIMEOUT` (30m).
 - `retry` is the number of additional attempts after the first failure.
 - `depends_on` controls ordering. Independent steps run **in parallel**; a failed step skips its dependents.
-- `artifacts` collects matching files after a successful step; download them via the [API](/guide/api#artifacts).
+- `artifacts` collects matching files after a successful step; each file is hashed with SHA-256. Download them via the [API](/guide/api#artifacts).
 - `docker: true` gives the step access to the Docker daemon pici uses: it sets `DOCKER_HOST` and, for a Unix socket, bind-mounts it into the step. Images built by a step are visible to the other steps of the run. With a `tcp://` daemon, the step must reach it over the network.
 
 ## Triggers
@@ -157,7 +157,7 @@ Explicit `cache` paths still work and are added alongside the detected ones. Exp
 
 ## Re-running failed steps
 
-When a git run fails, you can re-run **only the steps that failed or were skipped**, without redoing the successful ones. pici reuses the failed run's workspace (repository, installed dependencies, build outputs) and records the attempt as a new execution linked to the original.
+When a git run fails, you can re-run **only the steps that failed or were skipped**, without redoing the successful ones. pici reuses the failed run's workspace (repository, installed dependencies, build outputs) and records the retry as a new attempt of the same execution.
 
 From the web UI, use **Retry failed steps** on the failed execution. From the CLI:
 
@@ -165,7 +165,7 @@ From the web UI, use **Retry failed steps** on the failed execution. From the CL
 pici-cli retry demo 42
 ```
 
-A retry is possible while the workspace still exists — it is kept for `gc-keep` (default 24h) after the last linked execution finishes. Snapshot (`--local`) runs cannot be retried.
+The execution page shows the latest attempt by default; use the attempt chips (or `?attempt=N`) to review older attempts. A retry is possible while the workspace still exists — it is kept for `gc-keep` (default 24h) after the last linked attempt finishes. Snapshot (`--local`) runs cannot be retried.
 
 ## Concurrency groups
 

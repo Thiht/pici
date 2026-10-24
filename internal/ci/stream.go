@@ -109,7 +109,7 @@ func (r *Runner) StreamLogs(ctx context.Context, projectID uuid.UUID, execID int
 	for {
 		sweep()
 
-		execution, err := r.Store.GetExecution(ctx, projectID, execID)
+		execution, err := r.Store.GetAttempt(ctx, projectID, execID)
 		if err != nil {
 			return
 		}

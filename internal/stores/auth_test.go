@@ -316,7 +316,7 @@ func TestExecutionCreatedBy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := s.GetExecution(ctx, project.ID, exec.ID)
+	got, err := s.GetAttempt(ctx, project.ID, exec.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

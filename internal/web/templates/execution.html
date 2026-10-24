@@ -11,28 +11,35 @@
     </nav>
     <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-3">
-        <h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ID}}</span></h1>
+        <h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ExecutionID}}</span></h1>
         <span id="exec-status" class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
+        {{if gt .Execution.AttemptsCount 1}}
+          <span class="badge badge-soft badge-neutral">attempt {{.Execution.Attempt}} of {{.Execution.AttemptsCount}}</span>
+        {{end}}
         {{if eq (printf "%s" .Execution.Source) "snapshot"}}<span class="badge badge-soft badge-accent">local</span>{{end}}
       </div>
       <div class="flex items-center gap-2">
-        {{if .Running}}
-          <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/cancel">
-            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-            <button class="btn btn-error btn-sm" type="submit">Cancel</button>
-          </form>
-        {{end}}
-        {{if and (eq (printf "%s" .Execution.Status) "failed") (ne (printf "%s" .Execution.Source) "snapshot")}}
-          <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/retry">
-            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-            <button class="btn btn-primary btn-sm" type="submit">Retry failed steps</button>
-          </form>
-        {{end}}
-        {{if ne (printf "%s" .Execution.Source) "snapshot"}}
-          <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/rebuild">
-            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-            <button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
-          </form>
+        {{if .IsLatest}}
+          {{if .Running}}
+            <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ExecutionID}}/cancel">
+              <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+              <button class="btn btn-error btn-sm" type="submit">Cancel</button>
+            </form>
+          {{end}}
+          {{if and (eq (printf "%s" .Execution.Status) "failed") (ne (printf "%s" .Execution.Source) "snapshot")}}
+            <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ExecutionID}}/retry">
+              <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+              <button class="btn btn-primary btn-sm" type="submit">Retry failed steps</button>
+            </form>
+          {{end}}
+          {{if ne (printf "%s" .Execution.Source) "snapshot"}}
+            <form method="post" action="/projects/{{.Project.ID}}/executions/{{.Execution.ExecutionID}}/rebuild">
+              <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+              <button class="btn btn-outline btn-sm" type="submit">Rebuild</button>
+            </form>
+          {{end}}
+        {{else}}
+          <span class="text-xs opacity-60">Attempt {{.Execution.Attempt}} is read-only</span>
         {{end}}
       </div>
     </div>
@@ -58,7 +65,7 @@
       </div>
       {{if .Execution.ParentID}}
         <div class="flex items-baseline gap-2">
-          <dt class="opacity-60">{{if eq (printf "%s" .Execution.Trigger) "retry"}}Retry of{{else}}Rebuild of{{end}}</dt>
+          <dt class="opacity-60">Rebuild of</dt>
           <dd>
             <a class="link link-primary"
                href="/projects/{{.Project.ID}}/executions/{{.Execution.ParentID}}">#{{.Execution.ParentID}}</a>
@@ -67,15 +74,64 @@
       {{end}}
     </dl>
 
+    {{if gt .Execution.AttemptsCount 1}}
+      <div class="mt-4" aria-label="Attempts">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium opacity-60">Attempts</span>
+          {{range .Attempts}}
+          <a class="btn btn-xs {{if eq .Attempt $.Execution.Attempt}}btn-primary{{else}}btn-outline{{end}}"
+             href="?attempt={{.Attempt}}"
+             {{if eq .Attempt $.Execution.Attempt}}aria-current="page"
+             {{end}}>
+            #{{.Attempt}}
+            <span class="{{statusClass .Status}}">{{capitalize .Status}}</span>
+            </a>
+          {{end}}
+        </div>
+        <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100">
+          <summary class="collapse-title text-sm font-medium">Attempt history</summary>
+          <div class="collapse-content overflow-x-auto">
+            <table class="table table-sm">
+              <caption class="sr-only">Attempt history</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Attempt</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Trigger</th>
+                  <th scope="col">By</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Attempts}}
+                  <tr>
+                    <td><a class="link link-primary" href="?attempt={{.Attempt}}">#{{.Attempt}}</a></td>
+                    <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
+                    <td>{{.Trigger}}</td>
+                    <td class="text-xs">{{if .CreatedByLogin}}{{.CreatedByLogin}}{{else}}—{{end}}</td>
+                    <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>
+                    <td class="text-xs opacity-60">{{formatTime .CreatedAt}}</td>
+                    <td class="text-xs">{{if .Error}}<span class="text-error">{{.Error}}</span>{{else}}—{{end}}</td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    {{end}}
+
     <div class="mt-6" aria-label="Execution timeline">
       <ol class="flex flex-wrap items-center justify-center gap-x-4 gap-y-3 text-xs">
         <li class="flex flex-col items-center">
           <span class="font-medium">Created</span>
-          <time class="opacity-60">{{formatTime .Execution.CreatedAt}}</time>
+          <time class="opacity-60">{{formatTime .Execution.AttemptCreatedAt}}</time>
         </li>
         <li class="flex min-w-20 flex-col items-center">
           <span class="h-px w-full bg-base-300" aria-hidden="true"></span>
-          <span class="mt-1 opacity-60">{{duration .Execution.CreatedAt .Execution.StartedAt}}</span>
+          <span class="mt-1 opacity-60">{{duration .Execution.AttemptCreatedAt .Execution.StartedAt}}</span>
         </li>
         <li class="flex flex-col items-center">
           <span class="font-medium">Started</span>
@@ -90,7 +146,7 @@
           <time class="opacity-60">{{formatTimePtr .Execution.FinishedAt}}</time>
         </li>
       </ol>
-      <p class="mt-3 text-center text-xs opacity-60">Total: {{duration .Execution.CreatedAt .Execution.FinishedAt}}</p>
+      <p class="mt-3 text-center text-xs opacity-60">Total: {{duration .Execution.AttemptCreatedAt .Execution.FinishedAt}}</p>
     </div>
 
     {{if .Execution.Error}}
@@ -177,6 +233,7 @@
                   <th scope="col">Step</th>
                   <th scope="col">Path</th>
                   <th scope="col">Size</th>
+                  <th scope="col">Hash</th>
                   <th scope="col"><span class="sr-only">Download</span></th>
                 </tr>
               </thead>
@@ -186,8 +243,21 @@
                     <td>{{.Step}}</td>
                     <td class="font-mono text-xs">{{.Path}}</td>
                     <td class="text-xs opacity-60">{{size .Size}}</td>
+                    <td>
+                      {{with .Hash}}
+                        <span class="flex items-center gap-2">
+                          <code class="font-mono text-xs" title="{{.Value}}">{{printf "%.12s" .Value}}</code>
+                          <button type="button"
+                                  class="btn btn-ghost btn-xs"
+                                  data-copy="{{.Value}}"
+                                  aria-label="Copy hash">Copy</button>
+                        </span>
+                      {{else}}
+                        <span class="opacity-60">—</span>
+                      {{end}}
+                    </td>
                     <td class="text-right"><a class="btn btn-outline btn-sm"
-   href="/projects/{{$.Project.ID}}/executions/{{$.Execution.ID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}">Download</a></td>
+   href="/projects/{{$.Project.ID}}/executions/{{$.Execution.ExecutionID}}/artifacts/{{.Step | urlquery}}/{{.Path | urlquery}}?attempt={{$.Execution.Attempt}}">Download</a></td>
                   </tr>
                 {{end}}
               </tbody>
@@ -198,6 +268,37 @@
         {{end}}
       </div>
     </section>
+
+    <script>
+      (() => {
+        const copyText = (text) => {
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+          }
+          const area = document.createElement("textarea");
+          area.value = text;
+          area.setAttribute("readonly", "");
+          area.style.position = "fixed";
+          area.style.opacity = "0";
+          document.body.appendChild(area);
+          area.select();
+          const copied = document.execCommand("copy");
+          area.remove();
+          return copied ? Promise.resolve() : Promise.reject(new Error("copy failed"));
+        };
+        document.addEventListener("click", (event) => {
+          const button = event.target.closest?.("[data-copy]");
+          if (!button) return;
+          const original = button.textContent;
+          copyText(button.dataset.copy).then(
+            () => { button.textContent = "Copied"; },
+            () => { button.textContent = "Failed"; }
+          ).finally(() => {
+            setTimeout(() => { button.textContent = original; }, 1500);
+          });
+        });
+      })();
+    </script>
 
     {{if .Running}}
       <script>
@@ -248,7 +349,7 @@
         targets[el.dataset.source] = el;
       });
 
-      const stream = new EventSource("/projects/{{.Project.ID}}/executions/{{.Execution.ID}}/stream");
+      const stream = new EventSource("/projects/{{.Project.ID}}/executions/{{.Execution.ExecutionID}}/stream?attempt={{.Execution.Attempt}}");
 
       Object.keys(targets).forEach((source) => {
         stream.addEventListener(source, (e) => {

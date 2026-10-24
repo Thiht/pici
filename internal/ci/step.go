@@ -192,7 +192,7 @@ func (r *Runner) runStep(ctx context.Context, step Step, baseEnv []string, image
 		res := r.runStepOnce(ctx, step, baseEnv, image, repoDir, wfDir, mw, secrets, cacheBinds)
 		if res.Status == stores.StepStatusSuccess || attempt == attempts || ctx.Err() != nil {
 			if res.Status == stores.StepStatusSuccess {
-				r.collectArtifacts(projectID, execID, index, step.Artifacts, repoDir)
+				r.collectArtifacts(projectID, execID, index, step.Artifacts, repoDir, mw)
 			}
 			return res
 		}

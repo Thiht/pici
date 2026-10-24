@@ -42,13 +42,14 @@ Project `{id}` can be a project name or a UUID.
 
 ## Executions
 
-Execution `{executionID}` is a per-project auto-incrementing number.
+Execution `{executionID}` is a per-project auto-incrementing number. An Execution is a logical run: it groups every attempt made to complete it. Endpoints read the latest attempt by default; pass `?attempt=N` (1-based) to read a specific attempt.
 
 | Method | Path                                                            | Description                 |
 | ------ | --------------------------------------------------------------- | --------------------------- |
 | `POST` | `/api/projects/{id}/executions`                                 | trigger a run               |
 | `GET`  | `/api/projects/{id}/executions`                                 | list executions             |
 | `GET`  | `/api/projects/{id}/executions/{executionID}`                   | get an execution            |
+| `GET`  | `/api/projects/{id}/executions/{executionID}/attempts`          | list the attempts           |
 | `GET`  | `/api/projects/{id}/executions/{executionID}/logs`              | combined logs (text)        |
 | `GET`  | `/api/projects/{id}/executions/{executionID}/logs/stream`       | stream logs over SSE        |
 | `GET`  | `/api/projects/{id}/executions/{executionID}/steps/{step}/logs` | a single step's logs        |
@@ -58,7 +59,9 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 
 `POST .../executions` also accepts `multipart/form-data` (fields `workflow`, `ref`, and a `snapshot` `.tar.gz` of the worktree) to run local changes. Such executions have `source: snapshot` and cannot be rebuilt.
 
-`POST .../retry` retries the failed steps of a git execution, reusing its workspace. It returns `409` when the execution is not retryable (not failed, a snapshot, or already running) and `410` when the workspace is gone.
+`POST .../retry` adds an attempt to the latest failed attempt of a git execution, reusing its workspace. Pass `?attempt=N` to target a specific attempt; only the latest attempt can be retried, so an older attempt returns `409`. It also returns `409` when the execution is not retryable (not failed, a snapshot, or already running) and `410` when the workspace is gone. `POST .../rebuild` starts a new Execution instead of adding an attempt.
+
+`GET .../logs`, `GET .../logs/stream`, `GET .../steps/{step}/logs`, and the artifact endpoints accept `?attempt=N` to target a specific attempt.
 
 ## Artifacts
 
@@ -69,8 +72,11 @@ Execution `{executionID}` is a per-project auto-incrementing number.
 
 ```sh
 pici-cli artifacts demo 42
+pici-cli artifacts demo 42 --attempt 1
 pici-cli artifacts get demo 42 build/dist/app.tar.gz
 ```
+
+Each artifact carries a `hash` object with the `sha256` digest of its bytes, omitted when the hash is unknown (for example an execution collected before hashes were recorded). Downloads send that digest as a strong `ETag`, so clients can reuse cached copies with `If-None-Match`.
 
 ## Cache
 
@@ -94,7 +100,7 @@ pici-cli cache rm-volume demo pici-cache-<project-id>-node_modules
 pici-cli logs demo 42 --follow
 ```
 
-Log events are labeled by source (`setup` or the step name). A `state` event carries the execution and per-step statuses as JSON whenever they change, and a final `done` event carries the terminal status.
+Log events are labeled by source (`setup` or the step name). A `state` event carries the execution and per-step statuses as JSON whenever they change, and a final `done` event carries the terminal status. Pass `?attempt=N` to follow a specific attempt.
 
 ## Status badge
 
@@ -123,6 +129,8 @@ A public SVG badge for a project, embeddable in a README. It does not require a 
 ```json
 {
   "id": 42,
+  "attempt": 2,
+  "attempts_count": 2,
   "project_id": "…",
   "workflow": "build",
   "ref": "main",
@@ -141,9 +149,11 @@ A public SVG badge for a project, embeddable in a README. It does not require a 
   ],
   "started_at": "2026-09-26T14:00:00Z",
   "finished_at": "2026-09-26T14:00:05Z",
-  "created_at": "2026-09-26T14:00:00Z"
+  "created_at": "2026-09-26T13:55:00Z"
 }
 ```
+
+`id` is the Execution id. `status`, `steps`, `started_at`, `finished_at`, `setup_finished_at`, and `error` describe the selected attempt (the latest one unless `?attempt=N` is given). `workflow`, `ref`, `commit_sha`, `trigger`, `created_at`, and `created_by` describe the Execution itself, so a retried execution keeps its origin trigger and creation date. `attempt` is the selected attempt number and `attempts_count` the number of attempts. `parent_id` is only set on rebuilds and points to the Execution they were rebuilt from.
 
 Timestamps are RFC 3339 (UTC). `started_at`/`finished_at` are omitted while an execution is still pending.
 
@@ -152,3 +162,23 @@ Each step exposes `timeout`, the effective timeout in nanoseconds, when it is bo
 - `status`: `pending`, `running`, `success`, `failed`, `canceled`.
 - `trigger`: `manual`, `webhook`, `cron`, `rebuild`, `retry`.
 - `source`: `git`, `snapshot`.
+
+## Attempt object
+
+`GET .../executions/{executionID}/attempts` returns one object per attempt, oldest first:
+
+```json
+{
+  "attempt": 1,
+  "status": "failed",
+  "trigger": "manual",
+  "error": "step \"test\" failed: exit code 1",
+  "created_at": "2026-09-26T13:55:00Z",
+  "started_at": "2026-09-26T13:55:01Z",
+  "finished_at": "2026-09-26T13:56:00Z",
+  "created_by": "…",
+  "created_by_login": "octocat"
+}
+```
+
+The first attempt carries the Execution's origin trigger; later attempts use `trigger: "retry"`.

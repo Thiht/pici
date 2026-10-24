@@ -269,6 +269,9 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if e.Source == "" {
 		e.Source = SourceGit
 	}
+	if e.Attempt == 0 {
+		e.Attempt = 1
+	}
 	if e.WorkspaceID == nil {
 		e.WorkspaceID = &e.ID
 	}
@@ -280,6 +283,13 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if err := tx.QueryRowContext(ctx, `UPDATE projects SET execution_seq = execution_seq + 1 WHERE id = $1 RETURNING execution_seq`, e.ProjectID.String()).Scan(&e.ID); err != nil {
 		return err
 	}
+	if e.ExecutionID == 0 {
+		e.ExecutionID = e.ID
+		e.Attempt = 1
+	}
+	if e.AttemptsCount == 0 {
+		e.AttemptsCount = e.Attempt
+	}
 	var snapshotID any
 	if e.SnapshotID != nil {
 		snapshotID = e.SnapshotID.String()
@@ -288,10 +298,14 @@ func (s *postgresStore) CreateExecution(ctx context.Context, e *Execution) error
 	if e.CreatedBy != nil {
 		createdBy = e.CreatedBy.String()
 	}
+	parentID := e.ParentID
+	if e.PreviousAttemptID != nil {
+		parentID = e.PreviousAttemptID
+	}
 	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO executions (project_id, id, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-    `, e.ProjectID.String(), e.ID, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup, e.Source, snapshotID, e.ParentID, e.WorkspaceID, createdBy); err != nil {
+        INSERT INTO executions (project_id, id, execution_id, attempt, workflow, ref, commit_sha, status, trigger, steps_json, error, started_at, setup_finished_at, finished_at, created_at, concurrency_group, source, snapshot_id, parent_id, workspace_id, created_by, check_run_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+    `, e.ProjectID.String(), e.ID, e.ExecutionID, e.Attempt, e.Workflow, e.Ref, e.CommitSHA, e.Status, e.Trigger, e.Steps, e.Error, e.StartedAt, e.SetupFinishedAt, e.FinishedAt, e.CreatedAt, e.ConcurrencyGroup, e.Source, snapshotID, parentID, e.WorkspaceID, createdBy, e.CheckRunID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -306,26 +320,48 @@ func (s *postgresStore) UpdateExecution(ctx context.Context, e Execution) error 
 	return err
 }
 
-func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
+const postgresRawExecutionColumns = `
+    e.project_id, e.id, COALESCE(e.execution_id, e.id), e.attempt, e.workflow, e.ref, e.commit_sha,
+    e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at,
+    e.created_at, e.concurrency_group, e.source, e.snapshot_id,
+    CASE WHEN e.trigger = 'retry' THEN e.parent_id END,
+    CASE WHEN e.trigger = 'rebuild' THEN e.parent_id END,
+    e.workspace_id, e.created_by, u.login, e.check_run_id,
+    COALESCE((SELECT MAX(a.attempt) FROM executions a WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id), e.attempt),
+    e.created_at
+`
+
+const postgresJoinedExecutionColumns = `
+    e.project_id, e.id, COALESCE(e.execution_id, e.id), e.attempt, e.workflow, e.ref, e.commit_sha,
+    e.status, r.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at,
+    r.created_at, e.concurrency_group, e.source, e.snapshot_id,
+    CASE WHEN e.trigger = 'retry' THEN e.parent_id END, r.parent_id,
+    e.workspace_id, r.created_by, u.login, r.check_run_id,
+    COALESCE((SELECT MAX(a.attempt) FROM executions a WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id), e.attempt),
+    e.created_at
+`
+
+func (s *postgresStore) scanExecution(row rowScanner) (Execution, error) {
 	var e Execution
 	var projectIDStr string
 	var snapshotID *string
 	var createdBy, createdByLogin *string
-	err := s.db.QueryRowContext(ctx, `
-        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
-        FROM executions e
-        LEFT JOIN users u ON u.id = e.created_by
-        WHERE e.project_id = $1 AND e.id = $2
-    `, projectID.String(), id).Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Execution{}, ErrNotFound
-	}
-	if err != nil {
+	var previousAttemptID, parentID *int64
+	if err := row.Scan(&projectIDStr, &e.ID, &e.ExecutionID, &e.Attempt, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID, &previousAttemptID, &parentID, &e.WorkspaceID, &createdBy, &createdByLogin, &e.CheckRunID, &e.AttemptsCount, &e.AttemptCreatedAt); err != nil {
 		return Execution{}, err
 	}
+	e.PreviousAttemptID = previousAttemptID
+	e.ParentID = parentID
+	var err error
 	e.ProjectID, err = uuid.Parse(projectIDStr)
 	if err != nil {
 		return Execution{}, err
+	}
+	if e.Attempt == 0 {
+		e.Attempt = 1
+	}
+	if e.AttemptsCount == 0 {
+		e.AttemptsCount = e.Attempt
 	}
 	if createdBy != nil {
 		parsed, err := uuid.Parse(*createdBy)
@@ -347,16 +383,55 @@ func (s *postgresStore) GetExecution(ctx context.Context, projectID uuid.UUID, i
 	return e, nil
 }
 
+func (s *postgresStore) GetAttempt(ctx context.Context, projectID uuid.UUID, id int64) (Execution, error) {
+	e, err := s.scanExecution(s.db.QueryRowContext(ctx, `
+        SELECT `+postgresRawExecutionColumns+`
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = $1 AND e.id = $2
+    `, projectID.String(), id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Execution{}, ErrNotFound
+	}
+	return e, err
+}
+
+func (s *postgresStore) GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (Execution, error) {
+	query := `
+        SELECT ` + postgresJoinedExecutionColumns + `
+        FROM executions e
+        JOIN executions r ON r.project_id = e.project_id AND r.id = e.execution_id
+        LEFT JOIN users u ON u.id = r.created_by
+        WHERE e.project_id = $1 AND e.execution_id = $2`
+	args := []any{projectID.String(), executionID}
+	if attempt > 0 {
+		query += ` AND e.attempt = $3`
+		args = append(args, attempt)
+	} else {
+		query += ` ORDER BY e.attempt DESC LIMIT 1`
+	}
+	e, err := s.scanExecution(s.db.QueryRowContext(ctx, query, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Execution{}, ErrNotFound
+	}
+	return e, err
+}
+
 func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID, limit int) ([]Execution, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT e.project_id, e.id, e.workflow, e.ref, e.commit_sha, e.status, e.trigger, e.steps_json, e.error, e.started_at, e.setup_finished_at, e.finished_at, e.created_at, e.concurrency_group, e.source, e.snapshot_id, e.parent_id, e.workspace_id, e.created_by, u.login
+        SELECT `+postgresJoinedExecutionColumns+`
         FROM executions e
-        LEFT JOIN users u ON u.id = e.created_by
+        JOIN executions r ON r.project_id = e.project_id AND r.id = e.execution_id
+        LEFT JOIN users u ON u.id = r.created_by
         WHERE e.project_id = $1
-        ORDER BY e.id DESC
+          AND e.attempt = (
+              SELECT MAX(a.attempt) FROM executions a
+              WHERE a.project_id = e.project_id AND a.execution_id = e.execution_id
+          )
+        ORDER BY e.created_at DESC, e.id DESC
         LIMIT $2
     `, projectID.String(), limit)
 	if err != nil {
@@ -366,37 +441,42 @@ func (s *postgresStore) ListExecutions(ctx context.Context, projectID uuid.UUID,
 
 	executions := make([]Execution, 0)
 	for rows.Next() {
-		var e Execution
-		var projectIDStr string
-		var snapshotID *string
-		var createdBy, createdByLogin *string
-		if err := rows.Scan(&projectIDStr, &e.ID, &e.Workflow, &e.Ref, &e.CommitSHA, &e.Status, &e.Trigger, &e.Steps, &e.Error, &e.StartedAt, &e.SetupFinishedAt, &e.FinishedAt, &e.CreatedAt, &e.ConcurrencyGroup, &e.Source, &snapshotID, &e.ParentID, &e.WorkspaceID, &createdBy, &createdByLogin); err != nil {
-			return nil, err
-		}
-		e.ProjectID, err = uuid.Parse(projectIDStr)
+		e, err := s.scanExecution(rows)
 		if err != nil {
 			return nil, err
-		}
-		if createdBy != nil {
-			parsed, err := uuid.Parse(*createdBy)
-			if err != nil {
-				return nil, err
-			}
-			e.CreatedBy = &parsed
-		}
-		if createdByLogin != nil {
-			e.CreatedByLogin = *createdByLogin
-		}
-		if snapshotID != nil {
-			parsed, err := uuid.Parse(*snapshotID)
-			if err != nil {
-				return nil, err
-			}
-			e.SnapshotID = &parsed
 		}
 		executions = append(executions, e)
 	}
 	return executions, rows.Err()
+}
+
+func (s *postgresStore) ListAttempts(ctx context.Context, projectID uuid.UUID, executionID int64) ([]Execution, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT `+postgresRawExecutionColumns+`
+        FROM executions e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.project_id = $1 AND e.execution_id = $2
+        ORDER BY e.attempt ASC
+    `, projectID.String(), executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	attempts := make([]Execution, 0)
+	for rows.Next() {
+		e, err := s.scanExecution(rows)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, e)
+	}
+	return attempts, rows.Err()
+}
+
+func (s *postgresStore) SetCheckRunID(ctx context.Context, projectID uuid.UUID, executionID, checkRunID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE executions SET check_run_id = $1 WHERE project_id = $2 AND id = $3`, checkRunID, projectID.String(), executionID)
+	return err
 }
 
 func (s *postgresStore) ClaimPendingExecution(ctx context.Context, workerID string) (Execution, error) {
@@ -440,7 +520,7 @@ func (s *postgresStore) ClaimPendingExecution(ctx context.Context, workerID stri
 	if err != nil {
 		return Execution{}, err
 	}
-	return s.GetExecution(ctx, projectID, id)
+	return s.GetAttempt(ctx, projectID, id)
 }
 
 func (s *postgresStore) RequeueOrphanedExecutions(ctx context.Context) error {

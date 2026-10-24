@@ -51,6 +51,7 @@ func newRootCmd(c *client.Client) *cobra.Command {
 		newStatusCmd(c),
 		newProjectsCmd(c),
 		newExecutionsCmd(c),
+		newAttemptsCmd(c),
 		newVarsCmd(c),
 		newCacheCmd(c),
 		newCancelCmd(c),
@@ -132,6 +133,7 @@ func newRunCmd(c *client.Client) *cobra.Command {
 
 func newLogsCmd(c *client.Client) *cobra.Command {
 	var follow bool
+	var attempt int
 	cmd := &cobra.Command{
 		Use:   "logs <project> <execution-id>",
 		Short: "Stream execution logs",
@@ -142,7 +144,7 @@ func newLogsCmd(c *client.Client) *cobra.Command {
 				return err
 			}
 			if !follow {
-				logs, err := c.ExecutionLogs(context.Background(), args[0], id)
+				logs, err := c.ExecutionLogs(context.Background(), args[0], id, attempt)
 				if err != nil {
 					return err
 				}
@@ -150,7 +152,7 @@ func newLogsCmd(c *client.Client) *cobra.Command {
 				return nil
 			}
 
-			stream, err := c.ExecutionStream(context.Background(), args[0], id)
+			stream, err := c.ExecutionStream(context.Background(), args[0], id, attempt)
 			if err != nil {
 				return err
 			}
@@ -174,11 +176,13 @@ func newLogsCmd(c *client.Client) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&follow, "follow", false, "keep streaming until interrupted")
+	cmd.Flags().IntVar(&attempt, "attempt", 0, "attempt number (default: latest)")
 	cmd.ValidArgsFunction = noCompletions
 	return cmd
 }
 
 func newStatusCmd(c *client.Client) *cobra.Command {
+	var attempt int
 	cmd := &cobra.Command{
 		Use:   "status <project> <execution-id>",
 		Short: "Show execution status",
@@ -191,13 +195,14 @@ func newStatusCmd(c *client.Client) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			exec, err := c.GetExecution(context.Background(), args[0], id)
+			exec, err := c.GetExecution(context.Background(), args[0], id, attempt)
 			if err != nil {
 				return err
 			}
 			return output(exec)
 		},
 	}
+	cmd.Flags().IntVar(&attempt, "attempt", 0, "attempt number (default: latest)")
 	cmd.ValidArgsFunction = noCompletions
 	return cmd
 }
@@ -361,6 +366,30 @@ func newExecutionsCmd(c *client.Client) *cobra.Command {
 	return cmd
 }
 
+func newAttemptsCmd(c *client.Client) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "attempts <project> <execution-id>",
+		Short: "List the attempts of an execution",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := applyFormat(cmd); err != nil {
+				return err
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			attempts, err := c.ListAttempts(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			return output(attempts)
+		},
+	}
+	cmd.ValidArgsFunction = noCompletions
+	return cmd
+}
+
 func newVarsCmd(c *client.Client) *cobra.Command {
 	var project string
 	cmd := &cobra.Command{
@@ -496,6 +525,7 @@ func newRetryCmd(c *client.Client) *cobra.Command {
 }
 
 func newArtifactsCmd(c *client.Client) *cobra.Command {
+	var attempt int
 	cmd := &cobra.Command{
 		Use:   "artifacts <project> <execution-id>",
 		Short: "List execution artifacts",
@@ -508,19 +538,21 @@ func newArtifactsCmd(c *client.Client) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			artifacts, err := c.ListArtifacts(context.Background(), args[0], id)
+			artifacts, err := c.ListArtifacts(context.Background(), args[0], id, attempt)
 			if err != nil {
 				return err
 			}
 			return output(artifacts)
 		},
 	}
+	cmd.Flags().IntVar(&attempt, "attempt", 0, "attempt number (default: latest)")
 	cmd.ValidArgsFunction = noCompletions
 	cmd.AddCommand(newArtifactGetCmd(c))
 	return cmd
 }
 
 func newArtifactGetCmd(c *client.Client) *cobra.Command {
+	var attempt int
 	cmd := &cobra.Command{
 		Use:   "get <project> <execution-id> <step>/<path>",
 		Short: "Download an artifact",
@@ -534,13 +566,14 @@ func newArtifactGetCmd(c *client.Client) *cobra.Command {
 			if !ok {
 				return fmt.Errorf("artifact path must be <step>/<path>")
 			}
-			data, err := c.DownloadArtifact(context.Background(), args[0], id, step, path)
+			data, err := c.DownloadArtifact(context.Background(), args[0], id, step, path, attempt)
 			if err != nil {
 				return err
 			}
 			return os.WriteFile(path[strings.LastIndex(path, "/")+1:], data, 0o644)
 		},
 	}
+	cmd.Flags().IntVar(&attempt, "attempt", 0, "attempt number (default: latest)")
 	cmd.ValidArgsFunction = noCompletions
 	return cmd
 }
