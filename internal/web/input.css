@@ -12,6 +12,7 @@
 }
 @source "./templates";
 @source inline("{alert,badge}-{soft,success,error,warning,info,neutral}");
+@source inline("bg-{success,error,warning,info,neutral} text-{success,error,warning,info,neutral}-content");
 
 @layer base {
   body {
@@ -102,4 +103,12 @@
   .logs:empty {
     display: none;
   }
+}
+
+/* daisyUI only reveals a <details> dropdown while it has focus; keep it open
+   until the summary is clicked again. Unlayered on purpose: it has to beat the
+   daisyUI layer. */
+.dropdown[open] .dropdown-content {
+  opacity: 1;
+  scale: 1;
 }

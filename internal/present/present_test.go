@@ -70,6 +70,9 @@ func TestStatusMappingsCoverEveryStatus(t *testing.T) {
 		if _, ok := Classes()[name]; !ok && Class(name) != "badge badge-soft badge-neutral" {
 			t.Errorf("%q is missing from the class map", name)
 		}
+		if DotClass(name) == "" {
+			t.Errorf("no dot class for %q", name)
+		}
 		if Symbol(name) == "?" {
 			t.Errorf("no symbol for %q", name)
 		}
@@ -92,9 +95,28 @@ func TestClassTable(t *testing.T) {
 	}
 }
 
+func TestDotClassTable(t *testing.T) {
+	cases := map[string]string{
+		"success":  "bg-success text-success-content",
+		"failed":   "bg-error text-error-content",
+		"running":  "bg-info text-info-content",
+		"pending":  "bg-warning text-warning-content",
+		"canceled": "bg-neutral text-neutral-content",
+		"skipped":  "bg-neutral text-neutral-content",
+	}
+	for status, want := range cases {
+		if got := DotClass(status); got != want {
+			t.Errorf("DotClass(%q) = %q, want %q", status, got, want)
+		}
+	}
+}
+
 func TestUnknownStatus(t *testing.T) {
 	if got := Class("nonsense"); got != "badge badge-soft badge-neutral" {
 		t.Errorf("Class(unknown) = %q", got)
+	}
+	if got := DotClass("nonsense"); got != "bg-neutral text-neutral-content" {
+		t.Errorf("DotClass(unknown) = %q", got)
 	}
 	if value, color := Badge("nonsense"); value != "unknown" || color == "" {
 		t.Errorf("Badge(unknown) = %q, %q", value, color)

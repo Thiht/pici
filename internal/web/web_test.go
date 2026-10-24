@@ -373,7 +373,7 @@ func TestExecutionTemplateShowsArtifactHashes(t *testing.T) {
 	}
 }
 
-func TestExecutionTemplateShowsAttemptHistory(t *testing.T) {
+func TestExecutionTemplateAttemptSelector(t *testing.T) {
 	started := time.Now()
 	finished := started.Add(30 * time.Second)
 	projectID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
@@ -397,9 +397,23 @@ func TestExecutionTemplateShowsAttemptHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"attempt 2 of 2", "Attempt history", "?attempt=1", "?attempt=2", "step test failed", "retry"} {
+	for _, want := range []string{
+		`<span>Latest #2</span>`,
+		`Latest attempt #2`,
+		`Attempt #1`,
+		`href="?attempt=1"`,
+		`href="?attempt=2"`,
+		`bg-error text-error-content`,
+		`bg-success text-success-content`,
+		`outline outline-2 -outline-offset-2 outline-primary`,
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in execution page, got:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"Attempt history", "attempt 2 of 2", "<select"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("did not expect %q in execution page, got:\n%s", unwanted, out)
 		}
 	}
 }
@@ -426,13 +440,21 @@ func TestExecutionTemplateOlderAttemptIsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "Attempt 1 is read-only") {
-		t.Fatalf("expected the older attempt to be read-only, got:\n%s", out)
+	if !strings.Contains(out, `title="Attempt 1 is read-only"`) {
+		t.Fatalf("expected the read-only tooltip, got:\n%s", out)
 	}
-	for _, unwanted := range []string{"Retry failed steps", ">Rebuild<"} {
-		if strings.Contains(out, unwanted) {
-			t.Errorf("did not expect %q on an older attempt", unwanted)
+	for _, want := range []string{
+		`<span>Attempt #1</span>`,
+		`aria-current="page"`,
+		`disabled>Retry failed steps</button>`,
+		`disabled>Rebuild</button>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q, got:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, `<span class="text-xs opacity-60">Attempt 1 is read-only`) {
+		t.Errorf("did not expect a read-only caption, got:\n%s", out)
 	}
 }
 
@@ -816,7 +838,7 @@ func TestCSRFRequiredForMutations(t *testing.T) {
 	}
 }
 
-func TestExecutionPageShowsAttemptHistory(t *testing.T) {
+func TestExecutionPageAttemptSelector(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	projectID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
@@ -859,10 +881,18 @@ func TestExecutionPageShowsAttemptHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := body(t, resp)
-	for _, want := range []string{"attempt 2 of 2", "Attempt history", "?attempt=1", "?attempt=2", "step test failed", "retry"} {
+	for _, want := range []string{
+		`<span>Latest #2</span>`,
+		`Latest attempt #2`,
+		`Attempt #1`,
+		`href="?attempt=1"`,
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q on the latest attempt page, got:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "Attempt history") {
+		t.Errorf("did not expect an attempt history table")
 	}
 	if strings.Contains(out, "Retry failed steps") {
 		t.Errorf("did not expect a retry action on a successful attempt")
@@ -873,11 +903,19 @@ func TestExecutionPageShowsAttemptHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	out = body(t, resp)
-	if !strings.Contains(out, "Attempt 1 is read-only") {
-		t.Errorf("expected the older attempt to be read-only, got:\n%s", out)
+	if !strings.Contains(out, `title="Attempt 1 is read-only"`) {
+		t.Errorf("expected the read-only tooltip on an older attempt, got:\n%s", out)
 	}
-	if strings.Contains(out, "Retry failed steps") || strings.Contains(out, ">Rebuild<") {
-		t.Errorf("did not expect actions on an older attempt, got:\n%s", out)
+	if !strings.Contains(out, `<span>Attempt #1</span>`) {
+		t.Errorf("expected the attempt picker to show attempt 1, got:\n%s", out)
+	}
+	for _, want := range []string{
+		`disabled>Retry failed steps</button>`,
+		`disabled>Rebuild</button>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected the actions to be disabled on an older attempt, missing %q, got:\n%s", want, out)
+		}
 	}
 }
 

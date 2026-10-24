@@ -165,7 +165,7 @@ From the web UI, use **Retry failed steps** on the failed execution. From the CL
 pici-cli retry demo 42
 ```
 
-The execution page shows the latest attempt by default; use the attempt chips (or `?attempt=N`) to review older attempts. A retry is possible while the workspace still exists — it is kept for `gc-keep` (default 24h) after the last linked attempt finishes. Snapshot (`--local`) runs cannot be retried.
+The execution page shows the latest attempt by default; use the attempt dropdown (or `?attempt=N`) to review older attempts. A retry is possible while the workspace still exists — it is kept for `gc-keep` (default 24h) after the last linked attempt finishes. Snapshot (`--local`) runs cannot be retried.
 
 ## Concurrency groups
 
