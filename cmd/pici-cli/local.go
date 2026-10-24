@@ -62,11 +62,31 @@ func buildSnapshot(dir string, w io.Writer) error {
 
 func runGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = gitEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+// gitEnv drops the variables that tell git which repository to use, so -C dir
+// always wins. Git exports them to hooks, and inheriting them would make the
+// command inspect the hook's repository instead of dir.
+func gitEnv() []string {
+	env := os.Environ()
+	out := env[:0]
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_NAMESPACE", "GIT_PREFIX":
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func addWorktreeFile(tw *tar.Writer, dir, rel string) error {
