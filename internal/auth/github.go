@@ -17,7 +17,6 @@ const (
 	githubAPIURL   = "https://api.github.com"
 )
 
-// GitHubProvider implements Provider for github.com OAuth Apps.
 type GitHubProvider struct {
 	flow   *flow
 	apiURL string
@@ -73,7 +72,6 @@ func (p *GitHubProvider) Name() string        { return "github" }
 func (p *GitHubProvider) DisplayName() string { return "GitHub" }
 func (p *GitHubProvider) AccessNoun() string  { return "team" }
 
-// RequiredScope is read:org, and only in team mode.
 func (p *GitHubProvider) RequiredScope() string {
 	if len(p.flow.config.Scopes) == 0 {
 		return ""

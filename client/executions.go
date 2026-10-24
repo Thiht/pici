@@ -66,7 +66,6 @@ func (c *Client) StepLogs(ctx context.Context, project string, id int64, step st
 	return string(data), nil
 }
 
-// Event is a single Server-Sent Event from ExecutionStream.
 type Event struct {
 	Name string
 	Data string
@@ -94,7 +93,6 @@ func (c *Client) ExecutionStream(ctx context.Context, project string, id int64, 
 	return &EventStream{body: resp.Body, scanner: bufio.NewScanner(resp.Body)}, nil
 }
 
-// EventStream reads Server-Sent Events until the stream ends or is closed.
 type EventStream struct {
 	body    io.ReadCloser
 	scanner *bufio.Scanner

@@ -290,9 +290,6 @@ func (h *Handler) ProjectRefs(w http.ResponseWriter, r *http.Request) {
 	}{ProjectID: project.ID.String(), Branches: refs.Branches, Tags: refs.Tags, Default: project.DefaultBranch, Error: errorText(err)})
 }
 
-// ProjectDetect fills in the fields that can be guessed from the repository
-// URL (provider, default branch) and the auth type (auth user). It renders the
-// project_fields fragment, swapped in place by htmx as the user types.
 func (h *Handler) ProjectDetect(w http.ResponseWriter, r *http.Request) {
 	fields := projectFields{
 		RepoURL:       strings.TrimSpace(r.FormValue("repo_url")),
@@ -319,9 +316,6 @@ func (h *Handler) ProjectDetect(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, http.StatusOK, "project_detect", fields)
 }
 
-// projectFromForm applies the submitted fields on top of a base project. It
-// only reads the form: deriving and validating the identity is the Project
-// module's job.
 func projectFromForm(r *http.Request, p stores.Project) stores.Project {
 	p.Name = strings.TrimSpace(r.FormValue("name"))
 	p.RepoURL = strings.TrimSpace(r.FormValue("repo_url"))

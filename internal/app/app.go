@@ -1,7 +1,3 @@
-// Package app holds the use cases the web UI and the JSON API both serve.
-// Each area lives in its own subpackage with a small interface, and reports
-// failure with the errors below so neither transport needs to know how the
-// store or the runner spells its own errors.
 package app
 
 import (
@@ -40,7 +36,6 @@ func (e InvalidError) Error() string { return e.Message }
 
 func (e InvalidError) Is(target error) bool { return target == ErrInvalid }
 
-// Invalidf reports rejected input with a message written for a human.
 func Invalidf(format string, args ...any) error {
 	return InvalidError{Message: fmt.Sprintf(format, args...)}
 }

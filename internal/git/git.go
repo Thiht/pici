@@ -73,7 +73,6 @@ func Clone(ctx context.Context, cfg CloneConfig) error {
 	}
 }
 
-// Refs lists the remote branches and tags, like `git ls-remote`.
 type Refs struct {
 	Head     string
 	Branches []string
@@ -121,7 +120,6 @@ func ListRefs(ctx context.Context, url string, a Auth) (Refs, error) {
 	return out, nil
 }
 
-// IsTag reports whether ref exists as a tag in the repository at dir.
 func IsTag(dir, ref string) bool {
 	repo, err := git.PlainOpen(dir)
 	if err != nil {

@@ -1,7 +1,3 @@
-// Package present formats the values every surface shows for an Execution:
-// its status, how long it took, how big an artifact is and which commit it ran.
-// The web UI, the status badge, the CLI and the runner all read from here, so
-// the same Execution reads the same everywhere.
 package present
 
 import (
@@ -23,7 +19,6 @@ func Duration(d time.Duration) string {
 	return s
 }
 
-// Size renders a byte count in binary units.
 func Size(n int64) string {
 	const unit = 1024
 	if n < unit {
@@ -37,7 +32,6 @@ func Size(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// SHA shortens a commit SHA to the length the surfaces show.
 func SHA(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]
@@ -45,7 +39,6 @@ func SHA(sha string) string {
 	return sha
 }
 
-// Label is a status as a human reads it.
 func Label(status string) string {
 	if status == "" {
 		return ""
@@ -63,7 +56,6 @@ var classes = map[string]string{
 	"skipped":  "badge badge-soft badge-neutral",
 }
 
-// Class is the badge class list the web UI puts on a status.
 func Class(status string) string {
 	if class, ok := classes[status]; ok {
 		return class
@@ -77,7 +69,6 @@ func Classes() map[string]string {
 	return classes
 }
 
-// Symbol is the CLI's marker for a status.
 func Symbol(status string) string {
 	switch status {
 	case "success":
@@ -97,7 +88,6 @@ func Symbol(status string) string {
 	}
 }
 
-// Badge is the shields.io-style value and colour for a status.
 func Badge(status string) (value, color string) {
 	switch status {
 	case "success":

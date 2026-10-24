@@ -34,7 +34,6 @@ func execution() stores.Execution {
 	}
 }
 
-// collect writes one artifact and its manifest the way a Step would.
 func collect(t *testing.T, ws *workspace.Workspace) {
 	t.Helper()
 	exec := execution()

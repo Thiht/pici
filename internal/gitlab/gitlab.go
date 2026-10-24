@@ -1,5 +1,3 @@
-// Package gitlab talks to the GitLab REST API (commit statuses, merge request
-// diffs) using the project's stored token.
 package gitlab
 
 import (
@@ -47,7 +45,6 @@ func SetCommitStatus(ctx context.Context, base, path, token, sha, state, name, t
 	return err
 }
 
-// MergeRequestDiffs returns the paths changed by a merge request.
 func MergeRequestDiffs(ctx context.Context, base, path, token string, iid int) ([]string, error) {
 	client, err := newClient(base, token)
 	if err != nil {

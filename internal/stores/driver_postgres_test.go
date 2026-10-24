@@ -39,8 +39,6 @@ func baseDSN() string {
 	return "postgres://postgres:pici@" + net.JoinHostPort(host, port) + "/pici_test?sslmode=disable&connect_timeout=10"
 }
 
-// testDSN creates an empty database on the test server, and drops it when the
-// test ends.
 func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn := baseDSN()

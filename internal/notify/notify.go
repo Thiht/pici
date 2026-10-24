@@ -1,5 +1,3 @@
-// Package notify reports an Execution's progress to its Project's provider:
-// GitHub check runs, GitLab commit statuses, or nothing at all.
 package notify
 
 import (
@@ -17,8 +15,6 @@ import (
 	"github.com/Thiht/pici/internal/stores"
 )
 
-// Store is the part of the store the GitHub reporter needs to keep one check
-// run per Execution across Attempts.
 type Store interface {
 	GetExecutionAttempt(ctx context.Context, projectID uuid.UUID, executionID int64, attempt int) (stores.Execution, error)
 	SetCheckRunID(ctx context.Context, projectID uuid.UUID, executionID, checkRunID int64) error

@@ -13,13 +13,10 @@ import (
 	"github.com/Thiht/pici/internal/workspace"
 )
 
-// StreamEvent is one step of an Execution's log stream: a line of output, a
-// change in status, or the terminal status.
 type StreamEvent interface {
 	isStreamEvent()
 }
 
-// LogEvent is one line of output, from the setup phase or a Step.
 type LogEvent struct {
 	Source string
 	Line   []byte
@@ -31,7 +28,6 @@ type StateEvent struct {
 	State ExecutionState
 }
 
-// DoneEvent carries the terminal status and ends the stream.
 type DoneEvent struct {
 	Status stores.Status
 }
@@ -40,13 +36,11 @@ func (LogEvent) isStreamEvent()   {}
 func (StateEvent) isStreamEvent() {}
 func (DoneEvent) isStreamEvent()  {}
 
-// ExecutionState is an Execution's progress while it runs.
 type ExecutionState struct {
 	Status stores.Status `json:"status"`
 	Steps  []StepState   `json:"steps"`
 }
 
-// StepState is one Step's progress within an ExecutionState.
 type StepState struct {
 	Name       string            `json:"name"`
 	Status     stores.StepStatus `json:"status"`

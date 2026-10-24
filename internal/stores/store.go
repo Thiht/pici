@@ -135,7 +135,6 @@ func sqliteDSN(dsn string) string {
 	}
 }
 
-// setupGoose routes goose's migration logs through slog.
 func setupGoose() {
 	goose.SetLogger(&gooseLogger{})
 }

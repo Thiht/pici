@@ -27,7 +27,6 @@ type stepView struct {
 	Logs string
 }
 
-// TimeoutExceeded reports whether a failed step ran longer than its timeout.
 func (s stepView) TimeoutExceeded() bool {
 	return s.Status == stores.StepStatusFailed && s.Timeout > 0 && s.StartedAt != nil && s.FinishedAt != nil &&
 		s.FinishedAt.Sub(*s.StartedAt) > s.Timeout
@@ -129,8 +128,6 @@ func (h *Handler) executionData(w http.ResponseWriter, r *http.Request) (executi
 	}, true
 }
 
-// resolveAttempt resolves the Execution id from the path and the optional
-// ?attempt= selector to the Attempt the request is about.
 func (h *Handler) resolveAttempt(w http.ResponseWriter, r *http.Request, project stores.Project) (executions.View, bool) {
 	id, err := strconv.ParseInt(r.PathValue("executionID"), 10, 64)
 	if err != nil {

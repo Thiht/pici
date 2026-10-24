@@ -1,4 +1,3 @@
-// Package authtest provides a configurable auth.Provider for tests.
 package authtest
 
 import (
@@ -8,16 +7,11 @@ import (
 	"github.com/Thiht/pici/internal/auth"
 )
 
-// Provider is an auth.Provider whose every answer is a field. The zero value
-// behaves like a GitHub provider that only knows one team-less user; calls the
-// service makes are counted so a test can assert on them.
 type Provider struct {
 	ProviderName    string
 	ProviderDisplay string
 	ProviderNoun    string
-	// Scope overrides RequiredScope. When empty, a GitHub provider requires
-	// read:org and the others require nothing, as the real ones do.
-	Scope string
+	Scope           string
 
 	Identity  auth.Identity
 	TeamList  []auth.Team

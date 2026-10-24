@@ -16,6 +16,7 @@ func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = gitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -125,6 +126,36 @@ func TestWorktreeInfo(t *testing.T) {
 	}
 	if len(sha) != 40 {
 		t.Fatalf("sha = %q", sha)
+	}
+}
+
+func TestWorktreeInfoIgnoresInheritedGitEnv(t *testing.T) {
+	other := t.TempDir()
+	git(t, other, "init", "-q", "-b", "other")
+	git(t, other, "config", "user.email", "t@t")
+	git(t, other, "config", "user.name", "t")
+	mustWrite(t, filepath.Join(other, "a"), "a")
+	git(t, other, "add", ".")
+	git(t, other, "commit", "-qm", "init")
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "given")
+	git(t, dir, "config", "user.email", "t@t")
+	git(t, dir, "config", "user.name", "t")
+	mustWrite(t, filepath.Join(dir, "b"), "b")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+
+	// A hook exports the repository it runs for; the given dir must still win.
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+
+	ref, _, err := worktreeInfo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != "given" {
+		t.Fatalf("ref = %q, want given", ref)
 	}
 }
 
