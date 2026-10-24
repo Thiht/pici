@@ -154,6 +154,9 @@ func TestMaterializeSnapshotKeepsArchiveOnFailure(t *testing.T) {
 
 func writeSnapshot(t *testing.T, path string, files map[string]string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)

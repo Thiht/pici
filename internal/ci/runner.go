@@ -8,21 +8,19 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 	"uuid"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	gh "github.com/google/go-github/v92/github"
 
 	"github.com/Thiht/pici/internal/archive"
 	"github.com/Thiht/pici/internal/docker"
 	"github.com/Thiht/pici/internal/git"
 	"github.com/Thiht/pici/internal/github"
-	"github.com/Thiht/pici/internal/gitlab"
 	"github.com/Thiht/pici/internal/mask"
+	"github.com/Thiht/pici/internal/notify"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
 )
@@ -39,9 +37,16 @@ type execKey struct {
 	id        int64
 }
 
+// Engine runs the containers a Workflow needs. *docker.Engine satisfies it.
+type Engine interface {
+	Build(ctx context.Context, opts docker.BuildOptions) error
+	Run(ctx context.Context, opts docker.RunOptions) (int, error)
+	Host() string
+}
+
 type Runner struct {
 	Store              stores.Store
-	Engine             *docker.Engine
+	Engine             Engine
 	Workspace          *workspace.Workspace
 	MountPath          string
 	DefaultStepTimeout time.Duration
@@ -282,6 +287,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		r.fail(ctx, exec, err)
 		return
 	}
+	notifier := notify.For(project, r.PublicBaseURL, r.Store)
 
 	go r.watchCancel(ctx, cancel, project.ID, exec.ID)
 
@@ -308,6 +314,10 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}()
 
 	fmt.Fprintf(setupLog, "pici: starting workflow %q on %s\n", exec.Workflow, exec.Ref)
+	if r.Engine == nil {
+		r.finish(ctx, exec, stores.StatusFailed, nil, "container engine is unavailable", notifier, setupLog)
+		return
+	}
 
 	workspaceID := exec.ID
 	if exec.WorkspaceID != nil {
@@ -318,12 +328,12 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	if isRetry {
 		if _, err := os.Stat(repoDir); err != nil {
 			fmt.Fprintf(setupLog, "workspace unavailable: %v\n", err)
-			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
+			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 			return
 		}
 	} else if err := r.materializeSource(ctx, project, exec, repoDir); err != nil {
 		fmt.Fprintf(setupLog, "prepare source failed: %v\n", err)
-		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
+		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 		return
 	}
 
@@ -335,13 +345,13 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	cfgData, err := os.ReadFile(filepath.Join(wfDir, "ci.yml"))
 	if err != nil {
 		fmt.Fprintf(setupLog, "read ci.yml: %v\n", err)
-		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
+		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 		return
 	}
 	cfg, err := Parse(cfgData)
 	if err != nil {
 		fmt.Fprintf(setupLog, "parse ci.yml: %v\n", err)
-		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, 0)
+		r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 		return
 	}
 
@@ -350,7 +360,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		if !cfg.MatchesManual(exec.Ref, isTag) {
 			msg := fmt.Sprintf("manual run of %q is not allowed on ref %q", exec.Workflow, exec.Ref)
 			fmt.Fprintf(setupLog, "%s\n", msg)
-			r.finish(ctx, exec, stores.StatusFailed, nil, msg, project, setupLog, 0)
+			r.finish(ctx, exec, stores.StatusFailed, nil, msg, notifier, setupLog)
 			return
 		}
 	}
@@ -424,25 +434,9 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	explicitBinds := cacheBinds(project.ID.String(), r.MountPath, cfg.Cache)
 	cacheBinds := append(explicitBinds, autoBinds...)
 
-	// The check run belongs to the Execution, not the attempt: reuse the one
-	// created by the first attempt so a retry updates it instead of adding a
-	// second check to the commit.
-	checkRunID := int64(0)
-	if root, err := r.Store.GetExecutionAttempt(ctx, project.ID, exec.ExecutionID, 1); err == nil {
-		checkRunID = root.CheckRunID
-	} else {
-		fmt.Fprintf(setupLog, "load github check run id failed: %v\n", err)
+	if err := notifier.Started(ctx, exec); err != nil {
+		fmt.Fprintf(setupLog, "notify: %v\n", err)
 	}
-	if checkRunID == 0 {
-		checkRunID = r.createCheckRun(ctx, project, exec, setupLog)
-		if checkRunID != 0 {
-			if err := r.Store.SetCheckRunID(ctx, project.ID, exec.ExecutionID, checkRunID); err != nil {
-				fmt.Fprintf(setupLog, "store github check run id failed: %v\n", err)
-			}
-		}
-	}
-	r.markCheckRunRunning(ctx, project, exec, checkRunID, setupLog)
-	r.gitlabStatus(ctx, project, exec, "running", setupLog)
 
 	image := cfg.Image
 	if image == "" {
@@ -456,7 +450,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 			Progress:   setupLog,
 		}); err != nil {
 			fmt.Fprintf(setupLog, "build failed: %v\n", err)
-			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), project, setupLog, checkRunID)
+			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 			return
 		}
 	}
@@ -493,7 +487,7 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}
 	exec.Status = status
 
-	r.finish(ctx, exec, status, steps, exec.Error, project, setupLog, checkRunID)
+	r.finish(ctx, exec, status, steps, exec.Error, notifier, setupLog)
 }
 
 func (r *Runner) materializeSource(ctx context.Context, project stores.Project, exec stores.Execution, repoDir string) error {
@@ -552,10 +546,10 @@ func (r *Runner) watchCancel(ctx context.Context, cancel context.CancelFunc, pro
 }
 
 func (r *Runner) fail(ctx context.Context, exec stores.Execution, err error) {
-	r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), stores.Project{}, nil, 0)
+	r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notify.For(stores.Project{}, "", nil), nil)
 }
 
-func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.Status, steps stores.Steps, errMsg string, project stores.Project, setupLog *mask.Writer, checkRunID int64) {
+func (r *Runner) finish(ctx context.Context, exec stores.Execution, status stores.Status, steps stores.Steps, errMsg string, notifier notify.Reporter, setupLog *mask.Writer) {
 	exec.Status = status
 	exec.Steps = steps
 	exec.Error = errMsg
@@ -571,9 +565,13 @@ func (r *Runner) finish(_ context.Context, exec stores.Execution, status stores.
 	defer cancel()
 	_ = r.Store.UpdateExecution(persistCtx, exec)
 
-	if project.ID != uuid.Nil() {
-		r.updateCheckRun(persistCtx, project, exec, checkRunID, status, errMsg, setupLog)
-		r.gitlabStatus(persistCtx, project, exec, gitlabState(status), setupLog)
+	if err := notifier.Finished(ctx, notify.Report{
+		Execution: exec,
+		Status:    status,
+		Summary:   errMsg,
+		Logs:      func() string { return r.readLogs(exec.ProjectID, exec.ID) },
+	}); err != nil && setupLog != nil {
+		fmt.Fprintf(setupLog, "notify: %v\n", err)
 	}
 
 	// The execution is terminal: its snapshot archive is no longer needed and
@@ -617,179 +615,6 @@ func carryOverSteps(steps stores.Steps) map[string]stores.StepResult {
 		}
 	}
 	return out
-}
-
-func (r *Runner) createCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, log io.Writer) int64 {
-	if exec.Source == stores.SourceSnapshot {
-		return 0
-	}
-	if project.Provider != stores.ProviderGithub || project.AuthSecret == "" || exec.CommitSHA == "" {
-		return 0
-	}
-	owner, repo, ok := github.ParseRepo(project.RepoURL)
-	if !ok {
-		return 0
-	}
-
-	client, err := gh.NewClient(gh.WithAuthToken(project.AuthSecret))
-	if err != nil {
-		if log != nil {
-			fmt.Fprintf(log, "create github check run failed: %v\n", err)
-		}
-		return 0
-	}
-	status := "in_progress"
-	checkRun, _, err := client.Checks.CreateCheckRun(ctx, owner, repo, gh.CreateCheckRunOptions{
-		Name:       "pici/" + exec.Workflow,
-		HeadSHA:    exec.CommitSHA,
-		Status:     &status,
-		StartedAt:  &gh.Timestamp{Time: time.Now()},
-		DetailsURL: r.detailsURL(project.ID, exec.ExecutionID),
-	})
-	if err != nil {
-		if log != nil {
-			fmt.Fprintf(log, "create github check run failed: %v\n", err)
-		}
-		return 0
-	}
-	return checkRun.GetID()
-}
-
-func (r *Runner) markCheckRunRunning(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, log io.Writer) {
-	if checkRunID == 0 || project.Provider != stores.ProviderGithub || project.AuthSecret == "" {
-		return
-	}
-	owner, repo, ok := github.ParseRepo(project.RepoURL)
-	if !ok {
-		return
-	}
-	client, err := gh.NewClient(gh.WithAuthToken(project.AuthSecret))
-	if err != nil {
-		if log != nil {
-			fmt.Fprintf(log, "mark github check run running failed: %v\n", err)
-		}
-		return
-	}
-	status := "in_progress"
-	title := fmt.Sprintf("pici/%s: running (attempt %d/%d)", exec.Workflow, exec.Attempt, exec.AttemptsCount)
-	summary := fmt.Sprintf("Attempt %d of %d is running.", exec.Attempt, exec.AttemptsCount)
-	summary = r.attemptSummary(ctx, project.ID, exec.ExecutionID, summary)
-	_, _, err = client.Checks.UpdateCheckRun(ctx, owner, repo, checkRunID, gh.UpdateCheckRunOptions{
-		Name:       "pici/" + exec.Workflow,
-		Status:     &status,
-		DetailsURL: r.detailsURL(project.ID, exec.ExecutionID),
-		Output: &gh.CheckRunOutput{
-			Title:   &title,
-			Summary: &summary,
-		},
-	})
-	if err != nil && log != nil {
-		fmt.Fprintf(log, "mark github check run running failed: %v\n", err)
-	}
-}
-
-func (r *Runner) attemptSummary(ctx context.Context, projectID uuid.UUID, executionID int64, summary string) string {
-	attempts, err := r.Store.ListAttempts(ctx, projectID, executionID)
-	if err != nil || len(attempts) == 0 {
-		return summary
-	}
-	var b strings.Builder
-	b.WriteString(summary)
-	b.WriteString("\n\nAttempts:\n")
-	for _, a := range attempts {
-		fmt.Fprintf(&b, "- #%d: %s (%s)\n", a.Attempt, a.Status, a.Trigger)
-	}
-	return b.String()
-}
-
-func (r *Runner) updateCheckRun(ctx context.Context, project stores.Project, exec stores.Execution, checkRunID int64, status stores.Status, errMsg string, log io.Writer) {
-	if checkRunID == 0 || project.Provider != stores.ProviderGithub || project.AuthSecret == "" {
-		return
-	}
-	owner, repo, ok := github.ParseRepo(project.RepoURL)
-	if !ok {
-		return
-	}
-
-	conclusion := "success"
-	switch status {
-	case stores.StatusFailed:
-		conclusion = "failure"
-	case stores.StatusCanceled:
-		conclusion = "cancelled"
-	}
-
-	title := fmt.Sprintf("pici/%s: %s (attempt %d/%d)", exec.Workflow, conclusion, exec.Attempt, exec.AttemptsCount)
-	summary := errMsg
-	if summary == "" {
-		summary = "Workflow completed successfully"
-	}
-	summary = r.attemptSummary(ctx, project.ID, exec.ExecutionID, summary)
-
-	client, err := gh.NewClient(gh.WithAuthToken(project.AuthSecret))
-	if err != nil {
-		if log != nil {
-			fmt.Fprintf(log, "update github check run failed: %v\n", err)
-		}
-		return
-	}
-	logs := r.readLogs(project.ID, exec.ID)
-	completed := "completed"
-	_, _, err = client.Checks.UpdateCheckRun(ctx, owner, repo, checkRunID, gh.UpdateCheckRunOptions{
-		Name:        "pici/" + exec.Workflow,
-		Status:      &completed,
-		Conclusion:  &conclusion,
-		CompletedAt: &gh.Timestamp{Time: time.Now()},
-		DetailsURL:  r.detailsURL(project.ID, exec.ExecutionID),
-		Output: &gh.CheckRunOutput{
-			Title:   &title,
-			Summary: &summary,
-			Text:    &logs,
-		},
-	})
-	if err != nil && log != nil {
-		fmt.Fprintf(log, "update github check run failed: %v\n", err)
-	}
-}
-
-// gitlabStatus posts a commit status to a GitLab project so merge requests
-// show the workflow result, mirroring the GitHub check run.
-func (r *Runner) gitlabStatus(ctx context.Context, project stores.Project, exec stores.Execution, state string, log io.Writer) {
-	if exec.Source == stores.SourceSnapshot || project.Provider != stores.ProviderGitlab || project.AuthSecret == "" || exec.CommitSHA == "" {
-		return
-	}
-	base, path, ok := gitlab.ParseRepo(project.RepoURL)
-	if !ok {
-		return
-	}
-	var targetURL string
-	if url := r.detailsURL(project.ID, exec.ExecutionID); url != nil {
-		targetURL = *url
-	}
-	if err := gitlab.SetCommitStatus(ctx, base, path, project.AuthSecret, exec.CommitSHA, state, "pici/"+exec.Workflow, targetURL, ""); err != nil && log != nil {
-		fmt.Fprintf(log, "update gitlab status failed: %v\n", err)
-	}
-}
-
-func gitlabState(status stores.Status) string {
-	switch status {
-	case stores.StatusSuccess:
-		return "success"
-	case stores.StatusFailed:
-		return "failed"
-	case stores.StatusCanceled:
-		return "canceled"
-	default:
-		return "running"
-	}
-}
-
-func (r *Runner) detailsURL(projectID uuid.UUID, execID int64) *string {
-	if r.PublicBaseURL == "" {
-		return nil
-	}
-	url := strings.TrimRight(r.PublicBaseURL, "/") + "/api/projects/" + projectID.String() + "/executions/" + strconv.FormatInt(execID, 10)
-	return &url
 }
 
 func (r *Runner) readLogs(projectID uuid.UUID, execID int64) string {

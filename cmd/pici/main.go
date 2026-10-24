@@ -75,9 +75,13 @@ func main() {
 
 	ws := workspace.New(cfg.WorkspaceDir, filepath.Join(cfg.WorkspaceDir, "logs"))
 
+	var runnerEngine ci.Engine
+	if engine != nil {
+		runnerEngine = engine
+	}
 	runner := &ci.Runner{
 		Store:              store,
-		Engine:             engine,
+		Engine:             runnerEngine,
 		Workspace:          ws,
 		MountPath:          cfg.RepoMountPath,
 		DefaultStepTimeout: cfg.StepTimeout,
