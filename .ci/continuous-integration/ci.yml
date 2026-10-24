@@ -18,12 +18,12 @@ steps:
   - name: fmt-check
     run: task fmt:check
     depends_on: [build]
-    timeout: 10m
+    timeout: 15m
 
   - name: lint
     run: task lint
     depends_on: [build]
-    timeout: 10m
+    timeout: 15m
 
   - name: test
     run: task test:cover
