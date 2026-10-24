@@ -34,7 +34,9 @@ func baseDSN() string {
 	if value := os.Getenv("PGPORT"); value != "" {
 		port = value
 	}
-	return "postgres://postgres:pici@" + net.JoinHostPort(host, port) + "/pici_test?sslmode=disable"
+	// Time out a misconfigured host instead of letting the step hang until its
+	// own timeout: the tests have no other way to bound the initial connect.
+	return "postgres://postgres:pici@" + net.JoinHostPort(host, port) + "/pici_test?sslmode=disable&connect_timeout=10"
 }
 
 // testDSN creates an empty database on the test server, and drops it when the

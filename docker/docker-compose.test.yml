@@ -3,6 +3,10 @@ name: pici-test
 services:
   postgres:
     image: postgres:16-alpine
+    # Steps run in their own containers on Docker's default bridge. Compose
+    # networks are isolated from it, so joining the bridge is what makes the
+    # database reachable from a step (which addresses it by container IP).
+    network_mode: bridge
     # Serve on the port the tests expect, so the address is the same whether
     # they reach it through the published port or through the container network.
     command: ["-p", "55432"]
