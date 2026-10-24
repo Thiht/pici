@@ -13,76 +13,10 @@ import (
 	"uuid"
 
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
-
-type fakeProvider struct {
-	name         string
-	identity     auth.Identity
-	teams        []auth.Team
-	exchangeErr  error
-	refreshed    auth.Token
-	refreshErr   error
-	teamsErr     error
-	lastVerifier string
-}
-
-func (p *fakeProvider) Name() string {
-	if p.name != "" {
-		return p.name
-	}
-	return "github"
-}
-
-func (p *fakeProvider) RequiredScope() string { return "read:org" }
-
-func (p *fakeProvider) DisplayName() string {
-	switch p.name {
-	case "gitlab":
-		return "GitLab"
-	case "oidc":
-		return "SSO"
-	default:
-		return "GitHub"
-	}
-}
-
-func (p *fakeProvider) AccessNoun() string {
-	if p.name == "" || p.name == "github" {
-		return "team"
-	}
-	return "group"
-}
-
-func (p *fakeProvider) AuthCodeURL(state, _, verifier string) string {
-	return "https://github.com/login/oauth/authorize?state=" + url.QueryEscape(state) +
-		"&code_challenge=" + url.QueryEscape(verifier)
-}
-
-func (p *fakeProvider) Exchange(_ context.Context, _, _, verifier string) (auth.Identity, error) {
-	p.lastVerifier = verifier
-	if p.exchangeErr != nil {
-		return auth.Identity{}, p.exchangeErr
-	}
-	return p.identity, nil
-}
-
-func (p *fakeProvider) Refresh(context.Context, string) (auth.Token, error) {
-	if p.refreshErr != nil {
-		return auth.Token{}, p.refreshErr
-	}
-	return p.refreshed, nil
-}
-
-func (p *fakeProvider) Teams(context.Context, string) ([]auth.Team, error) {
-	if p.teamsErr != nil {
-		return nil, p.teamsErr
-	}
-	return p.teams, nil
-}
-
-func (p *fakeProvider) Verify(context.Context, string) error { return nil }
 
 func fakeIdentity() auth.Identity {
 	return auth.Identity{
@@ -161,23 +95,23 @@ type testEnv struct {
 	client     *http.Client
 	store      stores.Store
 	svc        *auth.Service
-	provider   *fakeProvider
+	provider   *authtest.Provider
 	user       stores.User
 	session    stores.Session
 	sessionRaw string
 }
 
-func newTestEnv(t *testing.T, opts ...func(*fakeProvider)) *testEnv {
+func newTestEnv(t *testing.T, opts ...func(*authtest.Provider)) *testEnv {
 	t.Helper()
 	return newTestEnvWithAccess(t, []string{"acme/pici"}, nil, opts...)
 }
 
-func newTestEnvWithAccess(t *testing.T, teams, users []string, opts ...func(*fakeProvider)) *testEnv {
+func newTestEnvWithAccess(t *testing.T, teams, users []string, opts ...func(*authtest.Provider)) *testEnv {
 	t.Helper()
 	store := newWebTestStore(t)
-	provider := &fakeProvider{
-		identity: fakeIdentity(),
-		teams:    []auth.Team{{Path: "acme/pici"}},
+	provider := &authtest.Provider{
+		Identity: fakeIdentity(),
+		TeamList: []auth.Team{{Path: "acme/pici"}},
 	}
 	for _, opt := range opts {
 		opt(provider)

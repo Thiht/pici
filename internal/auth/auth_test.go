@@ -1,104 +1,43 @@
-package auth
+package auth_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 	"uuid"
 
+	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/stores"
 )
 
-type fakeProvider struct {
-	name         string
-	identity     Identity
-	teams        []Team
-	exchangeErr  error
-	refreshErr   error
-	teamsErr     error
-	verifyErr    error
-	refreshed    Token
-	refreshCalls int
-	lastRefresh  string
-	teamsCalls   int
-	verifyCalls  int
-	lastToken    string
-	lastVerifier string
-}
-
-func (p *fakeProvider) Name() string {
-	if p.name != "" {
-		return p.name
-	}
-	return "github"
-}
-
-func (p *fakeProvider) RequiredScope() string { return "read:org" }
-
-func (p *fakeProvider) DisplayName() string { return "GitHub" }
-func (p *fakeProvider) AccessNoun() string  { return "team" }
-
-func (p *fakeProvider) AuthCodeURL(state, _, verifier string) string {
-	return "https://github.test/" + state + "?verifier=" + verifier
-}
-
-func (p *fakeProvider) Exchange(_ context.Context, _, _, verifier string) (Identity, error) {
-	p.lastVerifier = verifier
-	if p.exchangeErr != nil {
-		return Identity{}, p.exchangeErr
-	}
-	return p.identity, nil
-}
-
-func (p *fakeProvider) Refresh(_ context.Context, refreshToken string) (Token, error) {
-	p.refreshCalls++
-	p.lastRefresh = refreshToken
-	if p.refreshErr != nil {
-		return Token{}, p.refreshErr
-	}
-	return p.refreshed, nil
-}
-
-func (p *fakeProvider) Teams(_ context.Context, accessToken string) ([]Team, error) {
-	p.teamsCalls++
-	p.lastToken = accessToken
-	if p.teamsErr != nil {
-		return nil, p.teamsErr
-	}
-	return p.teams, nil
-}
-
-func (p *fakeProvider) Verify(_ context.Context, accessToken string) error {
-	p.verifyCalls++
-	p.lastToken = accessToken
-	return p.verifyErr
-}
-
-func newTestService(t *testing.T) (*Service, stores.Store, *fakeProvider) {
+func newTestService(t *testing.T) (*auth.Service, stores.Store, *authtest.Provider) {
 	t.Helper()
 	return newTestServiceWithAccess(t, []string{"acme/pici"}, nil)
 }
 
-func newTestServiceWithAccess(t *testing.T, teams, users []string) (*Service, stores.Store, *fakeProvider) {
+func newTestServiceWithAccess(t *testing.T, teams, users []string) (*auth.Service, stores.Store, *authtest.Provider) {
 	t.Helper()
 	store, err := stores.Open("sqlite", filepath.Join(t.TempDir(), "test.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	provider := &fakeProvider{
-		identity: Identity{
+	provider := &authtest.Provider{
+		Identity: auth.Identity{
 			ProviderUserID: "1",
 			Login:          "alice",
 			Name:           "Alice",
-			Token:          Token{AccessToken: "oauth"},
+			Token:          auth.Token{AccessToken: "oauth"},
 			Scopes:         []string{"read:org"},
 		},
-		teams: []Team{{Path: "acme/pici"}},
+		TeamList: []auth.Team{{Path: "acme/pici"}},
 	}
-	svc := NewService(store, provider, teams, users, 24*time.Hour, false)
+	svc := auth.NewService(store, provider, teams, users, 24*time.Hour, false)
 	return svc, store, provider
 }
 
@@ -110,8 +49,8 @@ func TestLoginAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.lastVerifier != "verifier" {
-		t.Fatalf("PKCE verifier not forwarded: %q", provider.lastVerifier)
+	if provider.LastVerifier != "verifier" {
+		t.Fatalf("PKCE verifier not forwarded: %q", provider.LastVerifier)
 	}
 	if user.Login != "alice" || user.OAuthAccessToken != "oauth" || user.DisabledAt != nil {
 		t.Fatalf("unexpected user: %+v", user)
@@ -145,7 +84,7 @@ func TestLoginAndSession(t *testing.T) {
 func TestLoginStoresExpiringToken(t *testing.T) {
 	svc, store, provider := newTestService(t)
 	expires := time.Now().Add(8 * time.Hour)
-	provider.identity.Token = Token{AccessToken: "gho_test", RefreshToken: "ghr_test", ExpiresAt: &expires}
+	provider.Identity.Token = auth.Token{AccessToken: "gho_test", RefreshToken: "ghr_test", ExpiresAt: &expires}
 
 	user, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
@@ -170,23 +109,23 @@ func TestLoginStoresExpiringToken(t *testing.T) {
 func TestLoginAccessDenied(t *testing.T) {
 	t.Run("no team", func(t *testing.T) {
 		svc, _, provider := newTestService(t)
-		provider.teams = nil
-		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, ErrAccessDenied) {
-			t.Fatalf("expected ErrAccessDenied, got %v", err)
+		provider.TeamList = nil
+		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, auth.ErrAccessDenied) {
+			t.Fatalf("expected auth.ErrAccessDenied, got %v", err)
 		}
 	})
 	t.Run("missing scope", func(t *testing.T) {
 		svc, _, provider := newTestService(t)
-		provider.identity.Scopes = []string{"repo"}
-		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, ErrAccessDenied) {
-			t.Fatalf("expected ErrAccessDenied, got %v", err)
+		provider.Identity.Scopes = []string{"repo"}
+		if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); !errors.Is(err, auth.ErrAccessDenied) {
+			t.Fatalf("expected auth.ErrAccessDenied, got %v", err)
 		}
 	})
 }
 
 func TestLoginAllowlistedUserWithoutTeams(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, nil, []string{"alice"})
-	provider.identity.Scopes = nil
+	provider.Identity.Scopes = nil
 
 	user, err := svc.Login(context.Background(), "code", "nonce", "verifier")
 	if err != nil {
@@ -195,41 +134,41 @@ func TestLoginAllowlistedUserWithoutTeams(t *testing.T) {
 	if user.Login != "alice" {
 		t.Fatalf("unexpected user: %+v", user)
 	}
-	if provider.verifyCalls != 1 || provider.teamsCalls != 0 {
-		t.Fatalf("expected a token verification without team lookup, got verify=%d teams=%d", provider.verifyCalls, provider.teamsCalls)
+	if provider.VerifyCalls != 1 || provider.TeamsCalls != 0 {
+		t.Fatalf("expected a token verification without team lookup, got verify=%d teams=%d", provider.VerifyCalls, provider.TeamsCalls)
 	}
 }
 
 func TestLoginDeniesUserNotAllowlistedWithoutTeams(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, nil, []string{"bob"})
-	provider.identity.Scopes = nil
+	provider.Identity.Scopes = nil
 
 	_, err := svc.Login(context.Background(), "code", "nonce", "verifier")
-	if !errors.Is(err, ErrAccessDenied) {
-		t.Fatalf("expected ErrAccessDenied, got %v", err)
+	if !errors.Is(err, auth.ErrAccessDenied) {
+		t.Fatalf("expected auth.ErrAccessDenied, got %v", err)
 	}
-	if provider.verifyCalls != 1 {
-		t.Fatalf("expected the token to be verified, got %d calls", provider.verifyCalls)
+	if provider.VerifyCalls != 1 {
+		t.Fatalf("expected the token to be verified, got %d calls", provider.VerifyCalls)
 	}
 }
 
 func TestMixedModeAllowsListedUser(t *testing.T) {
 	svc, _, provider := newTestServiceWithAccess(t, []string{"acme/other"}, []string{"alice"})
-	provider.teams = nil
+	provider.TeamList = nil
 
 	if _, err := svc.Login(context.Background(), "code", "nonce", "verifier"); err != nil {
 		t.Fatalf("allowlisted user should be allowed: %v", err)
 	}
-	if provider.teamsCalls != 1 {
-		t.Fatalf("expected teams to be checked in mixed mode, got %d calls", provider.teamsCalls)
+	if provider.TeamsCalls != 1 {
+		t.Fatalf("expected teams to be checked in mixed mode, got %d calls", provider.TeamsCalls)
 	}
 }
 
 func TestLoginProviderError(t *testing.T) {
 	svc, _, provider := newTestService(t)
-	provider.exchangeErr = errors.New("boom")
+	provider.ExchangeErr = errors.New("boom")
 	_, err := svc.Login(context.Background(), "code", "nonce", "verifier")
-	if err == nil || errors.Is(err, ErrAccessDenied) {
+	if err == nil || errors.Is(err, auth.ErrAccessDenied) {
 		t.Fatalf("expected provider error, got %v", err)
 	}
 }
@@ -243,8 +182,8 @@ func TestExpiredSession(t *testing.T) {
 	if err := store.TouchSession(ctx, session.ID, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected auth.ErrUnauthorized, got %v", err)
 	}
 	if _, err := store.GetSession(ctx, session.ID); !errors.Is(err, stores.ErrNotFound) {
 		t.Fatalf("expected expired session to be deleted, got %v", err)
@@ -260,8 +199,8 @@ func TestDisabledUserSession(t *testing.T) {
 	if err := store.DisableUser(ctx, user.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected auth.ErrUnauthorized, got %v", err)
 	}
 	if _, err := store.GetSession(ctx, session.ID); !errors.Is(err, stores.ErrNotFound) {
 		t.Fatalf("expected disabled user sessions to be deleted, got %v", err)
@@ -288,8 +227,8 @@ func TestAuthenticateToken(t *testing.T) {
 	if err != nil || got.ID != user.ID {
 		t.Fatalf("authenticate token: %+v (err=%v)", got, err)
 	}
-	if _, err := svc.AuthenticateToken(ctx, "wrong"); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	if _, err := svc.AuthenticateToken(ctx, "wrong"); !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected auth.ErrUnauthorized, got %v", err)
 	}
 
 	past := time.Now().Add(-time.Hour)
@@ -297,14 +236,14 @@ func TestAuthenticateToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticateToken(ctx, rawExpired); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.AuthenticateToken(ctx, rawExpired); !errors.Is(err, auth.ErrUnauthorized) {
 		t.Fatalf("expected expired token to be unauthorized, got %v", err)
 	}
 
 	if err := store.DisableUser(ctx, user.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticateToken(ctx, raw); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.AuthenticateToken(ctx, raw); !errors.Is(err, auth.ErrUnauthorized) {
 		t.Fatalf("expected disabled user token to be unauthorized, got %v", err)
 	}
 }
@@ -326,8 +265,8 @@ func TestRevalidateAllowlistedUser(t *testing.T) {
 	if got.LastOrgCheckAt == nil {
 		t.Fatal("expected last_org_check_at to be updated")
 	}
-	if provider.verifyCalls != 1 || provider.teamsCalls != 0 {
-		t.Fatalf("expected a token verification without team lookup, got verify=%d teams=%d", provider.verifyCalls, provider.teamsCalls)
+	if provider.VerifyCalls != 1 || provider.TeamsCalls != 0 {
+		t.Fatalf("expected a token verification without team lookup, got verify=%d teams=%d", provider.VerifyCalls, provider.TeamsCalls)
 	}
 }
 
@@ -351,7 +290,7 @@ func TestRevalidateKeepsMember(t *testing.T) {
 	svc, store, provider := newTestService(t)
 	ctx := context.Background()
 	user := seedUser(t, store)
-	provider.teams = []Team{{Path: "acme/pici"}}
+	provider.TeamList = []auth.Team{{Path: "acme/pici"}}
 
 	svc.Revalidate(ctx)
 
@@ -373,7 +312,7 @@ func TestRevalidateDisablesRemovedMember(t *testing.T) {
 	user := seedUser(t, store)
 	_, session := createSession(t, svc, user.ID)
 
-	provider.teams = nil
+	provider.TeamList = nil
 	svc.Revalidate(ctx)
 
 	got, err := store.GetUser(ctx, user.ID)
@@ -393,7 +332,7 @@ func TestRevalidateKeepsAccessOnProviderFailure(t *testing.T) {
 	ctx := context.Background()
 	user := seedUser(t, store)
 
-	provider.teamsErr = ErrProviderUnavailable
+	provider.TeamsErr = auth.ErrProviderUnavailable
 	svc.Revalidate(ctx)
 
 	got, err := store.GetUser(ctx, user.ID)
@@ -410,7 +349,7 @@ func TestRevalidateDisablesInvalidToken(t *testing.T) {
 	ctx := context.Background()
 	user := seedUser(t, store)
 
-	provider.teamsErr = ErrTokenInvalid
+	provider.TeamsErr = auth.ErrTokenInvalid
 	svc.Revalidate(ctx)
 
 	got, err := store.GetUser(ctx, user.ID)
@@ -439,7 +378,7 @@ func TestRevalidateSkipsRecentlyCheckedUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider.teams = nil
+	provider.TeamList = nil
 	svc.Revalidate(ctx)
 	got, err := store.GetUser(ctx, user.ID)
 	if err != nil {
@@ -469,15 +408,15 @@ func TestRevalidateRefreshesExpiredToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := time.Now().Add(8 * time.Hour)
-	provider.refreshed = Token{AccessToken: "fresh", RefreshToken: "refresh-2", ExpiresAt: &next}
+	provider.Refreshed = auth.Token{AccessToken: "fresh", RefreshToken: "refresh-2", ExpiresAt: &next}
 
 	svc.Revalidate(ctx)
 
-	if provider.refreshCalls != 1 || provider.lastRefresh != "refresh-1" {
-		t.Fatalf("expected one refresh of refresh-1, got %d calls with %q", provider.refreshCalls, provider.lastRefresh)
+	if provider.RefreshCalls != 1 || provider.LastRefresh != "refresh-1" {
+		t.Fatalf("expected one refresh of refresh-1, got %d calls with %q", provider.RefreshCalls, provider.LastRefresh)
 	}
-	if provider.lastToken != "fresh" {
-		t.Fatalf("membership check used %q, want the refreshed token", provider.lastToken)
+	if provider.LastToken != "fresh" {
+		t.Fatalf("membership check used %q, want the refreshed token", provider.LastToken)
 	}
 	got, err := store.GetUser(ctx, user.ID)
 	if err != nil {
@@ -515,11 +454,11 @@ func TestRevalidateKeepsTokenBeforeExpiry(t *testing.T) {
 
 	svc.Revalidate(ctx)
 
-	if provider.refreshCalls != 0 {
-		t.Fatalf("expected no refresh before expiry, got %d", provider.refreshCalls)
+	if provider.RefreshCalls != 0 {
+		t.Fatalf("expected no refresh before expiry, got %d", provider.RefreshCalls)
 	}
-	if provider.lastToken != "current" {
-		t.Fatalf("membership check used %q, want the stored token", provider.lastToken)
+	if provider.LastToken != "current" {
+		t.Fatalf("membership check used %q, want the stored token", provider.LastToken)
 	}
 	got, err := store.GetUser(ctx, user.ID)
 	if err != nil {
@@ -548,7 +487,7 @@ func TestRevalidateDisablesUserOnRejectedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider.refreshErr = ErrTokenInvalid
+	provider.RefreshErr = auth.ErrTokenInvalid
 
 	svc.Revalidate(ctx)
 
@@ -559,7 +498,7 @@ func TestRevalidateDisablesUserOnRejectedRefresh(t *testing.T) {
 	if got.DisabledAt == nil {
 		t.Fatal("a rejected refresh token must disable the user")
 	}
-	if provider.teamsCalls != 0 {
+	if provider.TeamsCalls != 0 {
 		t.Fatal("a failed refresh must not run a membership check with a dead token")
 	}
 }
@@ -582,7 +521,7 @@ func TestRevalidateKeepsAccessOnRefreshFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider.refreshErr = ErrProviderUnavailable
+	provider.RefreshErr = auth.ErrProviderUnavailable
 
 	svc.Revalidate(ctx)
 
@@ -596,7 +535,7 @@ func TestRevalidateKeepsAccessOnRefreshFailure(t *testing.T) {
 	if got.OAuthRefreshToken != "refresh-1" {
 		t.Fatalf("unexpected token change on failure: %+v", got)
 	}
-	if provider.teamsCalls != 0 {
+	if provider.TeamsCalls != 0 {
 		t.Fatal("a failed refresh must not run a membership check with an expired token")
 	}
 }
@@ -608,13 +547,13 @@ func TestUsersFromAnotherProviderAreRejected(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	provider := &fakeProvider{name: "gitlab", teams: []Team{{Path: "acme/pici"}}}
-	svc := NewService(store, provider, []string{"acme/pici"}, nil, 24*time.Hour, false)
+	provider := &authtest.Provider{ProviderName: "gitlab", TeamList: []auth.Team{{Path: "acme/pici"}}}
+	svc := auth.NewService(store, provider, []string{"acme/pici"}, nil, 24*time.Hour, false)
 	ctx := context.Background()
 	user := seedUser(t, store) // stored with provider "github"
 	raw, session := createSession(t, svc, user.ID)
 
-	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, ErrUnauthorized) {
+	if _, _, err := svc.AuthenticateSession(ctx, raw); !errors.Is(err, auth.ErrUnauthorized) {
 		t.Fatalf("expected the old provider session to be unauthorized, got %v", err)
 	}
 	if _, err := store.GetSession(ctx, session.ID); !errors.Is(err, stores.ErrNotFound) {
@@ -625,7 +564,7 @@ func TestUsersFromAnotherProviderAreRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticateToken(ctx, rawToken); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.AuthenticateToken(ctx, rawToken); !errors.Is(err, auth.ErrUnauthorized) {
 		t.Fatalf("expected the old provider token to be unauthorized, got %v", err)
 	}
 
@@ -657,11 +596,17 @@ func seedUser(t *testing.T, store stores.Store) stores.User {
 	return user
 }
 
-func createSession(t *testing.T, svc *Service, userID uuid.UUID) (string, stores.Session) {
+func createSession(t *testing.T, svc *auth.Service, userID uuid.UUID) (string, stores.Session) {
 	t.Helper()
 	raw, session, err := svc.CreateSession(context.Background(), userID, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw, session
+}
+
+// hashToken mirrors the session id the service derives from a raw token.
+func hashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }

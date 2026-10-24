@@ -11,6 +11,7 @@ import (
 	"uuid"
 
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
@@ -52,9 +53,9 @@ func TestExecutionStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := newWebTestService(t, store, &fakeProvider{
-		identity: fakeIdentity(),
-		teams:    []auth.Team{{Path: "acme/pici"}},
+	svc := newWebTestService(t, store, &authtest.Provider{
+		Identity: fakeIdentity(),
+		TeamList: []auth.Team{{Path: "acme/pici"}},
 	}, []string{"acme/pici"}, nil)
 	user := newWebTestUser(t, store)
 	session, _ := newWebTestSession(t, svc, user.ID)

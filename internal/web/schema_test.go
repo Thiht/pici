@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/ci"
 )
 
 func TestSchemaRoute(t *testing.T) {
-	svc := auth.NewService(nil, &fakeProvider{}, nil, nil, time.Hour, false)
+	svc := auth.NewService(nil, &authtest.Provider{}, nil, nil, time.Hour, false)
 	handler := newTestHandler(nil, nil, "", svc, "https://pici.test", "test").Routes()
 
 	rec := httptest.NewRecorder()

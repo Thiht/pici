@@ -13,26 +13,10 @@ import (
 	"uuid"
 
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 )
-
-type stubProvider struct{}
-
-func (stubProvider) Name() string                              { return "github" }
-func (stubProvider) DisplayName() string                       { return "GitHub" }
-func (stubProvider) AccessNoun() string                        { return "team" }
-func (stubProvider) RequiredScope() string                     { return "read:org" }
-func (stubProvider) AuthCodeURL(string, string, string) string { return "" }
-func (stubProvider) Exchange(context.Context, string, string, string) (auth.Identity, error) {
-	return auth.Identity{}, errors.New("unused")
-}
-
-func (stubProvider) Refresh(context.Context, string) (auth.Token, error) {
-	return auth.Token{}, errors.New("unused")
-}
-func (stubProvider) Teams(context.Context, string) ([]auth.Team, error) { return nil, nil }
-func (stubProvider) Verify(context.Context, string) error               { return nil }
 
 func testTokenHash(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
@@ -51,7 +35,10 @@ func newTestStore(t *testing.T) stores.Store {
 
 func newTestAuthService(t *testing.T, store stores.Store) *auth.Service {
 	t.Helper()
-	return auth.NewService(store, stubProvider{}, []string{"acme/pici"}, nil, 24*time.Hour, false)
+	return auth.NewService(store, &authtest.Provider{
+		ExchangeErr: errors.New("unused"),
+		RefreshErr:  errors.New("unused"),
+	}, []string{"acme/pici"}, nil, 24*time.Hour, false)
 }
 
 func newTestUser(t *testing.T, store stores.Store) stores.User {

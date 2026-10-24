@@ -22,6 +22,7 @@ import (
 	"github.com/Thiht/pici/internal/app/artifacts"
 	"github.com/Thiht/pici/internal/app/cache"
 	"github.com/Thiht/pici/internal/auth"
+	"github.com/Thiht/pici/internal/auth/authtest"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
@@ -494,8 +495,8 @@ func TestLoginPageShowsGitHub(t *testing.T) {
 }
 
 func TestUsersOnlyLogin(t *testing.T) {
-	env := newTestEnvWithAccess(t, nil, []string{"alice"}, func(p *fakeProvider) {
-		p.identity.Scopes = nil
+	env := newTestEnvWithAccess(t, nil, []string{"alice"}, func(p *authtest.Provider) {
+		p.Identity.Scopes = nil
 	})
 	client := env.anonymousClient(t)
 
@@ -524,7 +525,7 @@ func TestUsersOnlyLogin(t *testing.T) {
 	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/" {
 		t.Fatalf("expected redirect to /, got %d %q", callback.StatusCode, callback.Header.Get("Location"))
 	}
-	if env.provider.lastVerifier == "" {
+	if env.provider.LastVerifier == "" {
 		t.Fatal("expected the PKCE verifier to be sent back")
 	}
 	if cookieValue(client, env.srv.URL, auth.SessionCookie) == "" {
@@ -564,7 +565,7 @@ func TestOAuthLoginCreatesSession(t *testing.T) {
 	if got := callback.Header.Get("Location"); got != "/" {
 		t.Fatalf("expected redirect to /, got %q", got)
 	}
-	if env.provider.lastVerifier == "" {
+	if env.provider.LastVerifier == "" {
 		t.Fatal("expected the PKCE verifier to be sent back")
 	}
 	if cookieValue(client, env.srv.URL, auth.SessionCookie) == "" {
@@ -581,7 +582,7 @@ func TestOAuthLoginCreatesSession(t *testing.T) {
 }
 
 func TestLoginRejectsNonMember(t *testing.T) {
-	env := newTestEnv(t, func(p *fakeProvider) { p.teams = nil })
+	env := newTestEnv(t, func(p *authtest.Provider) { p.TeamList = nil })
 	client := env.anonymousClient(t)
 
 	start, err := client.Get(env.srv.URL + "/auth/github")
@@ -606,7 +607,7 @@ func TestLoginRejectsNonMember(t *testing.T) {
 }
 
 func TestLoginRejectsMissingScope(t *testing.T) {
-	env := newTestEnv(t, func(p *fakeProvider) { p.identity.Scopes = []string{"repo"} })
+	env := newTestEnv(t, func(p *authtest.Provider) { p.Identity.Scopes = []string{"repo"} })
 	client := env.anonymousClient(t)
 
 	start, err := client.Get(env.srv.URL + "/auth/github")
@@ -641,8 +642,8 @@ func TestLoginRejectsBadState(t *testing.T) {
 }
 
 func TestGitLabLoginFlow(t *testing.T) {
-	env := newTestEnvWithAccess(t, []string{"acme/pici"}, nil, func(p *fakeProvider) {
-		p.name = "gitlab"
+	env := newTestEnvWithAccess(t, []string{"acme/pici"}, nil, func(p *authtest.Provider) {
+		p.ProviderName = "gitlab"
 	})
 	client := env.anonymousClient(t)
 
@@ -686,8 +687,8 @@ func TestGitLabLoginFlow(t *testing.T) {
 }
 
 func TestOIDCLoginFlow(t *testing.T) {
-	env := newTestEnvWithAccess(t, []string{"acme/pici"}, nil, func(p *fakeProvider) {
-		p.name = "oidc"
+	env := newTestEnvWithAccess(t, []string{"acme/pici"}, nil, func(p *authtest.Provider) {
+		p.ProviderName = "oidc"
 	})
 	client := env.anonymousClient(t)
 
