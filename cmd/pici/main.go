@@ -68,6 +68,16 @@ func main() {
 		slog.Warn("docker engine unavailable", "error", err)
 	}
 
+	var registries docker.Registries
+	if engine != nil {
+		registryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		registries, err = engine.EnsureRegistries(registryCtx)
+		cancel()
+		if err != nil {
+			slog.Warn("start image registries", "error", err)
+		}
+	}
+
 	if err := os.MkdirAll(cfg.WorkspaceDir, 0o755); err != nil {
 		slog.Error("create workspace", "error", err)
 		os.Exit(1)
@@ -87,6 +97,9 @@ func main() {
 		DefaultStepTimeout: cfg.StepTimeout,
 		MaxSnapshotSize:    cfg.MaxSnapshotSize,
 		PublicBaseURL:      cfg.PublicBaseURL,
+		SandboxImage:       cfg.SandboxImage,
+		SandboxAddr:        cfg.SandboxAddr,
+		Registries:         registries,
 	}
 
 	rootCtx, rootCancel := context.WithCancel(context.Background())
@@ -149,12 +162,13 @@ func main() {
 	go sch.Run(rootCtx)
 
 	collector := &gc.Collector{
-		Store:        store,
-		Engine:       engine,
-		WorkspaceDir: cfg.WorkspaceDir,
-		LogsDir:      filepath.Join(cfg.WorkspaceDir, "logs"),
-		Keep:         cfg.GCKeepDuration,
-		Interval:     cfg.GCInterval,
+		Store:                store,
+		Engine:               engine,
+		WorkspaceDir:         cfg.WorkspaceDir,
+		LogsDir:              filepath.Join(cfg.WorkspaceDir, "logs"),
+		Keep:                 cfg.GCKeepDuration,
+		Interval:             cfg.GCInterval,
+		RegistryCacheMaxSize: cfg.RegistryCacheMaxSize,
 	}
 	go collector.Run(rootCtx)
 

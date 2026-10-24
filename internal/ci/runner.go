@@ -41,7 +41,12 @@ type execKey struct {
 type Engine interface {
 	Build(ctx context.Context, opts docker.BuildOptions) error
 	Run(ctx context.Context, opts docker.RunOptions) (int, error)
-	Host() string
+	CreateSandbox(ctx context.Context, opts docker.SandboxOptions) (docker.Sandbox, error)
+	RemoveSandbox(ctx context.Context, id string) error
+	Dial(host string) (docker.Daemon, error)
+	Pull(ctx context.Context, ref string, logs io.Writer) error
+	Push(ctx context.Context, ref string, logs io.Writer) error
+	EnsureRegistries(ctx context.Context) (docker.Registries, error)
 }
 
 type Runner struct {
@@ -52,6 +57,9 @@ type Runner struct {
 	DefaultStepTimeout time.Duration
 	MaxSnapshotSize    int64
 	PublicBaseURL      string
+	SandboxImage       string
+	SandboxAddr        string
+	Registries         docker.Registries
 
 	workerID string
 	mu       sync.Mutex
@@ -436,20 +444,48 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		fmt.Fprintf(setupLog, "notify: %v\n", err)
 	}
 
+	sandboxed := workflowNeedsSandbox(cfg)
+	registries := r.Registries
+	if sandboxed && registries.Images == "" {
+		// Startup may have raced Docker's own startup; retry once here rather
+		// than leaving docker workflows broken until the next restart.
+		if ensured, err := r.Engine.EnsureRegistries(ctx); err == nil {
+			registries = ensured
+		}
+	}
 	image := cfg.Image
 	if image == "" {
 		image = imageTag(project.ID.String(), exec.Workflow)
+		tags := []string{image}
+		registryImage := ""
+		if sandboxed {
+			registryImage = registryReference(registries, project.ID.String(), exec.Workflow)
+			if registryImage == "" {
+				r.finish(ctx, exec, stores.StatusFailed, nil, "docker sandbox unavailable: image registry is not configured", notifier, setupLog)
+				return
+			}
+			tags = append(tags, registryImage)
+		}
 		fmt.Fprintf(setupLog, "building image %s...\n", image)
 		if err := r.Engine.Build(ctx, docker.BuildOptions{
 			ContextDir: wfDir,
 			Dockerfile: "Dockerfile",
-			Tags:       []string{image},
+			Tags:       tags,
 			CacheFrom:  []string{image},
 			Progress:   setupLog,
 		}); err != nil {
 			fmt.Fprintf(setupLog, "build failed: %v\n", err)
 			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
 			return
+		}
+		if sandboxed {
+			fmt.Fprintf(setupLog, "pushing image %s...\n", registryImage)
+			if err := r.Engine.Push(ctx, registryImage, setupLog); err != nil {
+				fmt.Fprintf(setupLog, "push failed: %v\n", err)
+				r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
+				return
+			}
+			image = registryImage
 		}
 	}
 
@@ -459,6 +495,22 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 	}
 	for k, v := range cfg.Env {
 		env = append(env, k+"="+v)
+	}
+
+	var stepEngine stepRunner = r.Engine
+	stepBinds := cacheBinds
+	dockerHost := ""
+	if sandboxed {
+		sb, err := r.startSandbox(ctx, registries, project.ID, exec.ID, repoDir, cacheBinds, image, setupLog)
+		if err != nil {
+			fmt.Fprintf(setupLog, "sandbox failed: %v\n", err)
+			r.finish(ctx, exec, stores.StatusFailed, nil, err.Error(), notifier, setupLog)
+			return
+		}
+		defer r.stopSandbox(sb)
+		stepEngine = sb.engine
+		stepBinds = sandboxStepBinds(r.MountPath, cacheBinds)
+		dockerHost = sb.sandbox.StepHost
 	}
 
 	exec.SetupFinishedAt = new(time.Now())
@@ -472,7 +524,18 @@ func (r *Runner) run(ctx context.Context, exec stores.Execution) {
 		defer cancel()
 		_ = r.Store.UpdateExecution(updateCtx, e)
 	}
-	steps, failed, canceled := r.executeSteps(ctx, cfg, env, image, repoDir, wfDir, project.ID, exec.ID, secrets, cacheBinds, carry, onStepUpdate)
+	steps, failed, canceled := r.executeSteps(ctx, cfg, stepExec{
+		engine:     stepEngine,
+		image:      image,
+		repoDir:    repoDir,
+		wfDir:      wfDir,
+		binds:      stepBinds,
+		env:        env,
+		dockerHost: dockerHost,
+		secrets:    secrets,
+		projectID:  project.ID,
+		execID:     exec.ID,
+	}, carry, onStepUpdate)
 	exec.Steps = steps
 	exec.Error = stepError(steps)
 	exec.FinishedAt = new(time.Now())

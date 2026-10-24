@@ -79,6 +79,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}/cache", h.cache.Get)
 	mux.HandleFunc("DELETE /api/projects/{id}/cache/images", h.cache.DeleteImage)
 	mux.HandleFunc("DELETE /api/projects/{id}/cache/volumes", h.cache.DeleteVolume)
+	mux.HandleFunc("GET /api/cache/registry", h.cache.Registry)
+	mux.HandleFunc("DELETE /api/cache/registry", h.cache.PurgeRegistry)
 
 	mux.HandleFunc("POST /api/projects/{id}/variables", h.variables.SetProject)
 	mux.HandleFunc("GET /api/projects/{id}/variables", h.variables.ListProject)

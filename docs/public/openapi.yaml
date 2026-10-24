@@ -327,6 +327,36 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /api/cache/registry:
+    get:
+      tags: [Cache]
+      summary: Get the shared image cache
+      description: Returns the on-disk size of the Docker Hub image cache shared by every project.
+      operationId: getRegistryCache
+      responses:
+        "200":
+          description: Image cache usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryCache"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [Cache]
+      summary: Purge the shared image cache
+      description: Empties the Docker Hub image cache. Workflow images are left alone.
+      operationId: purgeRegistryCache
+      responses:
+        "204":
+          description: Image cache purged
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /api/variables:
     post:
       tags: [Variables]
@@ -1284,6 +1314,15 @@ components:
         docker:
           type: string
           example: unavailable
+
+    RegistryCache:
+      type: object
+      required: [size]
+      properties:
+        size:
+          type: integer
+          format: int64
+          description: On-disk size in bytes of the shared Docker Hub image cache.
 
     CacheImage:
       type: object

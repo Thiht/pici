@@ -1260,19 +1260,20 @@ func TestProjectCacheUnavailableWithoutDocker(t *testing.T) {
 func TestProjectCacheTemplateRenders(t *testing.T) {
 	data := projectCachePage{
 		Title: "Cache", Active: "projects", Version: "dev",
-		Project:     stores.Project{Name: "demo"},
-		Images:      []cache.Image{{Reference: "pici/x-build", Size: 2048, Created: time.Now()}},
-		Volumes:     []cache.Volume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
-		ImagesSize:  2048,
-		VolumesSize: 4096,
-		TotalSize:   6144,
+		Project:      stores.Project{Name: "demo"},
+		Images:       []cache.Image{{Reference: "pici/x-build", Size: 2048, Created: time.Now()}},
+		Volumes:      []cache.Volume{{Cache: "node_modules", Name: "pici-cache-x-node_modules", Size: 4096, Created: time.Now()}},
+		ImagesSize:   2048,
+		VolumesSize:  4096,
+		TotalSize:    6144,
+		RegistrySize: 8192,
 	}
 	var buf strings.Builder
 	if err := templates.ExecuteTemplate(&buf, "project_cache", data); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"pici/x-build", "pici-cache-x-node_modules", "2.0 KB", "4.0 KB", "cache/images/delete", "cache/volumes/delete"} {
+	for _, want := range []string{"pici/x-build", "pici-cache-x-node_modules", "2.0 KB", "4.0 KB", "8.0 KB", "cache/images/delete", "cache/volumes/delete", "cache/registry/purge"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in page, got:\n%s", want, out)
 		}

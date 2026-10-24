@@ -3,6 +3,7 @@ package ci
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +18,15 @@ import (
 
 // fakeEngine stands in for Docker so run can be exercised without containers.
 type fakeEngine struct {
-	builds int
-	runs   int
-	host   string
+	builds     int
+	runs       int
+	pushes     int
+	pulls      int
+	sandboxes  int
+	removed    int
+	host       string
+	lastRun    docker.RunOptions
+	registries docker.Registries
 }
 
 func (f *fakeEngine) Build(context.Context, docker.BuildOptions) error {
@@ -29,6 +36,7 @@ func (f *fakeEngine) Build(context.Context, docker.BuildOptions) error {
 
 func (f *fakeEngine) Run(_ context.Context, opts docker.RunOptions) (int, error) {
 	f.runs++
+	f.lastRun = opts
 	fmt.Fprint(opts.Logs, "hello from the fake engine\n")
 	return 0, nil
 }
@@ -38,6 +46,34 @@ func (f *fakeEngine) Host() string {
 		return "unix:///var/run/docker.sock"
 	}
 	return f.host
+}
+
+func (f *fakeEngine) CreateSandbox(context.Context, docker.SandboxOptions) (docker.Sandbox, error) {
+	f.sandboxes++
+	return docker.Sandbox{ID: "sandbox-" + fmt.Sprint(f.sandboxes), Host: "tcp://sandbox:2375", StepHost: "tcp://10.201.0.1:2375"}, nil
+}
+
+func (f *fakeEngine) RemoveSandbox(context.Context, string) error {
+	f.removed++
+	return nil
+}
+
+func (f *fakeEngine) Dial(string) (docker.Daemon, error) { return f, nil }
+
+func (f *fakeEngine) Pull(context.Context, string, io.Writer) error {
+	f.pulls++
+	return nil
+}
+
+func (f *fakeEngine) Push(context.Context, string, io.Writer) error {
+	f.pushes++
+	return nil
+}
+
+func (f *fakeEngine) Close() error { return nil }
+
+func (f *fakeEngine) EnsureRegistries(context.Context) (docker.Registries, error) {
+	return f.registries, nil
 }
 
 func TestRunSnapshotExecution(t *testing.T) {
@@ -98,6 +134,9 @@ func TestRunSnapshotExecution(t *testing.T) {
 	}
 	if engine.builds != 1 || engine.runs != 1 {
 		t.Fatalf("expected one build and one run, got %d/%d", engine.builds, engine.runs)
+	}
+	if engine.sandboxes != 0 {
+		t.Fatalf("a workflow without docker steps must not start a sandbox, got %d", engine.sandboxes)
 	}
 
 	stepLog, err := os.ReadFile(ws.StepLog(project.ID, execution.ID, 0, "test"))

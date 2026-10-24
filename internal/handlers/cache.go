@@ -17,6 +17,10 @@ func NewCacheHandler(cache *cache.Module, projects *projects.Module) *CacheHandl
 	return &CacheHandler{cache: cache, projects: projects}
 }
 
+type registryCacheResponse struct {
+	Size int64 `json:"size"`
+}
+
 type cacheResponse struct {
 	Project   string         `json:"project"`
 	Images    []cache.Image  `json:"images"`
@@ -63,6 +67,23 @@ func (h *CacheHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.cache.RemoveVolume(r.Context(), project, r.URL.Query().Get("name")); err != nil {
+		storeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *CacheHandler) Registry(w http.ResponseWriter, r *http.Request) {
+	size, err := h.cache.RegistrySize(r.Context())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	render.JSON(w, http.StatusOK, registryCacheResponse{Size: size})
+}
+
+func (h *CacheHandler) PurgeRegistry(w http.ResponseWriter, r *http.Request) {
+	if err := h.cache.PurgeRegistry(r.Context()); err != nil {
 		storeError(w, err)
 		return
 	}

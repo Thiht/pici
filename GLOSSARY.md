@@ -44,6 +44,20 @@ _Avoid_: Job, task
 An automatic re-execution of a failed step within the same attempt, configured by `retry` on the step. It is not an Execution attempt.
 _Avoid_: Attempt
 
+**Sandbox**:
+The throwaway Docker daemon an Execution runs in when one of its Steps declares `docker: true`. It is removed when the Execution ends, taking every container, network, volume and image it held with it.
+_Avoid_: Dind, nested daemon, runner VM
+
+## Caches
+
+**Cache volume**:
+A pici-managed Docker volume that persists a Project's paths between Executions and is mounted at the configured path in each Step.
+_Avoid_: Volume, cache dir
+
+**Image cache**:
+The pici-managed registry that serves Workflow images and caches images pulled from Docker Hub across Executions.
+_Avoid_: Registry, proxy, mirror
+
 ## Artifacts
 
 **Artifact**:

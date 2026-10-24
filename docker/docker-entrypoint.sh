@@ -3,7 +3,16 @@ set -e
 
 # DOCKER_DATA_ROOT lets a deployment keep Docker's image/build cache on the
 # same persistent volume as pici's database and workspaces.
-dockerd-entrypoint.sh --data-root "${DOCKER_DATA_ROOT:-/var/lib/docker}" >/proc/1/fd/1 2>/proc/1/fd/2 &
+#
+# pici runs its image registries on the bridge gateway, and pushes workflow
+# images to them, so that address must be trusted by this daemon. Override it
+# when DOCKER_DATA_ROOT or a custom bridge moves the gateway.
+registry_gateway="${PICI_REGISTRY_GATEWAY:-172.17.0.1}"
+dockerd-entrypoint.sh \
+  --data-root "${DOCKER_DATA_ROOT:-/var/lib/docker}" \
+  --insecure-registry "${registry_gateway}:5000" \
+  --insecure-registry "${registry_gateway}:5001" \
+  >/proc/1/fd/1 2>/proc/1/fd/2 &
 
 i=0
 while ! docker info >/dev/null 2>&1; do
