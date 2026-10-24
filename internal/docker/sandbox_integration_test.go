@@ -54,6 +54,20 @@ func TestSandboxLifecycle(t *testing.T) {
 	if _, err := engine.RegistryUsage(ctx); err != nil {
 		t.Fatalf("registry usage: %v", err)
 	}
+	usage, err := engine.VolumeUsage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := usage[registryImagesVolume]; !ok {
+		t.Fatalf("volume usage is missing %s", registryImagesVolume)
+	}
+	volumes, err := engine.Volumes(ctx, registryImagesVolume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(volumes) != 1 || volumes[0].Name != registryImagesVolume {
+		t.Fatalf("volumes = %+v, want %s", volumes, registryImagesVolume)
+	}
 
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "hello.txt"), []byte("hi from the repo"), 0o644); err != nil {

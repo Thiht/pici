@@ -102,8 +102,6 @@ func TestCleanupWorkspacesRetainsReferenced(t *testing.T) {
 type fakeEngine struct {
 	sandboxes []docker.SandboxRef
 	removed   []string
-	usage     int64
-	purged    bool
 }
 
 func (f *fakeEngine) PruneImages(context.Context) error { return nil }
@@ -115,9 +113,14 @@ func (f *fakeEngine) RemoveSandbox(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeEngine) RegistryUsage(context.Context) (int64, error) { return f.usage, nil }
+type fakeRegistry struct {
+	usage  int64
+	purged bool
+}
 
-func (f *fakeEngine) PurgeRegistry(context.Context) error {
+func (f *fakeRegistry) RegistrySize(context.Context) (int64, error) { return f.usage, nil }
+
+func (f *fakeRegistry) PurgeRegistry(context.Context) error {
 	f.purged = true
 	return nil
 }
@@ -156,17 +159,17 @@ func TestCleanupSandboxesReapsNonRunningAttempts(t *testing.T) {
 }
 
 func TestCleanupRegistryCachePurgesOverCap(t *testing.T) {
-	engine := &fakeEngine{usage: 2048}
-	c := &Collector{Engine: engine, RegistryCacheMaxSize: 1024}
+	registry := &fakeRegistry{usage: 2048}
+	c := &Collector{Registry: registry, RegistryCacheMaxSize: 1024}
 	c.cleanupRegistryCache(context.Background())
-	if !engine.purged {
+	if !registry.purged {
 		t.Fatal("expected the image cache to be purged over its cap")
 	}
 
-	engine = &fakeEngine{usage: 512}
-	c = &Collector{Engine: engine, RegistryCacheMaxSize: 1024}
+	registry = &fakeRegistry{usage: 512}
+	c = &Collector{Registry: registry, RegistryCacheMaxSize: 1024}
 	c.cleanupRegistryCache(context.Background())
-	if engine.purged {
+	if registry.purged {
 		t.Fatal("expected the image cache to be kept under its cap")
 	}
 }

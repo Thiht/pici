@@ -18,13 +18,18 @@ type Engine interface {
 	PruneImages(ctx context.Context) error
 	Sandboxes(ctx context.Context) ([]docker.SandboxRef, error)
 	RemoveSandbox(ctx context.Context, id string) error
-	RegistryUsage(ctx context.Context) (int64, error)
+}
+
+// Registry is the shared image cache the collector keeps under its size cap.
+type Registry interface {
+	RegistrySize(ctx context.Context) (int64, error)
 	PurgeRegistry(ctx context.Context) error
 }
 
 type Collector struct {
 	Store                stores.Store
 	Engine               Engine
+	Registry             Registry
 	WorkspaceDir         string
 	LogsDir              string
 	Keep                 time.Duration
@@ -58,11 +63,11 @@ func (c *Collector) tick(ctx context.Context) {
 	c.cleanupUploads()
 	if c.Engine != nil {
 		c.cleanupSandboxes(ctx)
-		c.cleanupRegistryCache(ctx)
 		if err := c.Engine.PruneImages(ctx); err != nil {
 			slog.WarnContext(ctx, "prune images", "error", err)
 		}
 	}
+	c.cleanupRegistryCache(ctx)
 }
 
 // cleanupSandboxes removes the sandboxes of executions that are no longer
@@ -99,15 +104,15 @@ func (c *Collector) reapSandbox(ctx context.Context, sb docker.SandboxRef, reaso
 
 // cleanupRegistryCache purges the image cache once it grows past its cap.
 func (c *Collector) cleanupRegistryCache(ctx context.Context) {
-	if c.RegistryCacheMaxSize <= 0 {
+	if c.Registry == nil || c.RegistryCacheMaxSize <= 0 {
 		return
 	}
-	usage, err := c.Engine.RegistryUsage(ctx)
+	usage, err := c.Registry.RegistrySize(ctx)
 	if err != nil || usage <= c.RegistryCacheMaxSize {
 		return
 	}
 	slog.WarnContext(ctx, "purging image cache over its size cap", "size", usage, "max", c.RegistryCacheMaxSize)
-	if err := c.Engine.PurgeRegistry(ctx); err != nil {
+	if err := c.Registry.PurgeRegistry(ctx); err != nil {
 		slog.WarnContext(ctx, "purge image cache", "error", err)
 	}
 }

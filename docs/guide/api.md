@@ -80,7 +80,7 @@ Each artifact carries a `hash` object with the `sha256` digest of its bytes, omi
 
 ## Cache
 
-Docker resources tied to a project: workflow images built by pici and cross-run cache volumes (declared in `ci.yml` or detected automatically). Sizes are read from the Docker daemon; listing returns `503` when Docker is unavailable.
+Docker resources tied to a project: workflow images built by pici and cross-run cache volumes (declared in `ci.yml` or detected automatically). Sizes are read from the Docker daemon and refreshed in the background every five minutes, so a listing does not wait for its disk usage walk over every volume; listing returns `503` when Docker is unavailable.
 
 | Method   | Path                               | Description                          |
 | -------- | ---------------------------------- | ------------------------------------ |

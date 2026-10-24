@@ -14,11 +14,12 @@ import (
 )
 
 type fakeEngine struct {
-	images       []docker.Image
-	volumes      []docker.Volume
-	removed      []string
-	registrySize int64
-	purged       bool
+	images  []docker.Image
+	volumes []docker.Volume
+	sizes   map[string]int64
+	walks   int
+	removed []string
+	purged  bool
 }
 
 func (f *fakeEngine) Images(context.Context, string) ([]docker.Image, error) { return f.images, nil }
@@ -33,6 +34,11 @@ func (f *fakeEngine) Volumes(_ context.Context, namePrefix string) ([]docker.Vol
 	return out, nil
 }
 
+func (f *fakeEngine) VolumeUsage(context.Context) (map[string]int64, error) {
+	f.walks++
+	return f.sizes, nil
+}
+
 func (f *fakeEngine) RemoveImage(_ context.Context, reference string) error {
 	f.removed = append(f.removed, reference)
 	return nil
@@ -43,11 +49,17 @@ func (f *fakeEngine) RemoveVolume(_ context.Context, name string) error {
 	return nil
 }
 
-func (f *fakeEngine) RegistryUsage(context.Context) (int64, error) { return f.registrySize, nil }
-
 func (f *fakeEngine) PurgeRegistry(context.Context) error {
 	f.purged = true
 	return nil
+}
+
+func registrySizes(size int64) map[string]int64 {
+	sizes := make(map[string]int64, 2)
+	for _, name := range docker.RegistryVolumeNames() {
+		sizes[name] = size
+	}
+	return sizes
 }
 
 func project() stores.Project {
@@ -64,8 +76,12 @@ func TestGet(t *testing.T) {
 			{Tags: []string{"pici/" + id + "-test:latest"}, Size: 50, Created: created},
 		},
 		volumes: []docker.Volume{
-			{Name: "pici-cache-" + id + "-node_modules", Size: 10, Created: created},
-			{Name: "unrelated", Size: 999},
+			{Name: "pici-cache-" + id + "-node_modules", Created: created},
+			{Name: "unrelated", Created: created},
+		},
+		sizes: map[string]int64{
+			"pici-cache-" + id + "-node_modules": 10,
+			"unrelated":                          999,
 		},
 	}
 
@@ -130,7 +146,7 @@ func TestRemoveForeignResource(t *testing.T) {
 
 func TestRegistry(t *testing.T) {
 	ctx := context.Background()
-	engine := &fakeEngine{registrySize: 4096}
+	engine := &fakeEngine{sizes: registrySizes(2048)}
 	m := New(engine)
 
 	size, err := m.RegistrySize(ctx)
@@ -147,5 +163,45 @@ func TestRegistry(t *testing.T) {
 	}
 	if err := unavailable.PurgeRegistry(ctx); !errors.Is(err, app.ErrUnavailable) {
 		t.Fatalf("expected ErrUnavailable, got %v", err)
+	}
+}
+
+// A cache page must not pay for Docker's walk over every volume on each load.
+func TestVolumeUsageIsCached(t *testing.T) {
+	ctx := context.Background()
+	engine := &fakeEngine{sizes: registrySizes(512)}
+	m := New(engine)
+
+	for range 3 {
+		if _, err := m.Get(ctx, project()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.RegistrySize(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if engine.walks != 1 {
+		t.Fatalf("volume usage walked %d times, want 1", engine.walks)
+	}
+}
+
+// Purging empties the registries, so the snapshot must not report their old
+// size until the next refresh.
+func TestPurgeForgetsRegistrySize(t *testing.T) {
+	ctx := context.Background()
+	engine := &fakeEngine{sizes: registrySizes(2048)}
+	m := New(engine)
+
+	if size, err := m.RegistrySize(ctx); err != nil || size != 4096 {
+		t.Fatalf("RegistrySize = %d, %v", size, err)
+	}
+	if err := m.PurgeRegistry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if size, err := m.RegistrySize(ctx); err != nil || size != 0 {
+		t.Fatalf("RegistrySize after purge = %d, %v", size, err)
+	}
+	if engine.walks != 1 {
+		t.Fatalf("purging walked the volumes again: %d walks", engine.walks)
 	}
 }

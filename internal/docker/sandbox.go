@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -405,20 +404,20 @@ func (e *Engine) ensureRegistry(ctx context.Context, name, volumeName string, po
 	return e.cli.ContainerStart(ctx, created.ID, container.StartOptions{})
 }
 
+// RegistryVolumeNames are the volumes backing pici's two internal registries.
+func RegistryVolumeNames() []string {
+	return []string{registryImagesVolume, registryHubCacheVol}
+}
+
 // RegistryUsage is the on-disk size of the two registries pici owns.
 func (e *Engine) RegistryUsage(ctx context.Context) (int64, error) {
-	du, err := e.cli.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	sizes, err := e.VolumeUsage(ctx)
 	if err != nil {
 		return 0, err
 	}
 	var size int64
-	for _, v := range du.Volumes {
-		if v == nil || (v.Name != registryImagesVolume && v.Name != registryHubCacheVol) {
-			continue
-		}
-		if v.UsageData != nil {
-			size += v.UsageData.Size
-		}
+	for _, name := range RegistryVolumeNames() {
+		size += sizes[name]
 	}
 	return size, nil
 }

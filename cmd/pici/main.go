@@ -105,6 +105,13 @@ func main() {
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
+	var cacheEngine cache.Engine
+	if engine != nil {
+		cacheEngine = engine
+	}
+	appCache := cache.New(cacheEngine)
+	go appCache.Run(rootCtx)
+
 	runner.Start(cfg.Concurrency)
 
 	var provider auth.Provider = auth.NewGitHubProvider(
@@ -164,6 +171,7 @@ func main() {
 	collector := &gc.Collector{
 		Store:                store,
 		Engine:               engine,
+		Registry:             appCache,
 		WorkspaceDir:         cfg.WorkspaceDir,
 		LogsDir:              filepath.Join(cfg.WorkspaceDir, "logs"),
 		Keep:                 cfg.GCKeepDuration,
@@ -172,15 +180,9 @@ func main() {
 	}
 	go collector.Run(rootCtx)
 
-	var cacheEngine cache.Engine
-	if engine != nil {
-		cacheEngine = engine
-	}
-
 	appProjects := projects.New(store)
 	appExecutions := executions.New(store, ws, ws, runner)
 	appArtifacts := artifacts.New(ws)
-	appCache := cache.New(cacheEngine)
 	appVariables := variables.New(store)
 
 	apiHandler := handlers.New(handlers.Deps{

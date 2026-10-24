@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -82,30 +83,44 @@ func (e *Engine) RemoveImage(ctx context.Context, reference string) error {
 
 type Volume struct {
 	Name    string
-	Size    int64
 	Created time.Time
 }
 
-// Volumes lists volumes whose name starts with namePrefix. Disk usage is only
-// exposed by the system df endpoint, so that is what backs the size.
+// Volumes lists volumes whose name starts with namePrefix. It leaves sizes out:
+// Docker only knows them through the disk usage endpoint, which walks every
+// volume, so callers pair this with VolumeUsage.
 func (e *Engine) Volumes(ctx context.Context, namePrefix string) ([]Volume, error) {
+	summaries, err := e.cli.VolumeList(ctx, volume.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	volumes := make([]Volume, 0, len(summaries.Volumes))
+	for _, v := range summaries.Volumes {
+		if v == nil || !strings.HasPrefix(v.Name, namePrefix) {
+			continue
+		}
+		created, _ := time.Parse(time.RFC3339, v.CreatedAt)
+		volumes = append(volumes, Volume{Name: v.Name, Created: created})
+	}
+	return volumes, nil
+}
+
+// VolumeUsage returns the on-disk size of every volume, keyed by name. The
+// daemon walks each volume to compute it, so this is slow when the caches are
+// large; callers that poll it should keep the result warm.
+func (e *Engine) VolumeUsage(ctx context.Context) (map[string]int64, error) {
 	du, err := e.cli.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
 	if err != nil {
 		return nil, err
 	}
-	volumes := make([]Volume, 0, len(du.Volumes))
+	sizes := make(map[string]int64, len(du.Volumes))
 	for _, v := range du.Volumes {
-		if v == nil || !strings.HasPrefix(v.Name, namePrefix) {
+		if v == nil || v.UsageData == nil {
 			continue
 		}
-		var size int64
-		if v.UsageData != nil && v.UsageData.Size > 0 {
-			size = v.UsageData.Size
-		}
-		created, _ := time.Parse(time.RFC3339, v.CreatedAt)
-		volumes = append(volumes, Volume{Name: v.Name, Size: size, Created: created})
+		sizes[v.Name] = v.UsageData.Size
 	}
-	return volumes, nil
+	return sizes, nil
 }
 
 func (e *Engine) RemoveVolume(ctx context.Context, name string) error {
