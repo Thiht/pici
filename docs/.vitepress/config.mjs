@@ -5,6 +5,7 @@ export default defineConfig({
   description: 'A minimal, self-hosted CI system',
   lang: 'en-US',
   cleanUrls: true,
+  srcExclude: ['agents/**'],
   lastUpdated: true,
   markdown: {
     lineNumbers: true,
