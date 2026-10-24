@@ -40,6 +40,17 @@ func TestSandboxLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A created registry must be running, or every push and pull against it
+	// fails with "connection refused".
+	for _, name := range []string{registryImagesName, registryHubCacheName} {
+		insp, err := engine.cli.ContainerInspect(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if insp.State == nil || !insp.State.Running {
+			t.Fatalf("registry %s is not running", name)
+		}
+	}
 	if _, err := engine.RegistryUsage(ctx); err != nil {
 		t.Fatalf("registry usage: %v", err)
 	}

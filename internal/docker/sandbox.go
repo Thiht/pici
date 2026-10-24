@@ -380,7 +380,7 @@ func (e *Engine) ensureRegistry(ctx context.Context, name, volumeName string, po
 	}
 
 	exposed := nat.Port(strconv.Itoa(registryContainerPort) + "/tcp")
-	_, err = e.cli.ContainerCreate(ctx,
+	created, err := e.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image:        registryImage,
 			Env:          env,
@@ -397,11 +397,12 @@ func (e *Engine) ensureRegistry(ctx context.Context, name, volumeName string, po
 		nil, nil, name)
 	if err != nil {
 		// A concurrent worker may have created the container first.
-		if startErr := e.cli.ContainerStart(ctx, name, container.StartOptions{}); startErr == nil {
-			return nil
+		if startErr := e.cli.ContainerStart(ctx, name, container.StartOptions{}); startErr != nil {
+			return err
 		}
+		return nil
 	}
-	return err
+	return e.cli.ContainerStart(ctx, created.ID, container.StartOptions{})
 }
 
 // RegistryUsage is the on-disk size of the two registries pici owns.
