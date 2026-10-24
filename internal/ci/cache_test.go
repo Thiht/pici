@@ -71,6 +71,21 @@ func TestDetectCachesTerraformGlob(t *testing.T) {
 	}
 }
 
+func TestDetectCachesGolangciLint(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	env, paths := detectCaches(dir, CacheMountPath)
+	if env["GOLANGCI_LINT_CACHE"] != filepath.Join(CacheMountPath, "golangci-lint") {
+		t.Fatalf("expected GOLANGCI_LINT_CACHE, got %q", env["GOLANGCI_LINT_CACHE"])
+	}
+	if len(paths) != 1 || paths[0] != "golangci-lint" {
+		t.Fatalf("unexpected paths: %v", paths)
+	}
+}
+
 func TestDetectCachesNone(t *testing.T) {
 	env, paths := detectCaches(t.TempDir(), CacheMountPath)
 	if len(env) != 0 || len(paths) != 0 {

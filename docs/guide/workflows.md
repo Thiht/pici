@@ -138,6 +138,7 @@ Dependency caches are also **detected automatically** from files at the repo roo
 | Marker                                | Env vars                | Cached path        |
 | ------------------------------------- | ----------------------- | ------------------ |
 | `go.mod`                              | `GOMODCACHE`, `GOCACHE` | `gomod`, `gobuild` |
+| `.golangci.{yml,yaml,toml,json}`      | `GOLANGCI_LINT_CACHE`   | `golangci-lint`    |
 | `package.json`                        | `npm_config_cache`      | `npm`              |
 | `yarn.lock`                           | `YARN_CACHE_FOLDER`     | `yarn`             |
 | `pnpm-lock.yaml`                      | `npm_config_store_dir`  | `pnpm`             |

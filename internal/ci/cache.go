@@ -32,6 +32,11 @@ var cachePresets = []cachePreset{
 		paths:   []string{"gomod", "gobuild"},
 	},
 	{
+		markers: []string{".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"},
+		env:     map[string]string{"GOLANGCI_LINT_CACHE": cacheToken + "/golangci-lint"},
+		paths:   []string{"golangci-lint"},
+	},
+	{
 		markers: []string{"package.json"},
 		env:     map[string]string{"npm_config_cache": cacheToken + "/npm"},
 		paths:   []string{"npm"},
