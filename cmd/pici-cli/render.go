@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Thiht/pici/client"
+	"github.com/Thiht/pici/internal/present"
 	"github.com/Thiht/pici/internal/version"
 )
 
@@ -106,25 +107,6 @@ func statusColor(s string) string {
 	}
 }
 
-func statusSymbol(s string) string {
-	switch s {
-	case "success":
-		return "✓"
-	case "failed":
-		return "✗"
-	case "running":
-		return "▶"
-	case "pending":
-		return "○"
-	case "canceled":
-		return "⊘"
-	case "skipped":
-		return "-"
-	default:
-		return "?"
-	}
-}
-
 func visibleWidth(s string) int {
 	w := 0
 	for i := 0; i < len(s); {
@@ -151,9 +133,9 @@ func duration(start, end *time.Time) string {
 		return "-"
 	}
 	if end == nil {
-		return time.Since(*start).Round(time.Second).String()
+		return present.Duration(time.Since(*start).Round(time.Second))
 	}
-	return end.Sub(*start).Round(time.Second).String()
+	return present.Duration(end.Sub(*start).Round(time.Second))
 }
 
 func printExecution(e client.Execution) {
@@ -166,7 +148,7 @@ func printExecution(e client.Execution) {
 		title += "  by " + e.CreatedByLogin
 	}
 	fmt.Printf("%s  %s  %s\n",
-		paint(statusSymbol(status)+" "+status, statusColor(status)),
+		paint(present.Symbol(status)+" "+status, statusColor(status)),
 		title,
 		duration(e.StartedAt, e.FinishedAt),
 	)
@@ -177,7 +159,7 @@ func printExecution(e client.Execution) {
 	}
 	for _, s := range e.Steps {
 		st := string(s.Status)
-		line := fmt.Sprintf("  %s %s  %s", paint(statusSymbol(st), statusColor(st)), pad(s.Name, w), duration(s.StartedAt, s.FinishedAt))
+		line := fmt.Sprintf("  %s %s  %s", paint(present.Symbol(st), statusColor(st)), pad(s.Name, w), duration(s.StartedAt, s.FinishedAt))
 		if s.Error != "" {
 			line += "  " + paint(s.Error, red)
 		}
@@ -192,7 +174,7 @@ func printExecutions(list []client.Execution) {
 	for _, e := range list {
 		status := string(e.Status)
 		fmt.Printf("%s  %-28s  %-6s  %s\n",
-			paint(statusSymbol(status)+" "+status, statusColor(status)),
+			paint(present.Symbol(status)+" "+status, statusColor(status)),
 			e.Workflow+"@"+e.Ref,
 			fmt.Sprintf("#%d", e.ID),
 			e.CreatedAt.Local().Format("2006-01-02 15:04"),
@@ -238,7 +220,7 @@ func printArtifacts(list []client.Artifact) {
 		if a.Hash != nil {
 			hash = a.Hash.Value
 		}
-		fmt.Printf("%s/%s  %s  %s\n", a.Step, a.Path, humanBytes(a.Size), hash)
+		fmt.Printf("%s/%s  %s  %s\n", a.Step, a.Path, present.Size(a.Size), hash)
 	}
 }
 
@@ -248,16 +230,16 @@ func printCache(c client.Cache) {
 		fmt.Println("  (none)")
 	}
 	for _, img := range c.Images {
-		fmt.Printf("  %-48s  %8s  %s\n", img.Reference, humanBytes(img.Size), img.Created.Local().Format("2006-01-02 15:04"))
+		fmt.Printf("  %-48s  %8s  %s\n", img.Reference, present.Size(img.Size), img.Created.Local().Format("2006-01-02 15:04"))
 	}
 	fmt.Println("volumes:")
 	if len(c.Volumes) == 0 {
 		fmt.Println("  (none)")
 	}
 	for _, v := range c.Volumes {
-		fmt.Printf("  %-48s  %8s  %s\n", v.Cache, humanBytes(v.Size), v.Created.Local().Format("2006-01-02 15:04"))
+		fmt.Printf("  %-48s  %8s  %s\n", v.Cache, present.Size(v.Size), v.Created.Local().Format("2006-01-02 15:04"))
 	}
-	fmt.Printf("total: %s\n", humanBytes(c.TotalSize))
+	fmt.Printf("total: %s\n", present.Size(c.TotalSize))
 }
 
 func printHealth(h client.Health) {
@@ -288,17 +270,4 @@ func healthColor(v string) string {
 		return green
 	}
 	return red
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }

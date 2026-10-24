@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Thiht/pici/internal/handlers/render"
-	"github.com/Thiht/pici/internal/stores"
+	"github.com/Thiht/pici/internal/present"
 )
 
 // Badge renders a shields.io-style SVG status badge for a project. The
@@ -43,27 +43,10 @@ func (h *ProjectsHandler) Badge(w http.ResponseWriter, r *http.Request) {
 		label = project.Name
 	}
 
-	value, color := badgeStatus(status)
+	value, color := present.Badge(status)
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprint(w, badgeSVG(label, value, color))
-}
-
-func badgeStatus(status string) (value, color string) {
-	switch stores.Status(status) {
-	case stores.StatusSuccess:
-		return "passing", "#2ea44f"
-	case stores.StatusFailed:
-		return "failing", "#d73a49"
-	case stores.StatusRunning:
-		return "running", "#0969da"
-	case stores.StatusPending:
-		return "pending", "#dbab09"
-	case stores.StatusCanceled:
-		return "canceled", "#6e7781"
-	default:
-		return "unknown", "#9f9f9f"
-	}
 }
 
 func badgeSVG(label, value, color string) string {

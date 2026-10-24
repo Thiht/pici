@@ -78,23 +78,6 @@ func TestTemplatesParse(t *testing.T) {
 	}
 }
 
-func TestStatusClass(t *testing.T) {
-	cases := map[string]string{
-		"success":  "badge badge-soft badge-success",
-		"failed":   "badge badge-soft badge-error",
-		"running":  "badge badge-soft badge-info",
-		"pending":  "badge badge-soft badge-warning",
-		"canceled": "badge badge-soft badge-neutral",
-		"skipped":  "badge badge-soft badge-neutral",
-		"unknown":  "badge badge-soft badge-neutral",
-	}
-	for status, want := range cases {
-		if got := statusClass(status); got != want {
-			t.Errorf("statusClass(%q) = %q, want %q", status, got, want)
-		}
-	}
-}
-
 func TestProjectsListEmpty(t *testing.T) {
 	srv, client := newTestServer(t, "")
 	resp, err := client.Get(srv.URL + "/")
@@ -244,23 +227,6 @@ func TestExecutionTemplateHidesZeroExitCode(t *testing.T) {
 	}
 }
 
-func TestFormatDuration(t *testing.T) {
-	cases := map[time.Duration]string{
-		0:                          "0s",
-		10 * time.Second:           "10s",
-		90 * time.Second:           "1m30s",
-		15 * time.Minute:           "15m",
-		time.Hour:                  "1h",
-		90 * time.Minute:           "1h30m",
-		time.Hour + 30*time.Second: "1h0m30s",
-	}
-	for d, want := range cases {
-		if got := formatDuration(d); got != want {
-			t.Errorf("formatDuration(%s) = %q, want %q", d, got, want)
-		}
-	}
-}
-
 func TestExecutionTemplateShowsSetupDuration(t *testing.T) {
 	started := time.Now()
 	setupFinished := started.Add(10 * time.Second)
@@ -358,7 +324,19 @@ func TestExecutionTemplateStreamsWhenRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{`data-source="setup"`, `data-source="compile"`, `new EventSource(`, "/stream?attempt=1"} {
+	for _, want := range []string{
+		`data-source="setup"`,
+		`data-source="compile"`,
+		`new EventSource(`,
+		"/stream?attempt=1",
+		// The status vocabulary is rendered once by Go and read back by the
+		// live script, which keeps no copy of the class table.
+		`id="status-presentation"`,
+		`data-status="success"`,
+		`data-class="badge badge-soft badge-success"`,
+		`data-label="Success"`,
+		`labelFor(state.status)`,
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in running execution page, got:\n%s", want, out)
 		}
@@ -1224,15 +1202,6 @@ func TestSecretFieldsByAuthType(t *testing.T) {
 		}
 		if strings.Contains(out, tc.notWant) {
 			t.Errorf("%s: did not expect %q, got %q", tc.authType, tc.notWant, out)
-		}
-	}
-}
-
-func TestCapitalize(t *testing.T) {
-	cases := map[string]string{"success": "Success", "running": "Running", "": "", "x": "X"}
-	for in, want := range cases {
-		if got := capitalize(in); got != want {
-			t.Errorf("capitalize(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

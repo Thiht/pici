@@ -21,6 +21,7 @@ import (
 	"github.com/Thiht/pici/internal/github"
 	"github.com/Thiht/pici/internal/mask"
 	"github.com/Thiht/pici/internal/notify"
+	"github.com/Thiht/pici/internal/present"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
 )
@@ -677,10 +678,7 @@ func resolveVersion(dir, ref, sha string) string {
 			return ref
 		}
 	}
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
+	return present.SHA(sha)
 }
 
 func resolveCommitSHA(dir string) string {

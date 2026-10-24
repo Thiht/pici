@@ -12,7 +12,7 @@
     <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-3">
         <h1 class="text-xl font-semibold">{{.Execution.Workflow}} <span class="opacity-50">#{{.Execution.ExecutionID}}</span></h1>
-        <span id="exec-status" class="{{statusClass .Execution.Status}}">{{capitalize .Execution.Status}}</span>
+        <span id="exec-status" class="{{statusClass .Execution.Status}}">{{statusLabel .Execution.Status}}</span>
         {{if gt .Execution.AttemptsCount 1}}
           <span class="badge badge-soft badge-neutral">attempt {{.Execution.Attempt}} of {{.Execution.AttemptsCount}}</span>
         {{end}}
@@ -84,7 +84,7 @@
              {{if eq .Attempt $.Execution.Attempt}}aria-current="page"
              {{end}}>
             #{{.Attempt}}
-            <span class="{{statusClass .Status}}">{{capitalize .Status}}</span>
+            <span class="{{statusClass .Status}}">{{statusLabel .Status}}</span>
             </a>
           {{end}}
         </div>
@@ -108,7 +108,7 @@
                 {{range .Attempts}}
                   <tr>
                     <td><a class="link link-primary" href="?attempt={{.Attempt}}">#{{.Attempt}}</a></td>
-                    <td><span class="{{statusClass .Status}}">{{capitalize .Status}}</span></td>
+                    <td><span class="{{statusClass .Status}}">{{statusLabel .Status}}</span></td>
                     <td>{{.Trigger}}</td>
                     <td class="text-xs">{{if .CreatedByLogin}}{{.CreatedByLogin}}{{else}}—{{end}}</td>
                     <td class="text-xs opacity-60">{{duration .StartedAt .FinishedAt}}</td>
@@ -180,7 +180,7 @@
                     {{with .FinishedAt}}data-finished="{{.UnixMilli}}"
                     {{end}}
                     data-timeout="{{.Timeout.Milliseconds}}">{{duration .StartedAt .FinishedAt}}{{if .TimeoutExceeded}} / {{formatDuration .Timeout}}{{end}}</span>
-              <span data-step-badge class="{{statusClass .Status}}">{{capitalize .Status}}</span>
+              <span data-step-badge class="{{statusClass .Status}}">{{statusLabel .Status}}</span>
             </span>
           </summary>
           <div class="collapse-content">
@@ -301,16 +301,19 @@
     </script>
 
     {{if .Running}}
+      <dl id="status-presentation" hidden>
+        {{range $status, $class := statusClasses}}<dd data-status="{{$status}}" data-class="{{$class}}" data-label="{{statusLabel $status}}"></dd>{{end}}
+      </dl>
       <script>
     (() => {
       const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "");
-      const classFor = (status) => ({
-        success: "badge badge-soft badge-success",
-        failed: "badge badge-soft badge-error",
-        running: "badge badge-soft badge-info",
-        pending: "badge badge-soft badge-warning"
-      })[status] || "badge badge-soft badge-neutral";
-      const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      // The status vocabulary is rendered by Go above, so this script never
+      // keeps its own copy of the classes or labels.
+      const presentation = Object.fromEntries(
+        [...document.querySelectorAll("#status-presentation [data-status]")].map((el) => [el.dataset.status, el.dataset])
+      );
+      const classFor = (status) => (presentation[status] || {}).class || "badge badge-soft badge-neutral";
+      const labelFor = (status) => (presentation[status] || {}).label || status;
       const parseTime = (s) => {
         if (!s) return 0;
         // RFC 3339 with nanoseconds is not universally parseable: keep at most
@@ -370,7 +373,7 @@
         const execBadge = document.getElementById("exec-status");
         if (execBadge) {
           execBadge.className = classFor(state.status);
-          execBadge.textContent = capitalize(state.status);
+          execBadge.textContent = labelFor(state.status);
         }
         const rendered = new Set(
           [...document.querySelectorAll("details[data-step]")].map((d) => d.dataset.step)
@@ -389,7 +392,7 @@
           const badge = details.querySelector("[data-step-badge]");
           if (badge) {
             badge.className = classFor(s.status);
-            badge.textContent = capitalize(s.status);
+            badge.textContent = labelFor(s.status);
           }
           const time = details.querySelector("[data-step-time]");
           if (time) {

@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Thiht/pici/internal/present"
 )
 
 func worktreeInfo(dir string) (ref, sha string, err error) {
@@ -19,11 +21,11 @@ func worktreeInfo(dir string) (ref, sha string, err error) {
 	}
 	sha = strings.TrimSpace(out)
 	if branch, err := runGit(dir, "symbolic-ref", "--short", "HEAD"); err == nil {
-		if ref = strings.TrimSpace(branch); ref == "" && len(sha) >= 7 {
-			ref = sha[:7]
+		if ref = strings.TrimSpace(branch); ref == "" {
+			ref = present.SHA(sha)
 		}
-	} else if len(sha) >= 7 {
-		ref = sha[:7]
+	} else {
+		ref = present.SHA(sha)
 	}
 	return ref, sha, nil
 }

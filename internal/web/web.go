@@ -25,6 +25,7 @@ import (
 	"github.com/Thiht/pici/internal/auth"
 	"github.com/Thiht/pici/internal/ci"
 	"github.com/Thiht/pici/internal/handlers/middlewares"
+	"github.com/Thiht/pici/internal/present"
 	"github.com/Thiht/pici/internal/stores"
 	"github.com/Thiht/pici/internal/workspace"
 )
@@ -38,18 +39,19 @@ var staticFS embed.FS
 const flashCookie = "pici_flash"
 
 var funcs = template.FuncMap{
-	"statusClass":    statusClass,
+	"statusClass":    func(v any) string { return present.Class(fmt.Sprint(v)) },
+	"statusLabel":    func(v any) string { return present.Label(fmt.Sprint(v)) },
+	"statusClasses":  present.Classes,
 	"formatTime":     formatTime,
 	"formatTimePtr":  formatTimePtr,
 	"duration":       duration,
-	"formatDuration": formatDuration,
+	"formatDuration": present.Duration,
 	"since":          since,
-	"size":           humanSize,
+	"size":           present.Size,
 	"joined":         strings.Join,
 	"ansi":           ansiToHTML,
-	"capitalize":     capitalize,
 	"splitEnv":       splitEnv,
-	"shortSHA":       shortSHA,
+	"shortSHA":       present.SHA,
 }
 
 var templates = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
@@ -255,37 +257,6 @@ func (h *Handler) validCSRF(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(principal.Session.CSRFToken), []byte(r.FormValue("_csrf"))) == 1
 }
 
-func statusClass(status any) string {
-	switch fmt.Sprint(status) {
-	case "success":
-		return "badge badge-soft badge-success"
-	case "failed":
-		return "badge badge-soft badge-error"
-	case "running":
-		return "badge badge-soft badge-info"
-	case "pending":
-		return "badge badge-soft badge-warning"
-	default:
-		return "badge badge-soft badge-neutral"
-	}
-}
-
-func shortSHA(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
-}
-
-func capitalize(v any) string {
-	s := fmt.Sprint(v)
-	if s == "" {
-		return s
-	}
-	r := []rune(s)
-	return strings.ToUpper(string(r[0])) + string(r[1:])
-}
-
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return "—"
@@ -317,20 +288,7 @@ func duration(start, end any) string {
 		}
 		e = *p
 	}
-	return formatDuration(e.Sub(s).Round(time.Second))
-}
-
-// formatDuration renders a duration without trailing zero units, so 15m0s
-// reads as 15m.
-func formatDuration(d time.Duration) string {
-	s := d.String()
-	if d >= time.Minute && strings.HasSuffix(s, "m0s") {
-		s = strings.TrimSuffix(s, "0s")
-		if strings.HasSuffix(s, "h0m") {
-			s = strings.TrimSuffix(s, "0m")
-		}
-	}
-	return s
+	return present.Duration(e.Sub(s).Round(time.Second))
 }
 
 func since(t *time.Time) string {
@@ -350,17 +308,4 @@ func since(t *time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
-}
-
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for n/div >= unit && exp < 4 {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTP"[exp])
 }
