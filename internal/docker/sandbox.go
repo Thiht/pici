@@ -46,7 +46,7 @@ const (
 )
 
 const (
-	registryImage         = "registry:2"
+	registryImage         = "registry:3.1.2"
 	registryImagesName    = "pici-registry"
 	registryHubCacheName  = "pici-registry-cache"
 	registryImagesVolume  = "pici-registry-images"
@@ -367,11 +367,16 @@ func (e *Engine) ensureRegistry(ctx context.Context, name, volumeName string, po
 	}
 
 	insp, err := e.cli.ContainerInspect(ctx, name)
-	if err == nil {
+	if err == nil && insp.Config != nil && insp.Config.Image == registryImage {
 		if insp.State != nil && insp.State.Running {
 			return nil
 		}
 		return e.cli.ContainerStart(ctx, name, container.StartOptions{})
+	}
+	if err == nil {
+		// A pinned image change replaces the container but keeps its volume, so
+		// the cache survives an upgrade.
+		_ = e.cli.ContainerRemove(context.Background(), name, container.RemoveOptions{Force: true})
 	}
 
 	exposed := nat.Port(strconv.Itoa(registryContainerPort) + "/tcp")
